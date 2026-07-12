@@ -1,38 +1,38 @@
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <Preference
-        app:key="termux"
-        app:title="@string/termux_preferences_title"
-        app:summary="@string/termux_preferences_summary"
-        app:fragment="com.termux.app.fragments.settings.TermuxPreferencesFragment"/>
+        app:key="ominal"
+        app:title="@string/ominal_preferences_title"
+        app:summary="@string/ominal_preferences_summary"
+        app:fragment="com.ominal.app.fragments.settings.OminalPreferencesFragment"/>
 
     <Preference
-        app:key="termux_api"
-        app:title="@string/termux_api_preferences_title"
-        app:summary="@string/termux_api_preferences_summary"
+        app:key="ominal_api"
+        app:title="@string/ominal_api_preferences_title"
+        app:summary="@string/ominal_api_preferences_summary"
         app:isPreferenceVisible="false"
-        app:fragment="com.termux.app.fragments.settings.TermuxAPIPreferencesFragment"/>
+        app:fragment="com.ominal.app.fragments.settings.OminalAPIPreferencesFragment"/>
 
     <Preference
-        app:key="termux_float"
-        app:title="@string/termux_float_preferences_title"
-        app:summary="@string/termux_float_preferences_summary"
+        app:key="ominal_float"
+        app:title="@string/ominal_float_preferences_title"
+        app:summary="@string/ominal_float_preferences_summary"
         app:isPreferenceVisible="false"
-        app:fragment="com.termux.app.fragments.settings.TermuxFloatPreferencesFragment"/>
+        app:fragment="com.ominal.app.fragments.settings.OminalFloatPreferencesFragment"/>
 
     <Preference
-        app:key="termux_tasker"
-        app:title="@string/termux_tasker_preferences_title"
-        app:summary="@string/termux_tasker_preferences_summary"
+        app:key="ominal_tasker"
+        app:title="@string/ominal_tasker_preferences_title"
+        app:summary="@string/ominal_tasker_preferences_summary"
         app:isPreferenceVisible="false"
-        app:fragment="com.termux.app.fragments.settings.TermuxTaskerPreferencesFragment"/>
+        app:fragment="com.ominal.app.fragments.settings.OminalTaskerPreferencesFragment"/>
 
     <Preference
-        app:key="termux_widget"
-        app:title="@string/termux_widget_preferences_title"
-        app:summary="@string/termux_widget_preferences_summary"
+        app:key="ominal_widget"
+        app:title="@string/ominal_widget_preferences_title"
+        app:summary="@string/ominal_widget_preferences_summary"
         app:isPreferenceVisible="false"
-        app:fragment="com.termux.app.fragments.settings.TermuxWidgetPreferencesFragment"/>
+        app:fragment="com.ominal.app.fragments.settings.OminalWidgetPreferencesFragment"/>
 
     <Preference
         app:key="about"

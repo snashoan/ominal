@@ -1,13 +1,11 @@
 ---
-page_ref: /docs/apps/termux/index.html
+page_ref: /docs/apps/ominal/index.html
 ---
 
-# Termux App Docs
+# Ominal App Docs
 
-<!--- DOC_HEADER_PLACEHOLDER -->
+Ominal is an Android coding-agent workspace with a chat-first interface and a sandboxed Linux executable area.
 
-Welcome to documentation for the [Termux App].
+The Android package name is `com.ominal`. Bootstraps must be source-built for `/data/data/com.ominal/files/usr`; upstream-package bootstraps are rejected by the app build.
 
-##
-
-[Termux App]: https://github.com/termux/termux-app
+See the repository README and `docs/ominal-bootstrap.md` for the current build and validation flow.
