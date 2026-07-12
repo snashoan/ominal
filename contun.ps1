@@ -16,4 +16,3 @@ Write-Output 'Send another instruction to the background worker:'
 Write-Output '  .\tools\ominal-bg-codex-send.ps1 -Message "continue from OMINAL_TASK_HANDOUT.md"'
 Write-Output ''
 & $tail -Workspace $workspace -Lines $Lines
-
