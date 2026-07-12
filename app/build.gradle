@@ -3,24 +3,26 @@ plugins {
 }
 
 ext {
+    ominalAppPackageName = "com.ominal"
+
     // The packageVariant defines the bootstrap variant that will be included in the app APK.
-    // This must be supported by com.termux.shared.termux.TermuxBootstrap.PackageVariant or app will
+    // This must be supported by com.ominal.shared.runtime.OminalBootstrap.PackageVariant or app will
     // crash at startup.
     // Bootstrap of a different variant must not be manually installed by the user after app installation
     // by replacing $PREFIX since app code is dependant on the variant used to build the APK.
     // Currently supported values are: [ "apt-android-7" "apt-android-5" ]
-    packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7" // Default: "apt-android-7"
+    packageVariant = System.getenv("OMINAL_PACKAGE_VARIANT") ?: "apt-android-7" // Default: "apt-android-7"
 }
 
 android {
-    namespace "com.termux"
+    namespace "com.ominal"
 
     compileSdkVersion project.properties.compileSdkVersion.toInteger()
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
-    def appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: ""
-    def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
-    def splitAPKsForDebugBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS") ?: "1"
-    def splitAPKsForReleaseBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS") ?: "0" // F-Droid does not support split APKs #1904
+    def appVersionName = System.getenv("OMINAL_APP_VERSION_NAME") ?: ""
+    def apkVersionTag = System.getenv("OMINAL_APK_VERSION_TAG") ?: ""
+    def splitAPKsForDebugBuilds = System.getenv("OMINAL_SPLIT_APKS_FOR_DEBUG_BUILDS") ?: "1"
+    def splitAPKsForReleaseBuilds = System.getenv("OMINAL_SPLIT_APKS_FOR_RELEASE_BUILDS") ?: "0" // F-Droid does not support split APKs #1904
 
     dependencies {
         implementation "androidx.annotation:annotation:1.9.0"
@@ -37,28 +39,29 @@ android {
         implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
 
         implementation project(":terminal-view")
-        implementation project(":termux-shared")
+        implementation project(":ominal-shared")
     }
 
     defaultConfig {
+        applicationId project.ext.ominalAppPackageName
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 118
+        versionCode 141
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)
 
-        buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
+        buildConfigField "String", "OMINAL_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by OminalApplication class
 
-        manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.termux"
-        manifestPlaceholders.TERMUX_APP_NAME = "Termux"
-        manifestPlaceholders.TERMUX_API_APP_NAME = "Termux:API"
-        manifestPlaceholders.TERMUX_BOOT_APP_NAME = "Termux:Boot"
-        manifestPlaceholders.TERMUX_FLOAT_APP_NAME = "Termux:Float"
-        manifestPlaceholders.TERMUX_STYLING_APP_NAME = "Termux:Styling"
-        manifestPlaceholders.TERMUX_TASKER_APP_NAME = "Termux:Tasker"
-        manifestPlaceholders.TERMUX_WIDGET_APP_NAME = "Termux:Widget"
+        manifestPlaceholders.OMINAL_PACKAGE_NAME = project.ext.ominalAppPackageName
+        manifestPlaceholders.OMINAL_APP_NAME = "Ominal"
+        manifestPlaceholders.OMINAL_API_APP_NAME = "Ominal:API"
+        manifestPlaceholders.OMINAL_BOOT_APP_NAME = "Ominal:Boot"
+        manifestPlaceholders.OMINAL_FLOAT_APP_NAME = "Ominal:Float"
+        manifestPlaceholders.OMINAL_STYLING_APP_NAME = "Ominal:Styling"
+        manifestPlaceholders.OMINAL_TASKER_APP_NAME = "Ominal:Tasker"
+        manifestPlaceholders.OMINAL_WIDGET_APP_NAME = "Ominal:Widget"
 
         externalNativeBuild {
             ndkBuild {
@@ -132,10 +135,10 @@ android {
         variant.outputs.all { output ->
             if (variant.buildType.name == "debug") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("ominal-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk")
             } else if (variant.buildType.name == "release") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("ominal-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk")
             }
         }
     }
@@ -166,10 +169,18 @@ def validateVersionName(String versionName) {
 
 def downloadBootstrap(String arch, String expectedChecksum, String version) {
     def digest = java.security.MessageDigest.getInstance("SHA-256")
+    def localBootstrapsValue = System.getenv("OMINAL_USE_LOCAL_BOOTSTRAPS")
+    def useLocalBootstraps = localBootstrapsValue != null
+        ? localBootstrapsValue.equals("1") || localBootstrapsValue.equalsIgnoreCase("true")
+        : project.ext.ominalAppPackageName == "com.ominal"
 
     def localUrl = "src/main/cpp/bootstrap-" + arch + ".zip"
     def file = new File(projectDir, localUrl)
     if (file.exists()) {
+        if (useLocalBootstraps) {
+            return
+        }
+
         def buffer = new byte[8192]
         def input = new FileInputStream(file)
         while (true) {
@@ -187,7 +198,11 @@ def downloadBootstrap(String arch, String expectedChecksum, String version) {
         }
     }
 
-    def remoteUrl = "https://github.com/termux/termux-packages/releases/download/bootstrap-" + version + "/bootstrap-" + arch + ".zip"
+    if (useLocalBootstraps) {
+        throw new GradleException("Missing local source-built Ominal bootstrap archive: " + localUrl)
+    }
+
+    def remoteUrl = "https://github.com/snashoan/ominal/releases/download/bootstrap-" + version + "/bootstrap-" + arch + ".zip"
     logger.quiet("Downloading " + remoteUrl + " ...")
 
     file.parentFile.mkdirs()
@@ -231,13 +246,100 @@ task downloadBootstraps() {
             downloadBootstrap("i686", "46dcfeb5eef67ba765498db9fe4c50dc4690805139aa0dd141a9d8ee0693cd27", version)
             downloadBootstrap("x86_64", "615b590679ee6cd885b7fd2ff9473c845e920f9b422f790bb158c63fe42b8481", version)
         } else {
-            throw new GradleException("Unsupported TERMUX_PACKAGE_VARIANT \"" + packageVariant + "\"")
+            throw new GradleException("Unsupported OMINAL_PACKAGE_VARIANT \"" + packageVariant + "\"")
+        }
+    }
+}
+
+def scanBootstrapArchivePrefixes = { File zipFile, List<String> forbiddenPrefixes, String requiredPrefix ->
+    def forbiddenCounts = forbiddenPrefixes.collectEntries { [(it): 0] }
+    def requiredCount = 0
+    def zip = new java.util.zip.ZipFile(zipFile)
+    try {
+        zip.entries().each { entry ->
+            if (entry.isDirectory()) return
+            def entryText = new String(zip.getInputStream(entry).bytes, "ISO-8859-1")
+            forbiddenPrefixes.each { prefix ->
+                if (entryText.contains(prefix)) forbiddenCounts[prefix]++
+            }
+            if (entryText.contains(requiredPrefix)) requiredCount++
+        }
+    } finally {
+        zip.close()
+    }
+    return [forbiddenCounts: forbiddenCounts, requiredCount: requiredCount]
+}
+
+task validateOminalBootstraps() {
+    dependsOn downloadBootstraps
+    doLast {
+        def appPackageName = project.ext.ominalAppPackageName
+        def architectures = ["aarch64", "arm", "i686", "x86_64"]
+        def legacyPackageName = "com." + ["t", "e", "r", "m", "u", "x"].join("")
+        def forbiddenPrefixes = ["/data/data/" + legacyPackageName, "/data/user/0/" + legacyPackageName]
+        def requiredPrefix = "/data/data/" + appPackageName + "/files/usr"
+        def checksumManifest = new File(projectDir, "src/main/cpp/bootstrap-ominal.sha256")
+        def expectedHashes = [:]
+        def failures = []
+
+        if (!checksumManifest.exists()) {
+            failures.add(checksumManifest.name + " is missing")
+        } else {
+            checksumManifest.eachLine { line ->
+                def trimmed = line.trim()
+                if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                    def parts = trimmed.split("\\s+", 2)
+                    if (parts.length != 2) {
+                        failures.add(checksumManifest.name + " has invalid line: " + line)
+                    } else {
+                        expectedHashes[parts[1]] = parts[0].toLowerCase(Locale.ROOT)
+                    }
+                }
+            }
+        }
+
+        architectures.each { arch ->
+            def archive = new File(projectDir, "src/main/cpp/bootstrap-" + arch + ".zip")
+            if (!archive.exists()) {
+                failures.add(archive.name + " is missing")
+                return
+            }
+
+            def scan = scanBootstrapArchivePrefixes(archive, forbiddenPrefixes, requiredPrefix)
+            def forbiddenHits = scan.forbiddenCounts.findAll { it.value > 0 }
+            if (!forbiddenHits.isEmpty()) {
+                failures.add(archive.name + " contains forbidden prefixes: " + forbiddenHits)
+            }
+            if (scan.requiredCount == 0) {
+                failures.add(archive.name + " does not contain expected Ominal prefix: " + requiredPrefix)
+            }
+
+            if (expectedHashes.containsKey(archive.name)) {
+                def digest = java.security.MessageDigest.getInstance("SHA-256")
+                archive.withInputStream { input ->
+                    byte[] buffer = new byte[8192]
+                    int readBytes
+                    while ((readBytes = input.read(buffer)) > 0) {
+                        digest.update(buffer, 0, readBytes)
+                    }
+                }
+                def actualHash = new BigInteger(1, digest.digest()).toString(16).padLeft(64, "0")
+                if (actualHash != expectedHashes[archive.name]) {
+                    failures.add(archive.name + " SHA-256 mismatch: expected " + expectedHashes[archive.name] + ", actual " + actualHash)
+                }
+            } else if (checksumManifest.exists()) {
+                failures.add(archive.name + " is missing from " + checksumManifest.name)
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException("Invalid bootstrap archives for " + appPackageName + ". Rebuild the Ominal bootstrap set with OMINAL_APP__PACKAGE_NAME=" + appPackageName + " instead of patching zip binaries.\n - " + failures.join("\n - "))
         }
     }
 }
 
 afterEvaluate {
     android.applicationVariants.all { variant ->
-        variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
+        variant.javaCompileProvider.get().dependsOn(validateOminalBootstraps)
     }
 }

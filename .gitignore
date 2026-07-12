@@ -10,9 +10,37 @@ release/
 .externalNativeBuild
 .cxx
 *.zip
+app/src/main/cpp/bootstrap-*.zip
 
 # Local configuration file (sdk path, etc)
 local.properties
+
+# Local agent sources, auth, and generated run artifacts
+/build-logs/
+/external/
+/external-apks/
+/codex/
+/codex-cli/
+/openai-codex/
+/tools/vendor/
+/codex-*.png
+/codex-*.xml
+/.codex/
+.codex/
+codex-auth.json
+openai-auth.json
+auth.json
+.env
+.env.*
+hs_err_pid*.log
+replay_pid*.log
+
+# Root-level screenshots, UI dumps, and print collateral
+/*.png
+/*.jpg
+/*.jpeg
+/*.xml
+/play-store-*/
 
 # Gradle generated files
 .gradle/
