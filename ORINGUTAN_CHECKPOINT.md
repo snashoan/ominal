@@ -1,148 +1,83 @@
 # Ominal / Oringutan Checkpoint
 
-Date: 2026-06-24
+Date: 2026-07-13 13:45 IST
 
-## Current Winning Runtime
+## Objective
 
-- Device: `O7ON59OZEY7LOVQG`
-- Android package: `com.termux`
-- Termux app uid after reinstall: `u0_a662`
-- Codename still visible in app: `Oringutan`
-- Working runtime path: Termux wrapper -> `proot-distro` Ubuntu -> npm-installed Codex.
+Replace the retired Android-native Codex provider with a verified arm64 PRoot
+Ubuntu runtime using the normal npm Codex package, then wire login and display
+to that runtime on Raphael.
 
-Termux command now works:
+## Repository State
 
-```sh
-/data/user/0/com.termux/files/usr/bin/codex --version
-# codex-cli 0.142.0
-```
+- Workspace: `C:\Users\saura\skynet\termux-app`
+- Branch: `ominal/main`
+- Last pushed commit before this change: `08cd9919`
+- Final APK: `app/build/outputs/apk/debug/ominal-app_apt-android-7-debug_arm64-v8a.apk`
+- Build, shell syntax checks, and `git diff --check` pass.
+- The current runtime replacement is ready to commit and push.
 
-The old native Android Codex binary was kept as backup:
+Implemented:
 
-```sh
-/data/user/0/com.termux/files/usr/bin/codex-native-android
-```
+- Bundled, checksum-verified arm64 PRoot and normalized Ubuntu Base seed assets.
+- Resumable, checksum-verified Node `24.15.0` and Codex `0.144.1` npm downloads.
+- Offline npm installation of Codex and its Linux arm64 package inside Ubuntu.
+- Atomic rootfs replacement, readiness markers, retry-safe provisioning, and a
+  2 GB preflight free-space requirement.
+- Persistent app-private Codex home bound to `/root/.codex`, preserving login
+  state across rootfs upgrades.
+- Minimal display packages only; apt and npm caches are removed after setup.
+- Runtime gating for chat, login, and display.
+- Arm64-only APK packaging.
+- Removal of the old native Codex build/install tools and on-device cleanup of
+  legacy `codex.real` and `codex-aarch64` files.
+- Display health recovery, phone-shaped X11 geometry, hidden pointer, and longer
+  cold-start polling.
 
-The active wrapper is:
+## Device Validation
 
-```sh
-/data/user/0/com.termux/files/usr/bin/codex
-```
+- Device: Raphael / Redmi K20 Pro (`raphaelin`)
+- Last verified wireless ADB endpoint: `10.91.157.55:42701`
+- Android package: `com.ominal`
+- ABI: `arm64-v8a`
+- App UID: `u0_a258` / numeric UID `10258`
 
-Source copy:
-
-```text
-C:\Users\saura\skynet\termux-app\tools\ominal-proot-codex-wrapper.sh
-```
-
-## Auth / Config
-
-Local Codex auth/config from `C:\Users\saura\.codex` was copied to:
-
-```sh
-/data/user/0/com.termux/files/home/.codex/auth.json
-/data/user/0/com.termux/files/home/.codex/config.toml
-/root/.codex/auth.json          # inside proot Ubuntu
-/root/.codex/config.toml        # inside proot Ubuntu
-```
-
-Temporary ADB staging files were removed after copy.
-
-## Verified Direct CLI
-
-This command succeeded through Termux and proot:
-
-```sh
-codex exec --skip-git-repo-check -- "reply with exactly: ominal-ok" </dev/null
-```
-
-Observed output:
+Validated on the final installed APK:
 
 ```text
-ominal-ok
+Runtime marker: ominal-ubuntu-24.04.4-node-24.15.0-codex-0.144.1-display-v2
+Node: v24.15.0
+npm: 11.12.1
+Codex: codex-cli 0.144.1
+Codex login state: Not logged in (expected before user sign-in)
+dpkg --audit: clean
+Guest HOME: /root
+Display HTTP health: 200
+Auth endpoint connectivity: 403 (reachable; unauthenticated root response)
+Runtime rootfs after cache cleanup: approximately 1.2 GB
 ```
 
-## Verified UI Path
+The persistent `/root/.codex` bind was verified by creating a guest-side probe,
+observing it at `files/home/.ominal/codex/`, and removing it. Display recovery
+was verified by killing websockify, restarting the display, and receiving HTTP
+200 after the cold-start window. The X11 shell rendered at phone geometry with
+no mouse pointer.
 
-Rebuilt and installed APK:
+The temporary device-idle whitelist was removed and both display and auth-host
+network access were revalidated afterward.
+
+The previously working runtime remains preserved at:
 
 ```text
-C:\Users\saura\skynet\termux-app\app\build\outputs\apk\debug\termux-app_apt-android-7-debug_arm64-v8a.apk
+/data/data/com.ominal/files/home/.ominal/runtime.pre-clean-test
 ```
 
-The app UI invoked Codex successfully. Visible completed turn:
+It can be removed in a later storage-cleanup pass after the user has completed
+sign-in and normal interactive use testing.
 
-```text
-user: hiii
-codex: Hi. What would you like to work on?
-```
+## Remaining Manual Step
 
-The UI bubble showed Codex running as:
-
-```text
-OpenAI Codex v0.142.0
-workdir: /root
-provider: openai
-sandbox: danger-full-access
-```
-
-At checkpoint time, a second UI prompt was active:
-
-```text
-user: make me game
-status: Running through Oringutan agent adapter...
-```
-
-Process table showed:
-
-```text
-com.termux -> proot -> node -> codex
-```
-
-## Source Changes In Play
-
-- `app/src/main/java/com/termux/app/OringutanActivity.java`
-  - Chat UI frontend.
-  - Bubbles and input are selectable/copyable.
-  - Adapter calls `codex exec --skip-git-repo-check -- "$prompt" </dev/null`.
-- `app/src/main/AndroidManifest.xml`
-  - Launcher points to `OringutanActivity`.
-- `app/src/main/res/values/strings.xml`
-  - Oringutan UI strings.
-- `app/build.gradle`
-  - Debug versionCode bumped for reinstall.
-- `tools/ominal-proot-codex-bootstrap.sh`
-  - Installs proot Ubuntu, Node 22, npm Codex.
-- `tools/ominal-proot-codex-wrapper.sh`
-  - Termux `codex` wrapper into proot Ubuntu.
-
-## Native Android Binary Track
-
-Native Android Codex binary previously ran `--version`, but `codex exec` failed on Android file locking. A source patch was added:
-
-```text
-C:\Users\saura\skynet\codex\codex-rs\core\src\installation_id.rs
-```
-
-The local native rebuild is not the current winning path because vendored OpenSSL cross-build from Windows needs more Perl/build-system cleanup. Keep this as later optimization only.
-
-## Resume Commands
-
-Check device:
-
-```powershell
-$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-& $adb devices -l
-```
-
-Check Codex wrapper:
-
-```powershell
-& $adb -s O7ON59OZEY7LOVQG shell "run-as com.termux sh -lc 'export PREFIX=/data/user/0/com.termux/files/usr; export HOME=/data/user/0/com.termux/files/home; export PATH=$PREFIX/bin:/system/bin; codex --version'"
-```
-
-Launch UI:
-
-```powershell
-& $adb -s O7ON59OZEY7LOVQG shell am start -W -n com.termux/.app.OringutanActivity
-```
+Complete `Sign in with ChatGPT` on the phone. The app launches
+`codex login --device-auth` through the PRoot-backed terminal and stores the
+result in the persistent app-private Codex home. No device code was captured in
+logs during automated validation.

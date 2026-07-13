@@ -75,6 +75,12 @@ if [ ! -d "$novnc_web" ]; then
   exit 70
 fi
 
+if pgrep -f "[w]ebsockify.*6080" >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+  if ! curl --fail --silent --max-time 2 http://127.0.0.1:6080/vnc_lite.html >/dev/null 2>&1; then
+    pkill -f "[w]ebsockify.*6080" 2>/dev/null || true
+  fi
+fi
+
 if ! pgrep -f "[w]ebsockify.*6080" >/dev/null 2>&1; then
   nohup websockify --web "$novnc_web" 127.0.0.1:6080 127.0.0.1:5900 \
     >"$display_dir/websockify.log" 2>&1 &
