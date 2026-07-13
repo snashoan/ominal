@@ -2,10 +2,12 @@ package com.ominal.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.pm.ActivityInfo;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.res.ColorStateList;
 import android.database.Cursor;
 import android.graphics.Canvas;
@@ -35,11 +37,14 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.webkit.WebChromeClient;
+import android.webkit.JavascriptInterface;
+import android.webkit.ConsoleMessage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -92,19 +97,21 @@ public final class OringutanActivity extends AppCompatActivity {
     private static final String LOG_TAG = "OringutanActivity";
 
     private static final String PREFS_NAME = "ominal_state";
-    private static final String PREF_SIGNED_IN = "signed_in";
-    private static final String PREF_ACTIVE_SKIN = "active_skin";
+    private static final String PREF_ACCOUNT_PROMPTED = "account_prompted";
     private static final String PREF_ACTIVE_CHAT_ID = "active_chat_id";
     private static final String CHAT_ROOT_NAME = ".ominal/chats";
     private static final String UI_CONFIG_FILE_NAME = ".ominal/ui.properties";
     private static final String UI_RC_FILE_NAME = ".ominalrc";
+    private static final String UI_CONFIG_VERSION = "dev-black-v1";
     private static final String ATTACHMENTS_DIR_NAME = "attachments";
     private static final String DISPLAY_DIR_NAME = "display";
-    private static final String DISPLAY_URL = "http://127.0.0.1:6080/vnc_lite.html?autoconnect=true&reconnect=true&path=websockify&resize=scale&view_only=false&show_dot=false&quality=6&compression=6";
+    private static final String DISPLAY_URL = "http://127.0.0.1:6080/ominal.html";
     private static final String DISPLAY_START_COMMAND = "command -v ominal-display-start >/dev/null 2>&1 && ominal-display-start || printf 'Install $PREFIX/bin/ominal-display-start first.\\n'";
     private static final int DISPLAY_HEALTH_RETRIES = 30;
     private static final int DISPLAY_HEALTH_RETRY_DELAY_MS = 300;
-    private static final String CODEX_LOGIN_TERMINAL_NAME = "ominal-codex-login";
+    private static final String AUTH_DIR_NAME = ".ominal/auth";
+    private static final String AUTH_LOG_NAME = "device-login.log";
+    private static final String AUTH_RESULT_NAME = "device-login.result";
     private static final String NODE_VERSION = "24.15.0";
     private static final String CODEX_VERSION = "0.144.1";
     private static final String PROOT_ASSET = "runtime/archives/proot-android-aarch64.tgz";
@@ -123,14 +130,6 @@ public final class OringutanActivity extends AppCompatActivity {
     private static final long MIN_RUNTIME_FREE_BYTES = 2L * 1024L * 1024L * 1024L;
     private static final String DISPLAY_USER_INPUT_MARKER = "OMINAL_NEEDS_USER_INPUT";
     private static final String DISPLAY_OPEN_MARKER = "OMINAL_OPEN_DISPLAY";
-    private static final String CHATGPT_PACKAGE = "com.openai.chatgpt";
-    private static final String GPTMOBILE_PACKAGE = "dev.chungjungsoo.gptmobile";
-    private static final String[] CHAT_SHELL_PACKAGES = new String[]{
-        CHATGPT_PACKAGE,
-        GPTMOBILE_PACKAGE
-    };
-    private static final String CHATGPT_STORE_URI = "market://details?id=" + CHATGPT_PACKAGE;
-    private static final String CHATGPT_WEB_URI = "https://play.google.com/store/apps/details?id=" + CHATGPT_PACKAGE;
     private static final String HISTORY_FILE_NAME = "history.jsonl";
     private static final String META_FILE_NAME = "meta.json";
     private static final int REQUEST_ATTACH_FILE = 1001;
@@ -138,33 +137,18 @@ public final class OringutanActivity extends AppCompatActivity {
     private static final int MODE_TERMINAL = 1;
     private static final int MODE_DISPLAY = 2;
 
-    private static final int COLOR_INK = Color.rgb(25, 28, 27);
-    private static final int COLOR_MUTED = Color.rgb(87, 96, 93);
-    private static final int COLOR_CANVAS = Color.rgb(8, 8, 9);
-    private static final int COLOR_PANEL = Color.rgb(16, 17, 18);
-    private static final int COLOR_ACCENT = Color.rgb(42, 42, 44);
-    private static final int COLOR_ACCENT_DARK = Color.rgb(20, 20, 21);
-    private static final int COLOR_BORDER = Color.rgb(43, 44, 46);
-    private static final int COLOR_GLASS = Color.argb(232, 21, 22, 24);
-    private static final int COLOR_INPUT_GLASS = Color.rgb(30, 31, 33);
+    private static final int COLOR_CANVAS = Color.BLACK;
+    private static final int COLOR_PANEL = Color.BLACK;
+    private static final int COLOR_ACCENT = Color.rgb(31, 31, 33);
+    private static final int COLOR_ACCENT_DARK = Color.BLACK;
+    private static final int COLOR_BORDER = Color.rgb(44, 44, 46);
+    private static final int COLOR_INPUT_GLASS = Color.rgb(18, 18, 19);
 
     private static final BrandSkin[] BRAND_SKINS = new BrandSkin[]{
         new BrandSkin("codex", "Codex", "Codex", "Ask, build, ship.",
             COLOR_CANVAS, COLOR_PANEL, Color.rgb(244, 245, 247),
-            Color.rgb(150, 153, 158), Color.rgb(46, 47, 49), Color.rgb(28, 28, 30),
-            Color.rgb(38, 39, 41), Color.rgb(6, 6, 7), Color.rgb(244, 245, 247)),
-        new BrandSkin("local", "Local agent", "Local", "Run a local executable agent.",
-            COLOR_CANVAS, COLOR_PANEL, Color.rgb(244, 245, 247),
-            Color.rgb(150, 153, 158), Color.rgb(52, 53, 55), Color.rgb(28, 28, 30),
-            Color.rgb(38, 39, 41), Color.rgb(6, 6, 7), Color.rgb(244, 245, 247)),
-        new BrandSkin("ssh", "SSH agent", "SSH", "Use a remote shell-backed agent.",
-            COLOR_CANVAS, COLOR_PANEL, Color.rgb(244, 245, 247),
-            Color.rgb(150, 153, 158), Color.rgb(52, 53, 55), Color.rgb(28, 28, 30),
-            Color.rgb(38, 39, 41), Color.rgb(6, 6, 7), Color.rgb(244, 245, 247)),
-        new BrandSkin("custom", "Custom", "Custom", "Bring your own adapter.",
-            COLOR_CANVAS, COLOR_PANEL, Color.rgb(244, 245, 247),
-            Color.rgb(150, 153, 158), Color.rgb(52, 53, 55), Color.rgb(28, 28, 30),
-            Color.rgb(38, 39, 41), Color.rgb(6, 6, 7), Color.rgb(244, 245, 247))
+            Color.rgb(150, 153, 158), COLOR_ACCENT, COLOR_ACCENT_DARK,
+            COLOR_BORDER, Color.BLACK, Color.rgb(244, 245, 247))
     };
 
     private static final String CODEX_ADAPTER_SCRIPT =
@@ -182,7 +166,7 @@ public final class OringutanActivity extends AppCompatActivity {
         "elif command -v ominal-codex >/dev/null 2>&1; then\n" +
         "  ominal-codex \"$prompt\" </dev/null\n" +
         "else\n" +
-        "  printf 'Ominal provider commands are not installed yet. Restart Ominal or run ominal-codex-setup in the terminal.\\n'\n" +
+        "  printf 'Ominal is not ready yet. Restart the app and try again.\\n'\n" +
         "fi";
 
     private final ArrayList<ChatSession> mSessions = new ArrayList<>();
@@ -207,16 +191,15 @@ public final class OringutanActivity extends AppCompatActivity {
     private TextView mStatusView;
     private WebView mDisplayWebView;
     private View mDisplayPane;
-    private View mDisplayHomeOverlay;
     private FrameLayout mDisplayWarmHost;
     private TextView mDisplayAvailabilityView;
     private Button mChatModeButton;
     private Button mTerminalModeButton;
     private Button mDisplayModeButton;
-    private Button mHeaderDisplayButton;
-    private Button mDisplayCloseButton;
+    private ImageButton mHeaderDisplayButton;
+    private ImageButton mDisplayCloseButton;
     private Button mSwapButton;
-    private Button mProviderButton;
+    private ImageButton mAccountButton;
     private Button mTerminalToolButton;
     private Button mDisplayToolButton;
 
@@ -233,10 +216,13 @@ public final class OringutanActivity extends AppCompatActivity {
     private boolean mReloadDisplayWhenReady;
     private boolean mDisplayReady;
     private boolean mDisplayUrlLoaded;
-    private boolean mDisplayHomeVisible = true;
     private boolean mPendingCodexDeviceLogin;
+    private boolean mPendingApiKeyLogin;
     private boolean mCodexAccountDialogVisible;
+    private AlertDialog mCodexAccountDialog;
     private boolean mCodexAuthRefreshInFlight;
+    private boolean mCodexSignedIn;
+    private volatile long mAuthFlowGeneration;
     private int mDisplayRetryCount;
     private long mDisplayLastStartedAt;
     private String mDisplayStartupDetail = "";
@@ -249,16 +235,14 @@ public final class OringutanActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         Logger.logDebug(LOG_TAG, "onCreate");
         super.onCreate(savedInstanceState);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0)
+            WebView.setWebContentsDebuggingEnabled(true);
 
         mPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        mSkin = findSkin(mPrefs.getString(PREF_ACTIVE_SKIN, BRAND_SKINS[0].id));
+        mSkin = BRAND_SKINS[0];
         mUi = loadUiSpec();
         applySystemBars();
-        if (!mPrefs.getBoolean(PREF_SIGNED_IN, false)) {
-            setContentView(createLoginView());
-            return;
-        }
-
         startWorkspace();
     }
 
@@ -268,12 +252,12 @@ public final class OringutanActivity extends AppCompatActivity {
         OminalAppSharedPreferences preferences = OminalAppSharedPreferences.build(this, true);
         if (preferences == null) {
             setInputEnabled(false);
-            setStatus("Ominal preferences unavailable");
-            addTransientSystemMessage("Ominal preferences could not be loaded. Check package identity and app data.");
+            setStatus("Something went wrong");
+            addTransientSystemMessage("Ominal couldn't open its saved settings. Restart the app.");
             return;
         }
 
-        setStatus("Preparing executable area");
+        setStatus("Getting things ready");
         setInputEnabled(false);
         OminalInstaller.setupBootstrapIfNeeded(this, () -> {
             mBootstrapReady = true;
@@ -282,7 +266,7 @@ public final class OringutanActivity extends AppCompatActivity {
             ensureProviderCommands();
             mUi = loadUiSpec();
             loadOrCreateSessions();
-            setStatus("Preparing Linux runtime");
+            setStatus("Finishing setup");
             ensureRuntimeReady(() -> {
                 mRuntimeReady = true;
                 setInputEnabled(true);
@@ -293,6 +277,12 @@ public final class OringutanActivity extends AppCompatActivity {
                     mPendingCodexDeviceLogin = false;
                     if (mRootFrame != null) mRootFrame.postDelayed(this::startCodexDeviceLogin, 260);
                     else startCodexDeviceLogin();
+                } else if (mPendingApiKeyLogin) {
+                    mPendingApiKeyLogin = false;
+                    if (mRootFrame != null) mRootFrame.postDelayed(this::showApiKeyDialog, 260);
+                    else showApiKeyDialog();
+                } else {
+                    refreshCodexAuthStatus(true);
                 }
             });
         });
@@ -301,10 +291,18 @@ public final class OringutanActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        setDisplayFullscreen(mMode == MODE_DISPLAY);
         if (mBootstrapReady) {
             refreshRuntimeDns();
-            refreshCodexAuthStatus();
+            refreshCodexAuthStatus(false);
         }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && mMode == MODE_DISPLAY) setDisplayFullscreen(true);
     }
 
     @Override
@@ -315,132 +313,357 @@ public final class OringutanActivity extends AppCompatActivity {
             handleAttachmentResult(data);
     }
 
-    private View createLoginView() {
-        BrandSkin skin = skin();
-        UiSpec ui = ui();
-        int panelWidth = Math.min(getResources().getDisplayMetrics().widthPixels - dp(48), dp(480));
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(dp(24), dp(24), dp(24), dp(24));
-        root.setBackgroundColor(ui.app.fill);
-
-        View topSpace = new View(this);
-        root.addView(topSpace, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
-
-        View mark = new BrandMarkView(this, skin, false);
-        LinearLayout.LayoutParams markParams = new LinearLayout.LayoutParams(dp(72), dp(72));
-        markParams.setMargins(0, 0, 0, dp(22));
-        root.addView(mark, markParams);
-
-        TextView title = new TextView(this);
-        title.setText(skin.name);
-        title.setGravity(Gravity.CENTER);
-        title.setTextColor(ui.ink);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextSize(32);
-        root.addView(title, new LinearLayout.LayoutParams(panelWidth,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        TextView subtitle = new TextView(this);
-        subtitle.setText(skin.tagline);
-        subtitle.setGravity(Gravity.CENTER);
-        subtitle.setTextColor(ui.muted);
-        subtitle.setTextSize(15);
-        subtitle.setLineSpacing(0, 1.08f);
-        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(panelWidth,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        subtitleParams.setMargins(0, dp(10), 0, dp(22));
-        root.addView(subtitle, subtitleParams);
-
-        View switcher = createProviderDropdown(true);
-        LinearLayout.LayoutParams switcherParams = new LinearLayout.LayoutParams(panelWidth,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        switcherParams.setMargins(0, 0, 0, dp(26));
-        root.addView(switcher, switcherParams);
-
-        Button signIn = createAccentButton("Sign in with ChatGPT");
-        signIn.setOnClickListener(v -> {
-            mPendingCodexDeviceLogin = true;
-            completeLogin();
-        });
-        LinearLayout.LayoutParams signInParams = new LinearLayout.LayoutParams(panelWidth, dp(50));
-        signInParams.setMargins(0, 0, 0, dp(10));
-        root.addView(signIn, signInParams);
-
-        Button continueWithoutSignIn = createSecondaryButton("Continue without signing in");
-        continueWithoutSignIn.setOnClickListener(v -> completeLogin());
-        LinearLayout.LayoutParams continueParams = new LinearLayout.LayoutParams(panelWidth, dp(46));
-        continueParams.setMargins(0, 0, 0, dp(18));
-        root.addView(continueWithoutSignIn, continueParams);
-
-        View bottomSpace = new View(this);
-        root.addView(bottomSpace, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
-
-        return root;
-    }
-
-    private void completeLogin() {
-        mPrefs.edit()
-            .putBoolean(PREF_SIGNED_IN, true)
-            .putString(PREF_ACTIVE_SKIN, skin().id)
-            .apply();
-        startWorkspace();
-    }
-
     private void showCodexAccountDialog() {
         if (mCodexAccountDialogVisible) return;
         mCodexAccountDialogVisible = true;
 
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(24), dp(22), dp(24), dp(10));
+        content.setBackgroundColor(Color.BLACK);
+
+        content.addView(dialogTitle(mCodexSignedIn ? "Codex account" : "Connect Codex"),
+            new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView detail = dialogBody(mCodexSignedIn
+            ? "This device is signed in and ready to use."
+            : "Use your ChatGPT account or an OpenAI API key.");
+        LinearLayout.LayoutParams detailParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        detailParams.setMargins(0, dp(8), 0, dp(20));
+        content.addView(detail, detailParams);
+
+        Button chatGpt = createAccentButton(mCodexSignedIn ? "Check sign-in" : "Continue with ChatGPT");
+        chatGpt.setOnClickListener(v -> {
+            dismissCodexAccountDialog();
+            if (mCodexSignedIn) refreshCodexAuthStatus(false);
+            else startCodexDeviceLogin();
+        });
+        content.addView(chatGpt, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
+
+        Button apiKey = createSecondaryButton(mCodexSignedIn ? "Use another API key" : "Use an API key");
+        apiKey.setOnClickListener(v -> {
+            dismissCodexAccountDialog();
+            showApiKeyDialog();
+        });
+        LinearLayout.LayoutParams apiParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        apiParams.setMargins(0, dp(10), 0, 0);
+        content.addView(apiKey, apiParams);
+
         AlertDialog dialog = new AlertDialog.Builder(this)
-            .setTitle("Connect Codex")
-            .setMessage("Sign in in your browser, then return to Ominal.")
-            .setPositiveButton("Sign in with ChatGPT", (ignored, which) -> startCodexDeviceLogin())
-            .setNeutralButton("Check status", (ignored, which) -> refreshCodexAuthStatus())
-            .setNegativeButton("Cancel", null)
+            .setView(content)
+            .setNegativeButton("Close", null)
             .create();
-        dialog.setOnDismissListener(ignored -> mCodexAccountDialogVisible = false);
+        mCodexAccountDialog = dialog;
+        dialog.setOnDismissListener(ignored -> {
+            mCodexAccountDialogVisible = false;
+            mCodexAccountDialog = null;
+        });
         dialog.show();
+        styleBlackDialog(dialog);
     }
 
     private void startCodexDeviceLogin() {
         if (!mBootstrapReady || !mRuntimeReady || mActiveSession == null) {
             mPendingCodexDeviceLogin = true;
+            setStatus("Finishing setup");
             return;
         }
 
         ensureProviderCommands();
         refreshRuntimeDns();
-        String commandLine = "export PREFIX=" + shellQuote(OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH) + "; "
-            + "export HOME=" + shellQuote(OminalConstants.OMINAL_HOME_DIR_PATH) + "; "
-            + "export PATH=\"$PREFIX/bin:/system/bin:$PATH\"; "
-            + "codex login --device-auth; "
-            + "printf '\\nReturn to Ominal after sign-in.\\n'; exec \"$PREFIX/bin/bash\" -i";
+        long generation = ++mAuthFlowGeneration;
+        showDeviceLoginDialog(generation);
+    }
 
-        Intent executeIntent = new Intent(OMINAL_SERVICE.ACTION_SERVICE_EXECUTE);
-        executeIntent.setClass(this, OminalService.class);
-        executeIntent.setData(Uri.fromFile(new File(OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH, "sh")));
-        executeIntent.putExtra(OMINAL_SERVICE.EXTRA_ARGUMENTS, new String[]{"-lc", commandLine});
-        executeIntent.putExtra(OMINAL_SERVICE.EXTRA_WORKDIR, mActiveSession.workspacePath);
-        executeIntent.putExtra(OMINAL_SERVICE.EXTRA_RUNNER, ExecutionCommand.Runner.TERMINAL_SESSION.getName());
-        executeIntent.putExtra(OMINAL_SERVICE.EXTRA_SHELL_NAME, CODEX_LOGIN_TERMINAL_NAME);
-        executeIntent.putExtra(OMINAL_SERVICE.EXTRA_SHELL_CREATE_MODE, ShellCreateMode.ALWAYS.getMode());
-        executeIntent.putExtra(OMINAL_SERVICE.EXTRA_COMMAND_LABEL, "Connect Codex");
-        executeIntent.putExtra(OMINAL_SERVICE.EXTRA_SESSION_ACTION,
-            Integer.toString(OMINAL_SERVICE.VALUE_EXTRA_SESSION_ACTION_SWITCH_TO_NEW_SESSION_AND_OPEN_ACTIVITY));
-        try {
-            startService(executeIntent);
-            setStatus("Waiting for sign-in");
-        } catch (Exception e) {
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to start Codex device login", e);
-            addTransientSystemMessage("Could not start Codex sign-in.");
+    private void dismissCodexAccountDialog() {
+        if (mCodexAccountDialog != null) mCodexAccountDialog.dismiss();
+    }
+
+    private void showDeviceLoginDialog(long generation) {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(24), dp(22), dp(24), dp(10));
+        content.setBackgroundColor(Color.BLACK);
+        content.addView(dialogTitle("Sign in with ChatGPT"), new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView status = dialogBody("Preparing a secure sign-in...");
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        statusParams.setMargins(0, dp(8), 0, dp(16));
+        content.addView(status, statusParams);
+
+        TextView codeView = new TextView(this);
+        codeView.setTextColor(ui().ink);
+        codeView.setTextSize(22);
+        codeView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        codeView.setGravity(Gravity.CENTER);
+        codeView.setTextIsSelectable(true);
+        codeView.setPadding(dp(14), dp(16), dp(14), dp(16));
+        codeView.setBackground(makeRoundedDrawable(Color.rgb(12, 12, 12), ui().border, dp(12)));
+        codeView.setVisibility(View.GONE);
+        content.addView(codeView, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        Button openBrowser = createAccentButton("Open browser");
+        openBrowser.setEnabled(false);
+        openBrowser.setAlpha(0.45f);
+        LinearLayout.LayoutParams openParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(50));
+        openParams.setMargins(0, dp(14), 0, 0);
+        content.addView(openBrowser, openParams);
+
+        Button copyCode = createSecondaryButton("Copy code");
+        copyCode.setEnabled(false);
+        copyCode.setVisibility(View.GONE);
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        copyParams.setMargins(0, dp(10), 0, 0);
+        content.addView(copyCode, copyParams);
+
+        Button cancelSignIn = createSecondaryButton("Cancel sign-in");
+        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        cancelParams.setMargins(0, dp(10), 0, 0);
+        content.addView(cancelSignIn, cancelParams);
+
+        final String[] currentUrl = new String[1];
+        final String[] currentCode = new String[1];
+        openBrowser.setOnClickListener(v -> {
+            if (!TextUtils.isEmpty(currentUrl[0]))
+                startExternalActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl[0])));
+        });
+        copyCode.setOnClickListener(v -> {
+            if (!TextUtils.isEmpty(currentCode[0])) {
+                copyToClipboard("Codex sign-in code", currentCode[0]);
+                Toast.makeText(this, "Code copied", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setView(content)
+            .setNegativeButton("Hide", null)
+            .create();
+        cancelSignIn.setOnClickListener(v -> {
+            ++mAuthFlowGeneration;
+            new Thread(() -> runCodexAuthAction("cancel"), "ominal-auth-cancel").start();
+            status.setText("Sign-in cancelled.");
+            openBrowser.setEnabled(false);
+            openBrowser.setAlpha(0.45f);
+            copyCode.setEnabled(false);
+            dialog.dismiss();
+        });
+        dialog.show();
+        styleBlackDialog(dialog);
+
+        setStatus("Signing in");
+        new Thread(() -> monitorCodexDeviceLogin(generation, dialog, status, codeView,
+            openBrowser, copyCode, currentUrl, currentCode), "ominal-device-login").start();
+    }
+
+    private void monitorCodexDeviceLogin(long generation, AlertDialog dialog, TextView status,
+                                          TextView codeView, Button openBrowser, Button copyCode,
+                                          String[] currentUrl, String[] currentCode) {
+        if (!runCodexAuthAction("start")) {
+            runOnUiThread(() -> {
+                if (generation != mAuthFlowGeneration) return;
+                status.setText("Sign-in could not start. Try again.");
+                setStatus("Sign-in failed");
+            });
+            return;
+        }
+
+        File authDirectory = new File(OminalConstants.OMINAL_HOME_DIR_PATH, AUTH_DIR_NAME);
+        File logFile = new File(authDirectory, AUTH_LOG_NAME);
+        File resultFile = new File(authDirectory, AUTH_RESULT_NAME);
+
+        for (int attempt = 0; attempt < 300 && generation == mAuthFlowGeneration; attempt++) {
+            String log = readFileQuietly(logFile);
+            String authUrl = CodexAuthParser.findUrl(log);
+            String deviceCode = CodexAuthParser.findDeviceCode(log);
+            String result = readFileQuietly(resultFile).trim();
+
+            runOnUiThread(() -> {
+                if (generation != mAuthFlowGeneration) return;
+                if (!TextUtils.isEmpty(authUrl)) {
+                    currentUrl[0] = authUrl;
+                    openBrowser.setEnabled(true);
+                    openBrowser.setAlpha(1f);
+                }
+                if (!TextUtils.isEmpty(deviceCode)) {
+                    currentCode[0] = deviceCode;
+                    codeView.setText(deviceCode);
+                    codeView.setVisibility(View.VISIBLE);
+                    copyCode.setEnabled(true);
+                    copyCode.setVisibility(View.VISIBLE);
+                }
+                if (!TextUtils.isEmpty(authUrl) || !TextUtils.isEmpty(deviceCode))
+                    status.setText("Open the browser and approve this device.");
+            });
+
+            if (!result.isEmpty()) {
+                boolean signedIn = "0".equals(result);
+                runOnUiThread(() -> {
+                    if (generation != mAuthFlowGeneration) return;
+                    mCodexSignedIn = signedIn;
+                    styleAccountButton();
+                    status.setText(signedIn ? "Signed in. You can close this window."
+                        : "Sign-in did not complete. Try again.");
+                    setStatus(signedIn ? "Signed in" : "Sign-in failed");
+                    openBrowser.setEnabled(false);
+                    openBrowser.setAlpha(0.45f);
+                    copyCode.setEnabled(false);
+                    if (signedIn && dialog.isShowing())
+                        dialog.getWindow().getDecorView().postDelayed(dialog::dismiss, 900);
+                });
+                return;
+            }
+
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
         }
     }
 
-    private void refreshCodexAuthStatus() {
+    private boolean runCodexAuthAction(String action) {
+        String executable = OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/ominal-auth";
+        ExecutionCommand command = new ExecutionCommand(-1,
+            OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/sh",
+            new String[]{"-lc", shellQuote(executable) + " " + shellQuote(action)},
+            null,
+            OminalConstants.OMINAL_HOME_DIR_PATH,
+            ExecutionCommand.Runner.APP_SHELL.getName(),
+            false);
+        command.commandLabel = "Codex sign-in";
+        AppShell.execute(this, command, null, new OminalShellEnvironment(), null, true);
+        Integer exitCode = command.resultData.exitCode;
+        return !command.isStateFailed() && exitCode != null && exitCode == 0;
+    }
+
+    private String readFileQuietly(File file) {
+        if (file == null || !file.isFile()) return "";
+        try {
+            return readFile(file);
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
+    private void showApiKeyDialog() {
+        if (!mRuntimeReady) {
+            mPendingApiKeyLogin = true;
+            setStatus("Finishing setup");
+            return;
+        }
+
+        EditText input = new EditText(this);
+        input.setHint("API key");
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setSelectAllOnFocus(true);
+        input.setTextColor(ui().ink);
+        input.setHintTextColor(ui().muted);
+        input.setTextSize(15);
+        input.setPadding(dp(14), 0, dp(14), 0);
+        input.setBackground(makeRoundedDrawable(Color.rgb(12, 12, 12), ui().border, dp(12)));
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(24), dp(22), dp(24), dp(18));
+        content.setBackgroundColor(Color.BLACK);
+        content.addView(dialogTitle("Use an API key"), new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView detail = dialogBody("The key is stored only in Ominal's private app data.");
+        LinearLayout.LayoutParams detailParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        detailParams.setMargins(0, dp(8), 0, dp(16));
+        content.addView(detail, detailParams);
+        content.addView(input, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
+
+        Button continueButton = createAccentButton("Continue");
+        LinearLayout.LayoutParams continueParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(50));
+        continueParams.setMargins(0, dp(14), 0, 0);
+        content.addView(continueButton, continueParams);
+
+        Button cancelButton = createSecondaryButton("Cancel");
+        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        cancelParams.setMargins(0, dp(10), 0, 0);
+        content.addView(cancelButton, cancelParams);
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(content).create();
+        continueButton.setOnClickListener(v -> {
+            String apiKey = input.getText().toString().trim();
+            if (apiKey.isEmpty()) {
+                Toast.makeText(this, "Enter an API key", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            input.setText("");
+            dialog.dismiss();
+            startCodexApiKeyLogin(apiKey);
+        });
+        cancelButton.setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
+        styleBlackDialog(dialog);
+        input.requestFocus();
+    }
+
+    private void startCodexApiKeyLogin(String apiKey) {
+        setStatus("Signing in");
+        new Thread(() -> {
+            File inputFile = null;
+            boolean signedIn = false;
+            try {
+                inputFile = File.createTempFile("ominal-login-", ".tmp", getCacheDir());
+                writeFile(inputFile, apiKey + "\n");
+                inputFile.setReadable(false, false);
+                inputFile.setWritable(false, false);
+                inputFile.setReadable(true, true);
+                inputFile.setWritable(true, true);
+
+                String path = inputFile.getAbsolutePath();
+                String commandLine = "key_file=" + shellQuote(path)
+                    + "; trap 'rm -f \"$key_file\"' EXIT; "
+                    + "codex login --with-api-key < \"$key_file\"; codex login status";
+                ExecutionCommand command = new ExecutionCommand(-1,
+                    OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/sh",
+                    new String[]{"-lc", commandLine},
+                    null,
+                    mActiveSession == null ? OminalConstants.OMINAL_HOME_DIR_PATH : mActiveSession.workspacePath,
+                    ExecutionCommand.Runner.APP_SHELL.getName(),
+                    false);
+                command.commandLabel = "Sign in";
+                AppShell.execute(this, command, null, new OminalShellEnvironment(), null, true);
+                String output = formatCommandOutput(command).toLowerCase(Locale.ROOT);
+                signedIn = command.resultData.exitCode != null && command.resultData.exitCode == 0
+                    && !requiresCodexLogin(output);
+            } catch (Exception e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Failed to sign in with an API key", e);
+            } finally {
+                deleteQuietly(inputFile);
+            }
+
+            boolean result = signedIn;
+            runOnUiThread(() -> {
+                mCodexSignedIn = result;
+                styleAccountButton();
+                setStatus(result ? "Signed in" : "Sign-in failed");
+                if (!result) addTransientSystemMessage("Sign-in failed. Check the key and try again.");
+            });
+        }, "ominal-api-key-login").start();
+    }
+
+    private void refreshCodexAuthStatus(boolean promptWhenSignedOut) {
         if (!mBootstrapReady || !mRuntimeReady || mActiveSession == null || mCodexAuthRefreshInFlight) return;
         refreshRuntimeDns();
         mCodexAuthRefreshInFlight = true;
@@ -464,7 +687,14 @@ public final class OringutanActivity extends AppCompatActivity {
                 && command.resultData.exitCode != null && command.resultData.exitCode == 0;
             runOnUiThread(() -> {
                 mCodexAuthRefreshInFlight = false;
-                setStatus(signedIn ? "Codex connected" : "Connect Codex");
+                mCodexSignedIn = signedIn;
+                styleAccountButton();
+                setStatus(signedIn ? "Signed in" : "Sign in");
+                if (!signedIn && promptWhenSignedOut
+                    && !mPrefs.getBoolean(PREF_ACCOUNT_PROMPTED, false)) {
+                    mPrefs.edit().putBoolean(PREF_ACCOUNT_PROMPTED, true).apply();
+                    if (mRootFrame != null) mRootFrame.postDelayed(this::showCodexAccountDialog, 240);
+                }
             });
         }).start();
     }
@@ -478,150 +708,9 @@ public final class OringutanActivity extends AppCompatActivity {
             || normalized.contains("sign in once")
             || normalized.contains("auth missing")
             || normalized.contains("no auth")
-            || normalized.contains("unauthenticated");
-    }
-
-    private View createProviderDropdown(boolean centered) {
-        BrandSkin skin = skin();
-        UiSpec ui = ui();
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(6), dp(12), dp(6));
-        row.setBackgroundColor(ui.app.fill);
-
-        TextView label = new TextView(this);
-        label.setText("Agent");
-        label.setTextColor(ui.muted);
-        label.setTextSize(13);
-        label.setTypeface(Typeface.DEFAULT_BOLD);
-        label.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
-            centered ? dp(70) : dp(64), dp(44));
-        row.addView(label, labelParams);
-
-        mProviderButton = createSecondaryButton(skin.name + "  v");
-        mProviderButton.setGravity(Gravity.CENTER_VERTICAL);
-        mProviderButton.setTextSize(15);
-        mProviderButton.setOnClickListener(v -> showProviderPicker());
-        row.addView(mProviderButton, new LinearLayout.LayoutParams(0, dp(44), 1));
-
-        return row;
-    }
-
-    private void showProviderPicker() {
-        String[] labels = new String[BRAND_SKINS.length + 3];
-        for (int i = 0; i < BRAND_SKINS.length; i++) labels[i] = BRAND_SKINS[i].name;
-        labels[BRAND_SKINS.length] = "Connect Codex";
-        labels[BRAND_SKINS.length + 1] = "Open ChatGPT app";
-        labels[BRAND_SKINS.length + 2] = "Share draft to ChatGPT";
-
-        new AlertDialog.Builder(this)
-            .setTitle("Agent")
-            .setSingleChoiceItems(labels, indexOfSkin(skin()), (dialog, which) -> {
-                dialog.dismiss();
-                if (which >= 0 && which < BRAND_SKINS.length) {
-                    selectSkin(BRAND_SKINS[which]);
-                } else if (which == BRAND_SKINS.length) {
-                    showCodexAccountDialog();
-                } else if (which == BRAND_SKINS.length + 1) {
-                    openChatGptApp();
-                } else if (which == BRAND_SKINS.length + 2) {
-                    shareDraftToChatGpt();
-                }
-            })
-            .show();
-    }
-
-    private void showWorkspaceMenu() {
-        String[] labels = new String[]{
-            "Agent",
-            "Terminal",
-            "Display",
-            "Reload UI config",
-            "Copy workspace command",
-            "Open ChatGPT app",
-            "Share draft to ChatGPT"
-        };
-
-        new AlertDialog.Builder(this)
-            .setItems(labels, (dialog, which) -> {
-                dialog.dismiss();
-                if (which == 0) {
-                    showProviderPicker();
-                } else if (which == 1) {
-                    switchMode(mMode == MODE_TERMINAL ? MODE_CHAT : MODE_TERMINAL);
-                } else if (which == 2) {
-                    switchMode(mMode == MODE_DISPLAY ? MODE_CHAT : MODE_DISPLAY);
-                } else if (which == 3) {
-                    reloadUiConfig();
-                } else if (which == 4) {
-                    if (mActiveSession != null) {
-                        copyToClipboard("Ominal workspace", "cd " + shellQuote(mActiveSession.workspacePath));
-                        setStatus("Workspace command copied");
-                    }
-                } else if (which == 5) {
-                    openChatGptApp();
-                } else if (which == 6) {
-                    shareDraftToChatGpt();
-                }
-            })
-            .show();
-    }
-
-    private void openChatGptApp() {
-        if (startInstalledChatShell()) return;
-
-        Toast.makeText(this, "No chat shell app installed", Toast.LENGTH_SHORT).show();
-        Intent storeIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(CHATGPT_STORE_URI));
-        if (!startExternalActivity(storeIntent))
-            startExternalActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(CHATGPT_WEB_URI)));
-    }
-
-    private void shareDraftToChatGpt() {
-        String text = buildChatGptBridgeText();
-        if (TextUtils.isEmpty(text)) {
-            openChatGptApp();
-            return;
-        }
-
-        Intent sendIntent = new Intent(Intent.ACTION_SEND);
-        sendIntent.setType("text/plain");
-        sendIntent.putExtra(Intent.EXTRA_TEXT, text);
-        for (String packageName : CHAT_SHELL_PACKAGES) {
-            sendIntent.setPackage(packageName);
-            if (sendIntent.resolveActivity(getPackageManager()) != null && startExternalActivity(sendIntent)) return;
-        }
-
-        copyToClipboard("Ominal ChatGPT draft", text);
-        Toast.makeText(this, "Draft copied; opening chat app", Toast.LENGTH_SHORT).show();
-        openChatGptApp();
-    }
-
-    private boolean startInstalledChatShell() {
-        for (String packageName : CHAT_SHELL_PACKAGES) {
-            Intent launchIntent = getPackageManager().getLaunchIntentForPackage(packageName);
-            if (launchIntent != null && startExternalActivity(launchIntent))
-                return true;
-        }
-        return false;
-    }
-
-    private String buildChatGptBridgeText() {
-        if (mPromptInput != null) {
-            String draft = mPromptInput.getText().toString().trim();
-            if (!draft.isEmpty()) return draft;
-        }
-
-        if (mActiveSession == null) return "";
-        StringBuilder builder = new StringBuilder();
-        builder.append("Ominal chat: ").append(mActiveSession.title).append('\n')
-            .append("Workspace: ").append(mActiveSession.workspacePath);
-        if (!mActiveSession.messages.isEmpty()) {
-            ChatMessage last = mActiveSession.messages.get(mActiveSession.messages.size() - 1);
-            builder.append("\n\nLatest message:\n").append(last.text);
-        }
-        return builder.toString();
+            || normalized.contains("unauthenticated")
+            || normalized.contains("401 unauthorized")
+            || normalized.contains("missing bearer");
     }
 
     private boolean startExternalActivity(Intent intent) {
@@ -633,44 +722,6 @@ public final class OringutanActivity extends AppCompatActivity {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to start external activity", e);
             return false;
         }
-    }
-
-    private void selectSkin(BrandSkin nextSkin) {
-        if (nextSkin == null || nextSkin == mSkin) return;
-        mSkin = nextSkin;
-        mUi = loadUiSpec();
-        applySystemBars();
-        mPrefs.edit().putString(PREF_ACTIVE_SKIN, nextSkin.id).apply();
-        if (mContentFrame == null) {
-            setContentView(createLoginView());
-            return;
-        }
-
-        setContentView(createContentView());
-        if (mActiveSession != null) {
-            renderChatDrawer();
-            renderHeader();
-            renderMode();
-        }
-        setInputEnabled(mBootstrapReady);
-    }
-
-    private void reloadUiConfig() {
-        mUi = loadUiSpec();
-        applySystemBars();
-        if (mContentFrame == null) {
-            setContentView(createLoginView());
-            return;
-        }
-
-        setContentView(createContentView());
-        if (mActiveSession != null) {
-            renderChatDrawer();
-            renderHeader();
-            renderMode();
-        }
-        setInputEnabled(mBootstrapReady);
-        setStatus("UI config reloaded");
     }
 
     private UiSpec loadUiSpec() {
@@ -729,7 +780,9 @@ public final class OringutanActivity extends AppCompatActivity {
 
     private void ensureDefaultUiProperties() {
         File file = uiConfigFile();
-        if (file.isFile()) return;
+        Properties current = new Properties();
+        loadUiProperties(current, file);
+        if (UI_CONFIG_VERSION.equals(current.getProperty("ui.version"))) return;
         try {
             writeFile(file, defaultUiPropertiesTemplate());
         } catch (IOException e) {
@@ -752,6 +805,9 @@ public final class OringutanActivity extends AppCompatActivity {
                 new File(binDir, "ominal-runtime-install-ubuntu-base"));
             extractRuntimeTool("runtime/ominal-install-display-packages.sh",
                 new File(binDir, "ominal-install-display-packages"));
+            extractRuntimeTool("runtime/ominal-screen-guest.sh",
+                new File(binDir, "ominal-screen-guest"));
+            extractRuntimeTool("runtime/ominal-auth.sh", new File(binDir, "ominal-auth"));
             extractRuntimeTool("runtime/ominal-runtime-bootstrap.sh",
                 new File(binDir, "ominal-runtime-bootstrap"));
             extractRuntimeTool("runtime/ominal-display-start.sh", new File(binDir, "ominal-display-start"));
@@ -772,7 +828,7 @@ public final class OringutanActivity extends AppCompatActivity {
                 Logger.logWarn(LOG_TAG, "Could not remove retired arm64 Codex provider");
         } catch (IOException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to install Ominal PRoot commands", e);
-            addTransientSystemMessage("Codex provider setup commands could not be installed.");
+            addTransientSystemMessage("Ominal couldn't finish setup. Restart the app.");
         }
     }
 
@@ -800,7 +856,7 @@ public final class OringutanActivity extends AppCompatActivity {
         new Thread(() -> {
             try {
                 if (!supportsArm64())
-                    throw new IOException("Ominal's Linux runtime currently requires an arm64-v8a device.");
+                    throw new IOException("This phone isn't supported yet.");
 
                 String bootstrap = OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/ominal-runtime-bootstrap";
                 if (runRuntimeShell(shellQuote(bootstrap) + " --verify", "Verify Ominal runtime")) {
@@ -812,7 +868,7 @@ public final class OringutanActivity extends AppCompatActivity {
                 ensureDirectory(runtimeRoot.getAbsolutePath());
                 long usableBytes = runtimeRoot.getUsableSpace();
                 if (usableBytes > 0 && usableBytes < MIN_RUNTIME_FREE_BYTES)
-                    throw new IOException("At least 2 GB of free storage is required to prepare the Linux runtime.");
+                    throw new IOException("Ominal needs at least 2 GB of free space to finish setup.");
 
                 File downloads = new File(runtimeRoot, "downloads");
                 ensureDirectory(downloads.getAbsolutePath());
@@ -822,15 +878,15 @@ public final class OringutanActivity extends AppCompatActivity {
                 File codexCore = new File(downloads, "codex-" + CODEX_VERSION + ".tgz");
                 File codexArm64 = new File(downloads, "codex-" + CODEX_VERSION + "-linux-arm64.tgz");
 
-                updateRuntimeStatus("Preparing Linux base");
+                updateRuntimeStatus("Getting things ready");
                 copyRuntimeAsset(PROOT_ASSET, proot, PROOT_SHA256);
                 copyRuntimeAsset(ROOTFS_ASSET, rootfs, ROOTFS_SHA256);
-                downloadRuntimeArtifact(NODE_URL, node, NODE_SHA256, "Downloading Node");
+                downloadRuntimeArtifact(NODE_URL, node, NODE_SHA256, "Downloading tools");
                 downloadRuntimeArtifact(CODEX_CORE_URL, codexCore, CODEX_CORE_SHA256, "Downloading Codex");
                 downloadRuntimeArtifact(CODEX_ARM64_URL, codexArm64, CODEX_ARM64_SHA256,
-                    "Downloading Codex runtime");
+                    "Downloading Codex");
 
-                updateRuntimeStatus("Installing Linux workspace");
+                updateRuntimeStatus("Finishing setup");
                 String installCommand = shellQuote(bootstrap) + " "
                     + shellQuote(proot.getAbsolutePath()) + " "
                     + shellQuote(rootfs.getAbsolutePath()) + " "
@@ -854,14 +910,21 @@ public final class OringutanActivity extends AppCompatActivity {
                     mRuntimeReady = false;
                     getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                     setInputEnabled(false);
-                    setStatus("Runtime setup failed");
-                    String detail = e.getMessage();
-                    addTransientSystemMessage(detail == null || detail.trim().isEmpty()
-                        ? "Linux runtime setup failed. Restart Ominal to retry."
-                        : detail.trim() + " Restart Ominal to retry.");
+                    setStatus("Setup paused");
+                    addTransientSystemMessage(runtimeSetupMessage(e));
                 });
             }
         }, "ominal-runtime-setup").start();
+    }
+
+    private String runtimeSetupMessage(Exception error) {
+        String detail = error == null ? null : error.getMessage();
+        if (detail != null) {
+            detail = detail.trim();
+            if (detail.startsWith("Ominal needs at least 2 GB")
+                || detail.startsWith("This phone isn't supported")) return detail;
+        }
+        return "Setup couldn't finish. Check your connection and free space, then restart Ominal.";
     }
 
     private void finishRuntimeSetup(Runnable whenReady) {
@@ -890,7 +953,12 @@ public final class OringutanActivity extends AppCompatActivity {
             ExecutionCommand.Runner.APP_SHELL.getName(),
             false);
         command.commandLabel = label;
-        AppShell.execute(this, command, null, new OminalShellEnvironment(), null, true);
+        HashMap<String, String> environment = new HashMap<>();
+        String dnsServers = getRuntimeDnsServerList();
+        if (!dnsServers.isEmpty()) environment.put("OMINAL_DNS_SERVERS", dnsServers);
+        String aptHostAddresses = getRuntimeHostAddresses("ports.ubuntu.com");
+        if (!aptHostAddresses.isEmpty()) environment.put("OMINAL_APT_HOSTS", aptHostAddresses);
+        AppShell.execute(this, command, null, new OminalShellEnvironment(), environment, true);
         mRuntimeSetupDetail = formatCommandOutput(command);
         Integer exitCode = command.resultData.exitCode;
         return !command.isStateFailed() && exitCode != null && exitCode == 0;
@@ -1011,29 +1079,8 @@ public final class OringutanActivity extends AppCompatActivity {
 
     private void refreshRuntimeDns() {
         try {
-            ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-            if (connectivityManager == null) return;
-
-            LinkedHashSet<String> ipv4DnsServers = new LinkedHashSet<>();
-            LinkedHashSet<String> ipv6DnsServers = new LinkedHashSet<>();
-            Network activeNetwork = null;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                activeNetwork = connectivityManager.getActiveNetwork();
-                if (activeNetwork != null)
-                    addRuntimeDnsServers(connectivityManager.getLinkProperties(activeNetwork), ipv4DnsServers, ipv6DnsServers);
-            }
-
-            Network[] networks = connectivityManager.getAllNetworks();
-            if (networks != null) {
-                for (Network network : networks) {
-                    if (network != null && !network.equals(activeNetwork))
-                        addRuntimeDnsServers(connectivityManager.getLinkProperties(network), ipv4DnsServers, ipv6DnsServers);
-                }
-            }
-            LinkedHashSet<String> dnsServers = new LinkedHashSet<>();
-            dnsServers.addAll(ipv4DnsServers);
-            dnsServers.addAll(ipv6DnsServers);
-            if (dnsServers.isEmpty()) return;
+            String dnsServerList = getRuntimeDnsServerList();
+            if (dnsServerList.isEmpty()) return;
 
             File rootfs = new File(OminalConstants.OMINAL_HOME_DIR_PATH, ".ominal/runtime/linux/rootfs");
             File runtimeReady = new File(rootfs, ".ominal-rootfs-ready");
@@ -1041,12 +1088,60 @@ public final class OringutanActivity extends AppCompatActivity {
             if (!runtimeReady.isFile() || !etcDirectory.isDirectory()) return;
 
             StringBuilder resolver = new StringBuilder();
-            for (String dnsServer : dnsServers)
+            for (String dnsServer : dnsServerList.split("\\s+"))
                 resolver.append("nameserver ").append(dnsServer).append('\n');
             writeFile(new File(etcDirectory, "resolv.conf"), resolver.toString());
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to refresh Ominal runtime DNS", e);
         }
+    }
+
+    private String getRuntimeDnsServerList() {
+        ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (connectivityManager == null) return "";
+
+        LinkedHashSet<String> ipv4DnsServers = new LinkedHashSet<>();
+        LinkedHashSet<String> ipv6DnsServers = new LinkedHashSet<>();
+        Network activeNetwork = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            activeNetwork = connectivityManager.getActiveNetwork();
+            if (activeNetwork != null)
+                addRuntimeDnsServers(connectivityManager.getLinkProperties(activeNetwork), ipv4DnsServers, ipv6DnsServers);
+        }
+
+        Network[] networks = connectivityManager.getAllNetworks();
+        if (networks != null) {
+            for (Network network : networks) {
+                if (network != null && !network.equals(activeNetwork))
+                    addRuntimeDnsServers(connectivityManager.getLinkProperties(network), ipv4DnsServers, ipv6DnsServers);
+            }
+        }
+
+        StringBuilder dnsServers = new StringBuilder();
+        for (String dnsServer : ipv4DnsServers) {
+            if (dnsServers.length() > 0) dnsServers.append(' ');
+            dnsServers.append(dnsServer);
+        }
+        for (String dnsServer : ipv6DnsServers) {
+            if (dnsServers.length() > 0) dnsServers.append(' ');
+            dnsServers.append(dnsServer);
+        }
+        return dnsServers.toString();
+    }
+
+    private String getRuntimeHostAddresses(String hostname) {
+        LinkedHashSet<String> addresses = new LinkedHashSet<>();
+        try {
+            for (java.net.InetAddress address : java.net.InetAddress.getAllByName(hostname)) {
+                String value = address.getHostAddress();
+                int scopeSeparator = value.indexOf('%');
+                if (scopeSeparator >= 0) value = value.substring(0, scopeSeparator);
+                if (!value.isEmpty()) addresses.add(value);
+            }
+        } catch (Exception e) {
+            Logger.logWarn(LOG_TAG, "Could not resolve runtime repository host");
+        }
+        return TextUtils.join(" ", addresses);
     }
 
     private static void addRuntimeDnsServers(LinkProperties properties, LinkedHashSet<String> ipv4DnsServers,
@@ -1066,9 +1161,10 @@ public final class OringutanActivity extends AppCompatActivity {
         UiSpec spec = UiSpec.defaults(skin());
         StringBuilder builder = new StringBuilder();
         builder.append("# Ominal UI properties\n");
+        builder.append("ui.version=").append(UI_CONFIG_VERSION).append('\n');
         builder.append("# Edit like .bashrc: one key=value per line, comments start with #.\n");
         builder.append("# 'export key=value' also works, but the app only reads these UI keys.\n");
-        builder.append("# Use More > Reload UI config after saving, or restart Ominal.\n");
+        builder.append("# Restart Ominal after saving.\n");
         builder.append("# Colors accept #RRGGBB or #AARRGGBB.\n\n");
         appendColor(builder, "color.canvas", spec.canvas);
         appendColor(builder, "color.panel", spec.panel);
@@ -1155,10 +1251,9 @@ public final class OringutanActivity extends AppCompatActivity {
         mSwapButton = null;
         mDisplayCloseButton = null;
         mDisplayPane = null;
-        mDisplayHomeOverlay = null;
+        mDisplayAvailabilityView = null;
         mDisplayWebView = null;
         mDisplayUrlLoaded = false;
-        mDisplayHomeVisible = true;
 
         mContentFrame = new FrameLayout(this);
         root.addView(mContentFrame, new LinearLayout.LayoutParams(
@@ -1210,8 +1305,7 @@ public final class OringutanActivity extends AppCompatActivity {
         header.setPadding(dp(14), dp(8), dp(14), dp(6));
         header.setBackgroundColor(ui.header.fill);
 
-        Button chatsButton = createToolbarIconButton("☰");
-        chatsButton.setContentDescription("Chat history");
+        ImageButton chatsButton = createToolbarIconButton(R.drawable.ic_menu, "Chat history");
         chatsButton.setOnClickListener(v -> showChatPicker());
         header.addView(chatsButton, new LinearLayout.LayoutParams(dp(40), dp(40)));
 
@@ -1224,44 +1318,28 @@ public final class OringutanActivity extends AppCompatActivity {
         mTitleView.setText("Ominal");
         mTitleView.setTextColor(ui.header.text);
         mTitleView.setTypeface(Typeface.DEFAULT_BOLD);
-        mTitleView.setTextSize(17);
+        mTitleView.setTextSize(18);
         mTitleView.setSingleLine(true);
         mTitleView.setEllipsize(TextUtils.TruncateAt.END);
         mTitleView.setIncludeFontPadding(false);
-        mTitleView.setContentDescription("Current chat");
+        mTitleView.setContentDescription("Ominal");
         titleStack.addView(mTitleView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(22)));
-
-        mSubtitleView = new TextView(this);
-        mSubtitleView.setText("Workspace ready");
-        mSubtitleView.setTextColor(ui.onDarkMuted);
-        mSubtitleView.setSingleLine(true);
-        mSubtitleView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-        mSubtitleView.setTextSize(12);
-        mSubtitleView.setIncludeFontPadding(false);
-        titleStack.addView(mSubtitleView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(18)));
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+        mSubtitleView = null;
 
         header.addView(titleStack, new LinearLayout.LayoutParams(0, dp(40), 1));
 
-        Button newChatButton = createToolbarIconButton("+");
-        newChatButton.setContentDescription("New chat");
+        ImageButton newChatButton = createToolbarIconButton(R.drawable.ic_add, "New chat");
         newChatButton.setOnClickListener(v -> createAndSelectSession());
         LinearLayout.LayoutParams newChatParams = new LinearLayout.LayoutParams(dp(40), dp(40));
         newChatParams.setMargins(dp(6), 0, 0, 0);
         header.addView(newChatButton, newChatParams);
 
-        mHeaderDisplayButton = createToolbarIconButton("▭");
-        mHeaderDisplayButton.setContentDescription("Agent display");
+        mHeaderDisplayButton = createToolbarIconButton(R.drawable.ic_display, "Screen");
         mHeaderDisplayButton.setOnClickListener(v -> {
             if (mMode == MODE_DISPLAY) {
                 switchMode(MODE_CHAT);
             } else {
-                mDisplayHomeVisible = true;
-                if (mDisplayHomeOverlay != null) {
-                    mDisplayHomeOverlay.setAlpha(1f);
-                    mDisplayHomeOverlay.setVisibility(View.VISIBLE);
-                }
                 switchMode(MODE_DISPLAY);
             }
         });
@@ -1269,12 +1347,12 @@ public final class OringutanActivity extends AppCompatActivity {
         displayParams.setMargins(dp(6), 0, 0, 0);
         header.addView(mHeaderDisplayButton, displayParams);
 
-        Button menuButton = createToolbarIconButton("⋮");
-        menuButton.setContentDescription("More");
-        menuButton.setOnClickListener(v -> showWorkspaceMenu());
-        LinearLayout.LayoutParams menuParams = new LinearLayout.LayoutParams(dp(40), dp(40));
-        menuParams.setMargins(dp(6), 0, 0, 0);
-        header.addView(menuButton, menuParams);
+        mAccountButton = createToolbarIconButton(R.drawable.ic_account, "Codex account");
+        mAccountButton.setOnClickListener(v -> showCodexAccountDialog());
+        LinearLayout.LayoutParams accountParams = new LinearLayout.LayoutParams(dp(40), dp(40));
+        accountParams.setMargins(dp(6), 0, 0, 0);
+        header.addView(mAccountButton, accountParams);
+        styleAccountButton();
 
         return header;
     }
@@ -1297,7 +1375,7 @@ public final class OringutanActivity extends AppCompatActivity {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
 
         mAttachButton = createComposerIconButton("+");
-        mAttachButton.setContentDescription("Attach file to this chat workspace");
+        mAttachButton.setContentDescription("Attach file");
         mAttachButton.setOnClickListener(v -> pickAttachment());
         LinearLayout.LayoutParams attachParams = new LinearLayout.LayoutParams(dp(42), dp(42));
         attachParams.setMargins(0, 0, dp(4), 0);
@@ -1460,8 +1538,7 @@ public final class OringutanActivity extends AppCompatActivity {
         title.setIncludeFontPadding(false);
         topRow.addView(title, new LinearLayout.LayoutParams(0, dp(40), 1));
 
-        Button newChatButton = createToolbarIconButton("+");
-        newChatButton.setContentDescription("New chat");
+        ImageButton newChatButton = createToolbarIconButton(R.drawable.ic_add, "New chat");
         newChatButton.setOnClickListener(v -> {
             if (mDrawerLayout != null && mChatDrawer != null) mDrawerLayout.closeDrawer(mChatDrawer);
             createAndSelectSession();
@@ -1628,7 +1705,7 @@ public final class OringutanActivity extends AppCompatActivity {
         for (int i = session.messages.size() - 1; i >= 0; i--) {
             ChatMessage message = session.messages.get(i);
             if ("system".equals(message.role)) continue;
-            String text = message.text == null ? "" : message.text.replace('\n', ' ').trim();
+            String text = visibleMessageText(message).replace('\n', ' ').trim();
             if (!text.isEmpty()) {
                 if (text.length() > 46) text = text.substring(0, 46).trim() + "...";
                 return text;
@@ -1640,13 +1717,8 @@ public final class OringutanActivity extends AppCompatActivity {
     private void renderHeader() {
         if (mActiveSession == null) return;
         if (mTitleView != null) {
-            mTitleView.setText(mActiveSession.title);
-            mTitleView.setContentDescription(mActiveSession.title);
-        }
-        if (mSubtitleView != null) {
-            int messageCount = visibleMessageCount(mActiveSession);
-            mSubtitleView.setText(skin().name + " · " + messageCount
-                + (messageCount == 1 ? " message" : " messages"));
+            mTitleView.setText("Ominal");
+            mTitleView.setContentDescription("Ominal");
         }
     }
 
@@ -1796,7 +1868,7 @@ public final class OringutanActivity extends AppCompatActivity {
         if (mActiveSession != null) {
             for (ChatMessage message : mActiveSession.messages) {
                 if (shouldHideSystemReadyMessage(message)) continue;
-                addBubble(message.text, "user".equals(message.role), false);
+                addBubble(visibleMessageText(message), "user".equals(message.role), false);
             }
         }
 
@@ -1826,7 +1898,7 @@ public final class OringutanActivity extends AppCompatActivity {
         pane.addView(name, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView shellName = terminalMetaText("Per-chat terminal");
+        TextView shellName = terminalMetaText("Terminal for this chat");
         LinearLayout.LayoutParams shellParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         shellParams.setMargins(0, dp(4), 0, dp(10));
@@ -1843,15 +1915,15 @@ public final class OringutanActivity extends AppCompatActivity {
         openParams.setMargins(0, dp(14), 0, dp(10));
         pane.addView(open, openParams);
 
-        Button copyCd = createSecondaryButton("Copy cd");
+        Button copyCd = createSecondaryButton("Copy chat folder");
         copyCd.setOnClickListener(v -> {
-            copyToClipboard("Ominal workspace", "cd " + shellQuote(mActiveSession.workspacePath));
-            setStatus("Workspace command copied");
+            copyToClipboard("Chat folder", mActiveSession.workspacePath);
+            setStatus("Chat folder copied");
         });
         pane.addView(copyCd, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(46)));
 
-        mStatusView = terminalMetaText(mPromptRunning ? "Agent running" : "Ready");
+        mStatusView = terminalMetaText(mPromptRunning ? "Working" : "Ready");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         statusParams.setMargins(0, dp(18), 0, 0);
@@ -1886,6 +1958,8 @@ public final class OringutanActivity extends AppCompatActivity {
         mDisplayWebView.getSettings().setDomStorageEnabled(true);
         mDisplayWebView.getSettings().setLoadWithOverviewMode(true);
         mDisplayWebView.getSettings().setUseWideViewPort(true);
+        mDisplayWebView.getSettings().setCacheMode(android.webkit.WebSettings.LOAD_NO_CACHE);
+        mDisplayWebView.addJavascriptInterface(new DisplayBridge(), "OminalDisplay");
         mDisplayWebView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
@@ -1898,17 +1972,31 @@ public final class OringutanActivity extends AppCompatActivity {
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
                 super.onReceivedError(view, errorCode, description, failingUrl);
-                if (failingUrl != null && failingUrl.startsWith("http://127.0.0.1:6080/"))
+                if (failingUrl != null && failingUrl.startsWith("http://127.0.0.1:6080/")) {
+                    showDisplayState("Screen connection failed");
                     retryDisplayLoad();
+                }
             }
         });
-        mDisplayWebView.setWebChromeClient(new WebChromeClient());
+        mDisplayWebView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage message) {
+                Logger.logDebug(LOG_TAG, "Screen viewer: " + message.message());
+                return true;
+            }
+        });
         FrameLayout.LayoutParams webParams = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
         screen.addView(mDisplayWebView, webParams);
 
-        mDisplayHomeOverlay = createDisplayHomeOverlay();
-        pane.addView(mDisplayHomeOverlay, new FrameLayout.LayoutParams(
+        mDisplayAvailabilityView = new TextView(this);
+        mDisplayAvailabilityView.setText("Starting screen...");
+        mDisplayAvailabilityView.setTextColor(Color.rgb(174, 174, 178));
+        mDisplayAvailabilityView.setTextSize(15);
+        mDisplayAvailabilityView.setGravity(Gravity.CENTER);
+        mDisplayAvailabilityView.setBackgroundColor(Color.BLACK);
+        mDisplayAvailabilityView.setClickable(false);
+        screen.addView(mDisplayAvailabilityView, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         pane.addView(createDisplayOverlay(), new FrameLayout.LayoutParams(
@@ -1921,174 +2009,20 @@ public final class OringutanActivity extends AppCompatActivity {
         return mDisplayPane;
     }
 
-    private View createDisplayHomeOverlay() {
-        UiSpec ui = ui();
-        LinearLayout home = new LinearLayout(this);
-        home.setOrientation(LinearLayout.VERTICAL);
-        home.setPadding(dp(20), dp(46), dp(20), dp(24));
-        home.setBackgroundColor(ui.displayHome.fill);
-        home.setVisibility(mDisplayHomeVisible ? View.VISIBLE : View.GONE);
-
-        TextView screen = new TextView(this);
-        screen.setText("Display");
-        screen.setTextColor(ui.displayHome.text);
-        screen.setTextSize(18);
-        screen.setTypeface(Typeface.DEFAULT_BOLD);
-        screen.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        screen.setIncludeFontPadding(false);
-        home.addView(screen, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
-
-        View spacer = new View(this);
-        home.addView(spacer, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 0.35f));
-
-        LinearLayout grid = new LinearLayout(this);
-        grid.setOrientation(LinearLayout.VERTICAL);
-        grid.setGravity(Gravity.CENTER);
-        addDisplayHomeRow(grid,
-            createDisplayHomeTile("View", "Screen", v -> showLiveDisplay()),
-            createDisplayHomeTile(">_", "Shell", v -> launchDisplayApp(displayXtermCommand("Ominal Shell",
-                "cd \"${OMINAL_WORKDIR:-$HOME}\" 2>/dev/null || cd \"$HOME\"; export PS1=\"ominal:\\W# \"; exec bash --noprofile --norc -i"))),
-            createDisplayHomeTile("Files", "Files", v -> launchDisplayApp(displayXtermCommand("Files",
-                "cd \"${OMINAL_WORKDIR:-$HOME}\" 2>/dev/null || cd \"$HOME\"; ls -la; exec bash --noprofile --norc -i"))));
-        addDisplayHomeRow(grid,
-            createDisplayHomeTile("Web", "Browser", v -> launchDisplayApp(
-                "if command -v chromium >/dev/null 2>&1; then chromium --no-sandbox >/dev/null 2>&1 & elif command -v firefox >/dev/null 2>&1; then firefox >/dev/null 2>&1 & else "
-                    + displayXtermCommand("Browser", "python3 -m http.server 8080; exec bash --noprofile --norc -i")
-                    + " fi")),
-            createDisplayHomeTile("Edit", "Editor", v -> launchDisplayApp(
-                "if command -v leafpad >/dev/null 2>&1; then leafpad >/dev/null 2>&1 & else "
-                    + displayXtermCommand("Editor", "nano; exec bash --noprofile --norc -i")
-                    + " fi")),
-            createDisplayHomeTile("Setup", "Setup", v -> launchDisplayApp(displayXtermCommand("Setup",
-                "printf 'Workspace: %s\\nScreen ready\\n' \"$PWD\"; exec bash --noprofile --norc -i"))));
-        home.addView(grid, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        View bottomSpacer = new View(this);
-        home.addView(bottomSpacer, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 0.65f));
-
-        return home;
-    }
-
-    private void addDisplayHomeRow(LinearLayout grid, View first, View second, View third) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowParams.setMargins(0, dp(8), 0, dp(8));
-        grid.addView(row, rowParams);
-        addDisplayTileToRow(row, first);
-        addDisplayTileToRow(row, second);
-        addDisplayTileToRow(row, third);
-    }
-
-    private void addDisplayTileToRow(LinearLayout row, View tile) {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(100), 1);
-        params.setMargins(dp(6), 0, dp(6), 0);
-        row.addView(tile, params);
-    }
-
-    private View createDisplayHomeTile(String icon, String label, View.OnClickListener listener) {
-        UiSpec ui = ui();
-        LinearLayout tile = new LinearLayout(this);
-        tile.setOrientation(LinearLayout.VERTICAL);
-        tile.setGravity(Gravity.CENTER);
-        tile.setPadding(dp(6), dp(8), dp(6), dp(7));
-        tile.setBackground(makeSurfaceDrawable(ui.displayTile, true));
-        tile.setOnClickListener(listener);
-        tile.setClickable(true);
-        attachNativeRipple(tile);
-
-        TextView iconView = new TextView(this);
-        iconView.setText(icon);
-        iconView.setTextColor(ui.displayTile.text);
-        iconView.setTextSize(icon.length() <= 2 ? 24 : 15);
-        iconView.setTypeface(Typeface.DEFAULT_BOLD);
-        iconView.setGravity(Gravity.CENTER);
-        iconView.setIncludeFontPadding(false);
-        tile.addView(iconView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
-
-        TextView labelView = new TextView(this);
-        labelView.setText(label);
-        labelView.setTextColor(ui.onDarkMuted);
-        labelView.setTextSize(11);
-        labelView.setTypeface(Typeface.DEFAULT_BOLD);
-        labelView.setGravity(Gravity.CENTER);
-        labelView.setSingleLine(true);
-        labelView.setIncludeFontPadding(false);
-        tile.addView(labelView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(18)));
-
-        return tile;
-    }
-
-    private String displayXtermCommand(String title, String body) {
-        return "xterm -geometry 66x34+10+72 -fa Monospace -fs 9 "
-            + "-bg '#050506' -fg '#f4f5f7' -cr '#ffffff' -bd '#050506' "
-            + "-T " + shellQuote(title) + " -e bash -lc " + shellQuote(body)
-            + " >/dev/null 2>&1 &";
-    }
-
     private void showLiveDisplay() {
         if (!mDisplayReady) {
             ensureDisplayServerStarted(true);
-            setStatus("Starting display");
+            setStatus("Opening screen");
             return;
         }
-        mDisplayHomeVisible = false;
-        if (mDisplayHomeOverlay != null) {
-            mDisplayHomeOverlay.animate().cancel();
-            mDisplayHomeOverlay.animate()
-                .alpha(0f)
-                .setDuration(140)
-                .withEndAction(() -> {
-                    if (!mDisplayHomeVisible && mDisplayHomeOverlay != null)
-                        mDisplayHomeOverlay.setVisibility(View.GONE);
-                })
-                .start();
-        }
         loadDisplayWebView();
-    }
-
-    private void launchDisplayApp(String appCommand) {
-        if (mActiveSession == null) return;
-        ensureDisplayServerStarted(false);
-        showLiveDisplay();
-
-        String inner = "export DISPLAY=${OMINAL_DISPLAY:-:20}; "
-            + "export OMINAL_WORKDIR=" + shellQuote(mActiveSession.workspacePath) + "; "
-            + appCommand;
-        String commandLine = "ominal-proot-run /bin/bash -c " + shellQuote(inner);
-
-        new Thread(() -> {
-            ExecutionCommand command = new ExecutionCommand(-1,
-                OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/sh",
-                new String[]{"-lc", commandLine},
-                null,
-                mActiveSession.workspacePath,
-                ExecutionCommand.Runner.APP_SHELL.getName(),
-                false);
-            command.commandLabel = "Ominal display app";
-
-            HashMap<String, String> environment = new HashMap<>();
-            environment.put("OMINAL_DISPLAY", ":20");
-            environment.put("OMINAL_DISPLAY_GEOMETRY", getDisplayGeometry());
-            environment.put("OMINAL_WORKDIR", mActiveSession.workspacePath);
-            AppShell.execute(this, command, null, new OminalShellEnvironment(), environment, true);
-        }).start();
     }
 
     private View createDisplayOverlay() {
         FrameLayout overlay = new FrameLayout(this);
         overlay.setPadding(dp(12), dp(12), dp(12), dp(12));
 
-        mDisplayCloseButton = createToolbarIconButton("×");
-        mDisplayCloseButton.setContentDescription("Close display");
+        mDisplayCloseButton = createToolbarIconButton(R.drawable.ic_close, "Close screen");
         mDisplayCloseButton.setOnClickListener(v -> switchMode(MODE_CHAT));
         mDisplayCloseButton.setAlpha(0.94f);
         mDisplayCloseButton.setElevation(dp(12));
@@ -2102,14 +2036,15 @@ public final class OringutanActivity extends AppCompatActivity {
 
     private void loadDisplayWebView() {
         if (mDisplayWebView != null) {
+            showDisplayState("Starting screen...");
             hideViewerChrome(mDisplayWebView);
-            mDisplayUrlLoaded = true;
+            mDisplayUrlLoaded = false;
             mDisplayWebView.loadUrl(displayUrl());
         }
     }
 
     private String displayUrl() {
-        return DISPLAY_URL + "&_ominal=" + System.currentTimeMillis();
+        return DISPLAY_URL + "?_ominal=" + System.currentTimeMillis();
     }
 
     private void retryDisplayLoad() {
@@ -2123,15 +2058,40 @@ public final class OringutanActivity extends AppCompatActivity {
         String script = "(function(){"
             + "var style=document.getElementById('ominal-display-style');"
             + "if(!style){style=document.createElement('style');style.id='ominal-display-style';document.head.appendChild(style);}"
-            + "style.textContent='html,body{margin:0!important;width:100%!important;height:100%!important;overflow:hidden!important;background:#000!important;cursor:none!important;}#top_bar,#sendCtrlAltDelButton,#noVNC_control_bar,#noVNC_status_bar,#noVNC_control_bar_handle,#noVNC_connect_dlg{display:none!important;}#screen,#noVNC_screen,#noVNC_container{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;margin:0!important;padding:0!important;background:#000!important;overflow:hidden!important;display:flex!important;align-items:center!important;justify-content:center!important;cursor:none!important;}canvas,#noVNC_canvas{display:block!important;width:auto!important;height:auto!important;max-width:100vw!important;max-height:100vh!important;margin:auto!important;object-fit:contain!important;background:#000!important;image-rendering:auto!important;cursor:none!important;}#noVNC_canvas:focus{outline:none!important;}';"
-            + "var top=document.getElementById('top_bar');if(top)top.style.display='none';"
-            + "['screen','noVNC_screen','noVNC_container'].forEach(function(id){var el=document.getElementById(id);if(el){el.style.position='fixed';el.style.inset='0';el.style.width='100vw';el.style.height='100vh';el.style.margin='0';el.style.padding='0';el.style.display='flex';el.style.alignItems='center';el.style.justifyContent='center';}});"
-            + "Array.prototype.forEach.call(document.getElementsByTagName('canvas'),function(canvas){canvas.style.width='auto';canvas.style.height='auto';canvas.style.maxWidth='100vw';canvas.style.maxHeight='100vh';canvas.style.objectFit='contain';canvas.style.margin='auto';canvas.style.cursor='none';});"
+            + "style.textContent='html,body,#screen{margin:0!important;width:100%!important;height:100%!important;overflow:hidden!important;background:#000!important;cursor:none!important;touch-action:none!important;}canvas{display:block!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;margin:0!important;object-fit:fill!important;background:#000!important;image-rendering:auto!important;cursor:none!important;}canvas:focus{outline:none!important;}';"
+            + "var screen=document.getElementById('screen');if(screen){screen.style.position='fixed';screen.style.inset='0';screen.style.width='100vw';screen.style.height='100vh';}"
+            + "Array.prototype.forEach.call(document.getElementsByTagName('canvas'),function(canvas){canvas.style.width='100%';canvas.style.height='100%';canvas.style.maxWidth='none';canvas.style.maxHeight='none';canvas.style.objectFit='fill';canvas.style.margin='0';canvas.style.cursor='none';});"
             + "document.body.style.margin='0';document.body.style.background='#000';"
             + "})()";
         view.evaluateJavascript(script, null);
         view.postDelayed(() -> view.evaluateJavascript(script, null), 1000);
         view.postDelayed(() -> view.evaluateJavascript(script, null), 3000);
+    }
+
+    private void showDisplayState(String message) {
+        if (mDisplayAvailabilityView == null) return;
+        mDisplayAvailabilityView.setText(message);
+        mDisplayAvailabilityView.setVisibility(View.VISIBLE);
+    }
+
+    private void hideDisplayState() {
+        if (mDisplayAvailabilityView != null) mDisplayAvailabilityView.setVisibility(View.GONE);
+    }
+
+    private final class DisplayBridge {
+        @JavascriptInterface
+        public void state(String state, String detail) {
+            runOnUiThread(() -> {
+                if ("connected".equals(state)) {
+                    mDisplayUrlLoaded = true;
+                    hideDisplayState();
+                    return;
+                }
+                String message = "Connecting".equals(detail) || TextUtils.isEmpty(detail)
+                    ? "Starting screen..." : detail;
+                showDisplayState(message);
+            });
+        }
     }
 
     private void ensureDisplayServerStarted(boolean reloadWhenReady) {
@@ -2158,7 +2118,7 @@ public final class OringutanActivity extends AppCompatActivity {
                 mActiveSession.workspacePath,
                 ExecutionCommand.Runner.APP_SHELL.getName(),
                 false);
-            command.commandLabel = "Codex display start";
+            command.commandLabel = "Open screen";
 
             HashMap<String, String> environment = new HashMap<>();
             environment.put("OMINAL_DISPLAY", ":20");
@@ -2173,11 +2133,11 @@ public final class OringutanActivity extends AppCompatActivity {
                 boolean shouldReload = mReloadDisplayWhenReady;
                 mReloadDisplayWhenReady = false;
                 if (ready) {
-                    setStatus("Display ready");
+                    setStatus("Screen ready");
                     if (shouldReload) showLiveDisplay();
                 } else {
-                    setStatus("Display unavailable");
-                    mDisplayStartupDetail = "Linux display did not become ready.";
+                    setStatus("Screen unavailable");
+                    mDisplayStartupDetail = "The screen didn't open. Try again.";
                     if (mDisplayAvailabilityView != null)
                         mDisplayAvailabilityView.setText(mDisplayStartupDetail);
                 }
@@ -2211,7 +2171,7 @@ public final class OringutanActivity extends AppCompatActivity {
 
     private void submitPrompt() {
         if (!mBootstrapReady) {
-            addTransientSystemMessage("Still preparing the Ominal executable area.");
+            addTransientSystemMessage("Ominal is still getting ready.");
             return;
         }
         if (mActiveSession == null || mPromptRunning) return;
@@ -2225,13 +2185,13 @@ public final class OringutanActivity extends AppCompatActivity {
 
         ChatMessage userMessage = new ChatMessage("user", prompt, nowLabel());
         appendMessage(mActiveSession, userMessage, true);
-        TextView responseBubble = addBubble("Running through Ominal agent adapter...", false, true);
+        TextView responseBubble = addBubble("Thinking...", false, true);
         runPrompt(mActiveSession, prompt, responseBubble);
     }
 
     private void pickAttachment() {
         if (!mBootstrapReady) {
-            addTransientSystemMessage("Still preparing the Ominal executable area.");
+            addTransientSystemMessage("Ominal is still getting ready.");
             return;
         }
         if (mActiveSession == null) return;
@@ -2283,7 +2243,7 @@ public final class OringutanActivity extends AppCompatActivity {
         refreshRuntimeDns();
         mPromptRunning = true;
         setInputEnabled(false);
-        setStatus("Agent running");
+        setStatus("Working");
         ensureDisplayServerStarted(false);
 
         new Thread(() -> {
@@ -2296,7 +2256,7 @@ public final class OringutanActivity extends AppCompatActivity {
                 session.workspacePath,
                 ExecutionCommand.Runner.APP_SHELL.getName(),
                 false);
-            command.commandLabel = "Ominal agent prompt";
+            command.commandLabel = "Codex";
 
             HashMap<String, String> environment = new HashMap<>();
             environment.put("ORINGUTAN_FRONTEND", "chat");
@@ -2310,7 +2270,7 @@ public final class OringutanActivity extends AppCompatActivity {
 
             AppShell.execute(this, command, null, new OminalShellEnvironment(), environment, true);
 
-            String output = formatCommandOutput(command);
+            String output = formatAgentOutput(command);
             boolean openDisplay = shouldAutoOpenDisplay(output);
             String visibleOutput = stripDisplayMarkers(output);
             runOnUiThread(() -> {
@@ -2321,9 +2281,9 @@ public final class OringutanActivity extends AppCompatActivity {
                 mPromptRunning = false;
                 setInputEnabled(true);
                 if (openDisplay) {
-                    setStatus("User input needed");
+                    setStatus("Your input is needed");
                     switchMode(MODE_DISPLAY);
-                    Toast.makeText(this, "Agent needs input on the display", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Tap the screen to continue", Toast.LENGTH_SHORT).show();
                 } else {
                     setStatus("Ready");
                 }
@@ -2339,9 +2299,12 @@ public final class OringutanActivity extends AppCompatActivity {
         StringBuilder builder = new StringBuilder();
         builder.append("You are running as the Codex agent inside Ominal, an Android coding workspace. ")
             .append("Use the current working directory for this chat's files and outputs. ")
-            .append("A graphical display is available on DISPLAY=:20 when a GUI is needed. ")
-            .append("Use that display autonomously for OS/browser/app work whenever possible. ")
-            .append("If user input, visual confirmation, login, or manual control is required, print ")
+            .append("The user's primary interface is chat; the Linux desktop stays hidden until it is needed. ")
+            .append("A graphical desktop is available on DISPLAY=:20. Control it with ominal-screen: ")
+            .append("take a screenshot before acting, then use tap, double-tap, type, key, windows, focus, ")
+            .append("or close as needed. Keep useful state visible because the user shares the same touch desktop. ")
+            .append("Use the desktop autonomously for GUI work. If user input, visual confirmation, login, ")
+            .append("or manual control is truly required, print ")
             .append(DISPLAY_USER_INPUT_MARKER)
             .append(" on its own line with a short reason; Ominal will open the display for the user.\n\n")
             .append("User request:\n")
@@ -2380,7 +2343,7 @@ public final class OringutanActivity extends AppCompatActivity {
 
         if (command.isStateFailed()) {
             if (result.length() > 0) result.append("\n\n");
-            result.append("Agent process failed before completion.");
+            result.append("Something went wrong before the reply finished.");
             String errors = ResultData.getErrorsListMinimalString(command.resultData).trim();
             if (!errors.isEmpty()) result.append("\n").append(errors);
         }
@@ -2394,6 +2357,22 @@ public final class OringutanActivity extends AppCompatActivity {
         return result.toString();
     }
 
+    private String formatAgentOutput(ExecutionCommand command) {
+        String stdout = command.resultData.stdout.toString().trim();
+        String stderr = command.resultData.stderr.toString().trim();
+        String diagnostic = stdout + "\n" + stderr;
+        if (requiresCodexLogin(diagnostic)) return "Sign in to continue.";
+        if (!stdout.isEmpty()) return stdout;
+
+        String normalized = diagnostic.toLowerCase(Locale.ROOT);
+        if (normalized.contains("timed out") || normalized.contains("timeout"))
+            return "The request took too long. Try again.";
+        if (command.isStateFailed()
+            || (command.resultData.exitCode != null && command.resultData.exitCode != 0))
+            return "Codex couldn't finish that request. Try again.";
+        return "No response was returned.";
+    }
+
     private boolean shouldAutoOpenDisplay(String output) {
         if (output == null) return false;
         return output.contains(DISPLAY_USER_INPUT_MARKER) || output.contains(DISPLAY_OPEN_MARKER);
@@ -2405,7 +2384,7 @@ public final class OringutanActivity extends AppCompatActivity {
             .replace(DISPLAY_USER_INPUT_MARKER, "")
             .replace(DISPLAY_OPEN_MARKER, "")
             .trim();
-        if (cleaned.isEmpty()) return "The agent needs user input on the display.";
+        if (cleaned.isEmpty()) return "Tap the screen to continue.";
         return cleaned;
     }
 
@@ -2430,7 +2409,13 @@ public final class OringutanActivity extends AppCompatActivity {
         session.messages.add(message);
         if (persist) appendHistory(session, message);
         if (session == mActiveSession && mMode == MODE_CHAT && !shouldHideSystemReadyMessage(message))
-            addBubble(message.text, "user".equals(message.role), true);
+            addBubble(visibleMessageText(message), "user".equals(message.role), true);
+    }
+
+    private String visibleMessageText(ChatMessage message) {
+        if (message == null || message.text == null) return "";
+        if (!"assistant".equals(message.role)) return message.text;
+        return requiresCodexLogin(message.text) ? "Sign in to continue." : message.text;
     }
 
     private boolean shouldHideSystemReadyMessage(ChatMessage message) {
@@ -2636,7 +2621,7 @@ public final class OringutanActivity extends AppCompatActivity {
 
     private void updateComposerTools() {
         if (mTerminalToolButton != null) {
-            mTerminalToolButton.setText(mMode == MODE_TERMINAL ? "Chat" : "Shell");
+            mTerminalToolButton.setText(mMode == MODE_TERMINAL ? "Chat" : "Terminal");
             styleModeButton(mTerminalToolButton, mMode == MODE_TERMINAL);
         }
         if (mDisplayToolButton != null) {
@@ -2676,6 +2661,23 @@ public final class OringutanActivity extends AppCompatActivity {
         boolean visible = mMode != MODE_DISPLAY;
         animateChromeVisibility(mHeaderView, visible, -dp(8));
         animateChromeVisibility(mComposerView, visible, dp(14));
+        setDisplayFullscreen(!visible);
+    }
+
+    private void setDisplayFullscreen(boolean fullscreen) {
+        View decor = getWindow().getDecorView();
+        if (fullscreen) {
+            decor.setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        } else {
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            applySystemBars();
+        }
     }
 
     private void animateChromeVisibility(View view, boolean visible, int hiddenOffset) {
@@ -2726,40 +2728,71 @@ public final class OringutanActivity extends AppCompatActivity {
     }
 
     private String getDisplayGeometry() {
-        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+        android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1)
+            getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
+        else
+            getWindowManager().getDefaultDisplay().getMetrics(metrics);
         int width = 540;
         int height = Math.round(width * (metrics.heightPixels / (float) Math.max(1, metrics.widthPixels)));
         height = Math.max(900, Math.min(1280, height));
         return width + "x" + height + "x24";
     }
 
-    private Button createToolbarButton(String label) {
+    private ImageButton createToolbarIconButton(int iconRes, String contentDescription) {
         UiSpec ui = ui();
-        Button button = new Button(this);
-        button.setText(label);
-        normalizeButton(button);
-        button.setTextSize(13);
-        button.setTypeface(Typeface.DEFAULT_BOLD);
-        button.setTextColor(ui.toolbarButton.text);
-        button.setAllCaps(false);
-        button.setPadding(dp(8), 0, dp(8), 0);
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(iconRes);
+        button.setImageTintList(ColorStateList.valueOf(ui.toolbarButton.text));
+        button.setScaleType(ImageButton.ScaleType.CENTER);
+        button.setPadding(dp(9), dp(9), dp(9), dp(9));
+        button.setContentDescription(contentDescription);
         button.setBackground(makeSurfaceDrawable(ui.toolbarButton, true));
         attachNativeRipple(button);
         return button;
     }
 
-    private Button createToolbarIconButton(String label) {
-        Button button = createToolbarButton(label);
-        button.setTextSize(21);
-        button.setTypeface(Typeface.DEFAULT_BOLD);
-        button.setPadding(0, 0, 0, dp(1));
-        return button;
+    private void styleAccountButton() {
+        if (mAccountButton == null) return;
+        styleHeaderButton(mAccountButton, mCodexSignedIn);
+        mAccountButton.setContentDescription(mCodexSignedIn ? "Codex account, signed in" : "Sign in to Codex");
     }
 
-    private void styleHeaderButton(Button button, boolean active) {
+    private TextView dialogTitle(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextColor(ui().ink);
+        view.setTextSize(20);
+        view.setTypeface(Typeface.DEFAULT_BOLD);
+        view.setIncludeFontPadding(false);
+        return view;
+    }
+
+    private TextView dialogBody(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextColor(ui().muted);
+        view.setTextSize(14);
+        view.setLineSpacing(0, 1.08f);
+        view.setIncludeFontPadding(false);
+        return view;
+    }
+
+    private void styleBlackDialog(AlertDialog dialog) {
+        if (dialog == null || dialog.getWindow() == null) return;
+        dialog.getWindow().setBackgroundDrawable(
+            makeRoundedDrawable(Color.BLACK, ui().border, dp(16)));
+        dialog.getWindow().setDimAmount(0.72f);
+        Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+        if (positive != null) positive.setTextColor(ui().ink);
+        if (negative != null) negative.setTextColor(ui().muted);
+    }
+
+    private void styleHeaderButton(ImageButton button, boolean active) {
         UiSpec ui = ui();
         SurfaceSpec surface = active ? ui.toolbarButtonActive : ui.toolbarButton;
-        button.setTextColor(surface.text);
+        button.setImageTintList(ColorStateList.valueOf(surface.text));
         button.setBackground(makeSurfaceDrawable(surface, true));
         attachNativeRipple(button);
     }
@@ -2898,22 +2931,6 @@ public final class OringutanActivity extends AppCompatActivity {
 
     private BrandSkin skin() {
         return mSkin != null ? mSkin : BRAND_SKINS[0];
-    }
-
-    private BrandSkin findSkin(String id) {
-        if (id != null) {
-            for (BrandSkin skin : BRAND_SKINS) {
-                if (id.equals(skin.id)) return skin;
-            }
-        }
-        return BRAND_SKINS[0];
-    }
-
-    private int indexOfSkin(BrandSkin selected) {
-        for (int i = 0; i < BRAND_SKINS.length; i++) {
-            if (BRAND_SKINS[i] == selected || BRAND_SKINS[i].id.equals(selected.id)) return i;
-        }
-        return 0;
     }
 
     private String nowLabel() {
