@@ -29,10 +29,10 @@ apt_bootstrap install -y debconf
 apt_bootstrap install -y ca-certificates
 dpkg --configure -a
 apt_strict update
-apt_strict install -y curl nodejs npm
+apt_strict install -y curl
 node --version
 npm --version
-npm install --global "@openai/codex@${OMINAL_CODEX_VERSION:-latest}"
+npm install --global --prefix /root/.ominal/npm "@openai/codex@${OMINAL_CODEX_VERSION:-0.144.1}"
 command -v codex
 codex --version
 '

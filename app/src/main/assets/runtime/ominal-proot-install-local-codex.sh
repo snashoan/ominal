@@ -31,8 +31,7 @@ export PROOT_L2S_DIR="$ROOTFS/.l2s"
 
 if [ ! -x "$NODE_ROOT/bin/node" ]; then
     if [ -e "$NODE_ROOT" ]; then
-        printf '%s\n' 'Existing Ominal Node runtime is incomplete.' >&2
-        exit 65
+        rm -rf "$NODE_ROOT"
     fi
 
     NODE_STAGE="$ROOTFS/root/.ominal/node.stage.$$"
@@ -72,4 +71,6 @@ npm install --global --prefix /root/.ominal/npm --offline --no-audit --no-fund -
 export PATH=/root/.ominal/npm/bin:/root/.ominal/node/bin:$PATH
 command -v codex
 codex --version
+npm cache clean --force >/dev/null 2>&1 || true
+rm -rf /root/.ominal/npm-cache
 '

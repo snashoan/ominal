@@ -17,6 +17,7 @@ local.properties
 
 # Local agent sources, auth, and generated run artifacts
 /build-logs/
+/.artifacts/
 /external/
 /external-apks/
 /codex/

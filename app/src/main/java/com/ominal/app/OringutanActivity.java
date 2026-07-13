@@ -32,6 +32,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
@@ -64,6 +65,7 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -72,6 +74,8 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -98,9 +102,25 @@ public final class OringutanActivity extends AppCompatActivity {
     private static final String DISPLAY_DIR_NAME = "display";
     private static final String DISPLAY_URL = "http://127.0.0.1:6080/vnc_lite.html?autoconnect=true&reconnect=true&path=websockify&resize=scale&view_only=false&show_dot=false&quality=6&compression=6";
     private static final String DISPLAY_START_COMMAND = "command -v ominal-display-start >/dev/null 2>&1 && ominal-display-start || printf 'Install $PREFIX/bin/ominal-display-start first.\\n'";
-    private static final int DISPLAY_HEALTH_RETRIES = 12;
-    private static final int DISPLAY_HEALTH_RETRY_DELAY_MS = 350;
+    private static final int DISPLAY_HEALTH_RETRIES = 30;
+    private static final int DISPLAY_HEALTH_RETRY_DELAY_MS = 300;
     private static final String CODEX_LOGIN_TERMINAL_NAME = "ominal-codex-login";
+    private static final String NODE_VERSION = "24.15.0";
+    private static final String CODEX_VERSION = "0.144.1";
+    private static final String PROOT_ASSET = "runtime/archives/proot-android-aarch64.tgz";
+    private static final String ROOTFS_ASSET = "runtime/archives/ubuntu-base-24.04.4-arm64-nohardlinks.tgz";
+    private static final String PROOT_SHA256 = "9629eb30cdf86e95c6ba681f8ab89c6fdaa9eca093d5577163513c99af5ca281";
+    private static final String ROOTFS_SHA256 = "8ae01fcddd133998b050e90119bee3a772b7a28bb50d700f8acf3d95ddb27d7e";
+    private static final String NODE_SHA256 = "73afc234d558c24919875f51c2d1ea002a2ada4ea6f83601a383869fefa64eed";
+    private static final String CODEX_CORE_SHA256 = "5490b3973605d5f6d9d11680e01513c66732d4bb268f8114055b73c64f91c098";
+    private static final String CODEX_ARM64_SHA256 = "25c66d4451c4f57df6b427173ed7d3d7e29c129d61dc58498dbdb946787b7655";
+    private static final String NODE_URL = "https://nodejs.org/dist/v" + NODE_VERSION
+        + "/node-v" + NODE_VERSION + "-linux-arm64.tar.gz";
+    private static final String CODEX_CORE_URL = "https://registry.npmjs.org/@openai/codex/-/codex-"
+        + CODEX_VERSION + ".tgz";
+    private static final String CODEX_ARM64_URL = "https://registry.npmjs.org/@openai/codex/-/codex-"
+        + CODEX_VERSION + "-linux-arm64.tgz";
+    private static final long MIN_RUNTIME_FREE_BYTES = 2L * 1024L * 1024L * 1024L;
     private static final String DISPLAY_USER_INPUT_MARKER = "OMINAL_NEEDS_USER_INPUT";
     private static final String DISPLAY_OPEN_MARKER = "OMINAL_OPEN_DISPLAY";
     private static final String CHATGPT_PACKAGE = "com.openai.chatgpt";
@@ -205,6 +225,9 @@ public final class OringutanActivity extends AppCompatActivity {
     private BrandSkin mSkin = BRAND_SKINS[0];
     private UiSpec mUi = UiSpec.defaults(BRAND_SKINS[0]);
     private boolean mBootstrapReady;
+    private boolean mRuntimeReady;
+    private boolean mRuntimeSetupInFlight;
+    private String mRuntimeSetupDetail = "";
     private boolean mPromptRunning;
     private boolean mDisplayStartInFlight;
     private boolean mReloadDisplayWhenReady;
@@ -259,15 +282,19 @@ public final class OringutanActivity extends AppCompatActivity {
             ensureProviderCommands();
             mUi = loadUiSpec();
             loadOrCreateSessions();
-            setInputEnabled(true);
-            setStatus("Ready");
-            ensureDisplayServerStarted(false);
-            if (mRootFrame != null) mRootFrame.postDelayed(this::prewarmDisplaySurface, 1200);
-            if (mPendingCodexDeviceLogin) {
-                mPendingCodexDeviceLogin = false;
-                if (mRootFrame != null) mRootFrame.postDelayed(this::startCodexDeviceLogin, 260);
-                else startCodexDeviceLogin();
-            }
+            setStatus("Preparing Linux runtime");
+            ensureRuntimeReady(() -> {
+                mRuntimeReady = true;
+                setInputEnabled(true);
+                setStatus("Ready");
+                ensureDisplayServerStarted(false);
+                if (mRootFrame != null) mRootFrame.postDelayed(this::prewarmDisplaySurface, 1200);
+                if (mPendingCodexDeviceLogin) {
+                    mPendingCodexDeviceLogin = false;
+                    if (mRootFrame != null) mRootFrame.postDelayed(this::startCodexDeviceLogin, 260);
+                    else startCodexDeviceLogin();
+                }
+            });
         });
     }
 
@@ -380,7 +407,7 @@ public final class OringutanActivity extends AppCompatActivity {
     }
 
     private void startCodexDeviceLogin() {
-        if (!mBootstrapReady || mActiveSession == null) {
+        if (!mBootstrapReady || !mRuntimeReady || mActiveSession == null) {
             mPendingCodexDeviceLogin = true;
             return;
         }
@@ -414,7 +441,7 @@ public final class OringutanActivity extends AppCompatActivity {
     }
 
     private void refreshCodexAuthStatus() {
-        if (!mBootstrapReady || mActiveSession == null || mCodexAuthRefreshInFlight) return;
+        if (!mBootstrapReady || !mRuntimeReady || mActiveSession == null || mCodexAuthRefreshInFlight) return;
         refreshRuntimeDns();
         mCodexAuthRefreshInFlight = true;
 
@@ -719,6 +746,14 @@ public final class OringutanActivity extends AppCompatActivity {
             extractRuntimeTool("runtime/ominal-proot-codex.sh", new File(binDir, "ominal-proot-codex"));
             extractRuntimeTool("runtime/ominal-proot-install-local-codex.sh",
                 new File(binDir, "ominal-proot-install-local-codex"));
+            extractRuntimeTool("runtime/ominal-runtime-install-proot.sh",
+                new File(binDir, "ominal-runtime-install-proot"));
+            extractRuntimeTool("runtime/ominal-runtime-install-ubuntu-base.sh",
+                new File(binDir, "ominal-runtime-install-ubuntu-base"));
+            extractRuntimeTool("runtime/ominal-install-display-packages.sh",
+                new File(binDir, "ominal-install-display-packages"));
+            extractRuntimeTool("runtime/ominal-runtime-bootstrap.sh",
+                new File(binDir, "ominal-runtime-bootstrap"));
             extractRuntimeTool("runtime/ominal-display-start.sh", new File(binDir, "ominal-display-start"));
             writeExecutableFile(new File(binDir, "ominal-codex"),
                 "#!/data/data/com.ominal/files/usr/bin/sh\n"
@@ -732,6 +767,9 @@ public final class OringutanActivity extends AppCompatActivity {
             File legacyNativeProvider = new File(binDir, "codex.real");
             if (legacyNativeProvider.exists() && !legacyNativeProvider.delete())
                 Logger.logWarn(LOG_TAG, "Could not remove retired native Codex provider");
+            File legacyArm64Provider = new File(binDir, "codex-aarch64");
+            if (legacyArm64Provider.exists() && !legacyArm64Provider.delete())
+                Logger.logWarn(LOG_TAG, "Could not remove retired arm64 Codex provider");
         } catch (IOException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to install Ominal PRoot commands", e);
             addTransientSystemMessage("Codex provider setup commands could not be installed.");
@@ -748,6 +786,227 @@ public final class OringutanActivity extends AppCompatActivity {
         }
         if (!target.setReadable(true, true) || !target.setExecutable(true, true))
             throw new IOException("Could not make runtime tool executable: " + target.getName());
+    }
+
+    private void ensureRuntimeReady(Runnable whenReady) {
+        if (mRuntimeReady) {
+            whenReady.run();
+            return;
+        }
+        if (mRuntimeSetupInFlight) return;
+        mRuntimeSetupInFlight = true;
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        new Thread(() -> {
+            try {
+                if (!supportsArm64())
+                    throw new IOException("Ominal's Linux runtime currently requires an arm64-v8a device.");
+
+                String bootstrap = OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/ominal-runtime-bootstrap";
+                if (runRuntimeShell(shellQuote(bootstrap) + " --verify", "Verify Ominal runtime")) {
+                    finishRuntimeSetup(whenReady);
+                    return;
+                }
+
+                File runtimeRoot = new File(OminalConstants.OMINAL_HOME_DIR_PATH, ".ominal/runtime");
+                ensureDirectory(runtimeRoot.getAbsolutePath());
+                long usableBytes = runtimeRoot.getUsableSpace();
+                if (usableBytes > 0 && usableBytes < MIN_RUNTIME_FREE_BYTES)
+                    throw new IOException("At least 2 GB of free storage is required to prepare the Linux runtime.");
+
+                File downloads = new File(runtimeRoot, "downloads");
+                ensureDirectory(downloads.getAbsolutePath());
+                File proot = new File(downloads, "proot-android-aarch64.tar.gz");
+                File rootfs = new File(downloads, "ubuntu-base-24.04.4-arm64-nohardlinks.tar.gz");
+                File node = new File(downloads, "node-v" + NODE_VERSION + "-linux-arm64.tar.gz");
+                File codexCore = new File(downloads, "codex-" + CODEX_VERSION + ".tgz");
+                File codexArm64 = new File(downloads, "codex-" + CODEX_VERSION + "-linux-arm64.tgz");
+
+                updateRuntimeStatus("Preparing Linux base");
+                copyRuntimeAsset(PROOT_ASSET, proot, PROOT_SHA256);
+                copyRuntimeAsset(ROOTFS_ASSET, rootfs, ROOTFS_SHA256);
+                downloadRuntimeArtifact(NODE_URL, node, NODE_SHA256, "Downloading Node");
+                downloadRuntimeArtifact(CODEX_CORE_URL, codexCore, CODEX_CORE_SHA256, "Downloading Codex");
+                downloadRuntimeArtifact(CODEX_ARM64_URL, codexArm64, CODEX_ARM64_SHA256,
+                    "Downloading Codex runtime");
+
+                updateRuntimeStatus("Installing Linux workspace");
+                String installCommand = shellQuote(bootstrap) + " "
+                    + shellQuote(proot.getAbsolutePath()) + " "
+                    + shellQuote(rootfs.getAbsolutePath()) + " "
+                    + shellQuote(node.getAbsolutePath()) + " "
+                    + shellQuote(codexCore.getAbsolutePath()) + " "
+                    + shellQuote(codexArm64.getAbsolutePath());
+                if (!runRuntimeShell(installCommand, "Install Ominal runtime"))
+                    throw new IOException(mRuntimeSetupDetail.isEmpty()
+                        ? "The Linux runtime installer did not complete." : mRuntimeSetupDetail);
+
+                deleteQuietly(proot);
+                deleteQuietly(rootfs);
+                deleteQuietly(node);
+                deleteQuietly(codexCore);
+                deleteQuietly(codexArm64);
+                finishRuntimeSetup(whenReady);
+            } catch (Exception e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Failed to prepare Ominal runtime", e);
+                runOnUiThread(() -> {
+                    mRuntimeSetupInFlight = false;
+                    mRuntimeReady = false;
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    setInputEnabled(false);
+                    setStatus("Runtime setup failed");
+                    String detail = e.getMessage();
+                    addTransientSystemMessage(detail == null || detail.trim().isEmpty()
+                        ? "Linux runtime setup failed. Restart Ominal to retry."
+                        : detail.trim() + " Restart Ominal to retry.");
+                });
+            }
+        }, "ominal-runtime-setup").start();
+    }
+
+    private void finishRuntimeSetup(Runnable whenReady) {
+        runOnUiThread(() -> {
+            mRuntimeSetupInFlight = false;
+            mRuntimeReady = true;
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            refreshRuntimeDns();
+            whenReady.run();
+        });
+    }
+
+    private boolean supportsArm64() {
+        for (String abi : Build.SUPPORTED_ABIS) {
+            if ("arm64-v8a".equals(abi)) return true;
+        }
+        return false;
+    }
+
+    private boolean runRuntimeShell(String commandLine, String label) {
+        ExecutionCommand command = new ExecutionCommand(-1,
+            OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/sh",
+            new String[]{"-lc", commandLine},
+            null,
+            OminalConstants.OMINAL_HOME_DIR_PATH,
+            ExecutionCommand.Runner.APP_SHELL.getName(),
+            false);
+        command.commandLabel = label;
+        AppShell.execute(this, command, null, new OminalShellEnvironment(), null, true);
+        mRuntimeSetupDetail = formatCommandOutput(command);
+        Integer exitCode = command.resultData.exitCode;
+        return !command.isStateFailed() && exitCode != null && exitCode == 0;
+    }
+
+    private void copyRuntimeAsset(String assetPath, File target, String expectedSha256) throws IOException {
+        if (target.isFile() && hasSha256(target, expectedSha256)) return;
+        File partial = new File(target.getAbsolutePath() + ".part");
+        deleteQuietly(partial);
+        ensureDirectory(target.getParent());
+        try (InputStream input = getAssets().open(assetPath);
+             FileOutputStream output = new FileOutputStream(partial)) {
+            byte[] buffer = new byte[64 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            output.getFD().sync();
+        }
+        if (!hasSha256(partial, expectedSha256)) {
+            deleteQuietly(partial);
+            throw new IOException("Bundled runtime asset failed verification: " + target.getName());
+        }
+        replaceFile(partial, target);
+    }
+
+    private void downloadRuntimeArtifact(String sourceUrl, File target, String expectedSha256, String label)
+        throws IOException {
+        if (target.isFile() && hasSha256(target, expectedSha256)) return;
+        if (target.exists() && !target.delete())
+            throw new IOException("Could not replace invalid runtime download: " + target.getName());
+
+        File partial = new File(target.getAbsolutePath() + ".part");
+        ensureDirectory(target.getParent());
+        long resumeAt = partial.isFile() ? partial.length() : 0L;
+        URL url = new URL(sourceUrl);
+        ConnectivityManager connectivityManager =
+            (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        Network activeNetwork = connectivityManager == null ? null : connectivityManager.getActiveNetwork();
+        HttpURLConnection connection = (HttpURLConnection) (activeNetwork == null
+            ? url.openConnection() : activeNetwork.openConnection(url));
+        connection.setConnectTimeout(30_000);
+        connection.setReadTimeout(120_000);
+        connection.setInstanceFollowRedirects(true);
+        connection.setRequestProperty("Accept-Encoding", "identity");
+        if (resumeAt > 0) connection.setRequestProperty("Range", "bytes=" + resumeAt + "-");
+
+        try {
+            int responseCode = connection.getResponseCode();
+            boolean append = resumeAt > 0 && responseCode == HttpURLConnection.HTTP_PARTIAL;
+            if (responseCode != HttpURLConnection.HTTP_OK && responseCode != HttpURLConnection.HTTP_PARTIAL)
+                throw new IOException("Download failed with HTTP " + responseCode + ": " + target.getName());
+            if (!append) resumeAt = 0L;
+
+            long responseBytes = connection.getContentLengthLong();
+            long totalBytes = responseBytes > 0 ? resumeAt + responseBytes : -1L;
+            long completed = resumeAt;
+            int lastProgressBucket = -1;
+            try (InputStream input = connection.getInputStream();
+                 FileOutputStream output = new FileOutputStream(partial, append)) {
+                byte[] buffer = new byte[64 * 1024];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, count);
+                    completed += count;
+                    if (totalBytes > 0) {
+                        int percent = (int) Math.min(100L, completed * 100L / totalBytes);
+                        int bucket = percent / 5;
+                        if (bucket != lastProgressBucket) {
+                            lastProgressBucket = bucket;
+                            updateRuntimeStatus(label + " " + percent + "%");
+                        }
+                    }
+                }
+                output.getFD().sync();
+            }
+        } finally {
+            connection.disconnect();
+        }
+
+        if (!hasSha256(partial, expectedSha256)) {
+            deleteQuietly(partial);
+            throw new IOException("Downloaded runtime artifact failed verification: " + target.getName());
+        }
+        replaceFile(partial, target);
+    }
+
+    private boolean hasSha256(File file, String expectedSha256) throws IOException {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256 is unavailable", e);
+        }
+        try (FileInputStream input = new FileInputStream(file)) {
+            byte[] buffer = new byte[64 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count);
+        }
+        StringBuilder actual = new StringBuilder(64);
+        for (byte value : digest.digest()) actual.append(String.format(Locale.US, "%02x", value & 0xff));
+        return actual.toString().equals(expectedSha256);
+    }
+
+    private void replaceFile(File source, File target) throws IOException {
+        if (target.exists() && !target.delete())
+            throw new IOException("Could not replace runtime artifact: " + target.getName());
+        if (!source.renameTo(target))
+            throw new IOException("Could not finalize runtime artifact: " + target.getName());
+    }
+
+    private void deleteQuietly(File file) {
+        if (file != null && file.exists() && !file.delete())
+            Logger.logWarn(LOG_TAG, "Could not remove runtime artifact " + file.getAbsolutePath());
+    }
+
+    private void updateRuntimeStatus(String status) {
+        runOnUiThread(() -> setStatus(status));
     }
 
     private void refreshRuntimeDns() {
@@ -1691,10 +1950,8 @@ public final class OringutanActivity extends AppCompatActivity {
             createDisplayHomeTile("View", "Screen", v -> showLiveDisplay()),
             createDisplayHomeTile(">_", "Shell", v -> launchDisplayApp(displayXtermCommand("Ominal Shell",
                 "cd \"${OMINAL_WORKDIR:-$HOME}\" 2>/dev/null || cd \"$HOME\"; export PS1=\"ominal:\\W# \"; exec bash --noprofile --norc -i"))),
-            createDisplayHomeTile("Files", "Files", v -> launchDisplayApp(
-                "if command -v pcmanfm >/dev/null 2>&1; then pcmanfm >/dev/null 2>&1 & else "
-                    + displayXtermCommand("Files", "cd \"${OMINAL_WORKDIR:-$HOME}\" 2>/dev/null || cd \"$HOME\"; ls -la; exec bash --noprofile --norc -i")
-                    + " fi")));
+            createDisplayHomeTile("Files", "Files", v -> launchDisplayApp(displayXtermCommand("Files",
+                "cd \"${OMINAL_WORKDIR:-$HOME}\" 2>/dev/null || cd \"$HOME\"; ls -la; exec bash --noprofile --norc -i"))));
         addDisplayHomeRow(grid,
             createDisplayHomeTile("Web", "Browser", v -> launchDisplayApp(
                 "if command -v chromium >/dev/null 2>&1; then chromium --no-sandbox >/dev/null 2>&1 & elif command -v firefox >/dev/null 2>&1; then firefox >/dev/null 2>&1 & else "
@@ -2366,7 +2623,7 @@ public final class OringutanActivity extends AppCompatActivity {
     }
 
     private void setInputEnabled(boolean enabled) {
-        boolean available = enabled && mBootstrapReady && !mPromptRunning;
+        boolean available = enabled && mBootstrapReady && mRuntimeReady && !mPromptRunning;
         if (mPromptInput != null) mPromptInput.setEnabled(available);
         if (mAttachButton != null) mAttachButton.setEnabled(available);
         if (mSendButton != null) mSendButton.setEnabled(available);
