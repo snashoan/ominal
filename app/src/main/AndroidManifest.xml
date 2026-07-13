@@ -38,8 +38,6 @@
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
     <queries>
-        <package android:name="com.openai.chatgpt" />
-        <package android:name="dev.chungjungsoo.gptmobile" />
         <intent>
             <action android:name="android.intent.action.SEND" />
             <data android:mimeType="text/plain" />
@@ -66,6 +64,7 @@
             android:label="@string/application_name"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.OminalApp.DayNight.NoActionBar"
             tools:targetApi="n">
             <intent-filter>

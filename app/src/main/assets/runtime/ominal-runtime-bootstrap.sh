@@ -4,8 +4,17 @@ set -eu
 PREFIX="${OMINAL_PREFIX:-/data/data/com.ominal/files/usr}"
 HOME="${OMINAL_HOME:-/data/data/com.ominal/files/home}"
 RUNTIME_ROOT="${OMINAL_RUNTIME_ROOT:-$HOME/.ominal/runtime}"
-RUNTIME_VERSION="ominal-ubuntu-24.04.4-node-24.15.0-codex-0.144.1-display-v2"
+RUNTIME_VERSION="ominal-ubuntu-24.04.4-node-24.15.0-codex-0.144.1-desktop-v4"
 READY_FILE="$RUNTIME_ROOT/.ominal-runtime-ready"
+
+verify_codex_runtime() {
+    "$PREFIX/bin/ominal-proot-run" /bin/bash -lc '
+set -eu
+test "$(node --version)" = "v24.15.0"
+test "$(command -v codex)" = "/root/.ominal/npm/bin/codex"
+codex --version | grep -F "codex-cli 0.144.1" >/dev/null
+'
+}
 
 verify_runtime() {
     "$PREFIX/bin/ominal-proot-run" /bin/bash -lc '
@@ -15,7 +24,7 @@ test -z "$(dpkg --audit)"
 test "$(node --version)" = "v24.15.0"
 test "$(command -v codex)" = "/root/.ominal/npm/bin/codex"
 codex --version | grep -F "codex-cli 0.144.1" >/dev/null
-for command_name in Xvfb x11vnc websockify fluxbox xterm; do command -v "$command_name" >/dev/null; done
+for command_name in Xvfb x11vnc websockify jwm xterm xfe xfwrite xdotool wmctrl scrot xdpyinfo ominal-screen; do command -v "$command_name" >/dev/null; done
 test -d /usr/share/novnc || test -d /usr/share/noVNC
 '
 }
@@ -41,8 +50,10 @@ CODEX_PLATFORM_ARCHIVE="${5:?missing Codex arm64 archive}"
 rm -f "$READY_FILE" "$READY_FILE.tmp"
 "$PREFIX/bin/ominal-runtime-install-proot" "$PROOT_ARCHIVE"
 "$PREFIX/bin/ominal-runtime-install-ubuntu-base" "$ROOTFS_ARCHIVE"
-"$PREFIX/bin/ominal-proot-install-local-codex" \
-    "$NODE_ARCHIVE" "$CODEX_CORE_ARCHIVE" "$CODEX_PLATFORM_ARCHIVE"
+if ! verify_codex_runtime; then
+    "$PREFIX/bin/ominal-proot-install-local-codex" \
+        "$NODE_ARCHIVE" "$CODEX_CORE_ARCHIVE" "$CODEX_PLATFORM_ARCHIVE"
+fi
 "$PREFIX/bin/ominal-install-display-packages"
 verify_runtime
 mark_ready
