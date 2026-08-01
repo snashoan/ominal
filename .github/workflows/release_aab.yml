@@ -44,7 +44,7 @@ jobs:
       filename: ${{ steps.runtime.outputs.filename }}
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install ARM64 execution support
         run: |
@@ -100,7 +100,7 @@ jobs:
         delivery: [bootstrap, bundled]
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Download checksum-pinned Ominal bootstrap
         env:
