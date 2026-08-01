@@ -2,52 +2,79 @@ param(
     [string]$Workspace = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
     [string]$WslUser = 'root',
     [string]$AppDir = '/mnt/c/Users/saura/skynet/termux-app',
-    [string]$TermuxPackagesDir = '/root/ominal/termux-packages',
-    [string]$Architectures = 'aarch64,arm,i686,x86_64',
-    [string]$BuildLog = '/root/ominal/bootstrap-build.log'
+    [string]$TermuxPackagesDir = '/root/ominal/termux-packages-ominal',
+    [string]$Architectures = 'aarch64',
+    [string]$BuildLog = '/root/ominal/bootstrap-build.log',
+    [ValidateRange(1, 64)]
+    [int]$BuildJobs = 4,
+    [string]$TaskName = 'OminalBootstrapBuild',
+    [switch]$Resume
 )
 
 $ErrorActionPreference = 'Stop'
 
 $stateDir = Join-Path $Workspace 'build-logs'
 $statusFile = Join-Path $stateDir 'ominal-bootstrap-status.txt'
-$hostPidFile = Join-Path $stateDir 'ominal-bootstrap-wsl-host.pid'
-$stdoutLog = Join-Path $stateDir 'ominal-bootstrap-wsl-host.out.log'
-$stderrLog = Join-Path $stateDir 'ominal-bootstrap-wsl-host.err.log'
+$foregroundRunner = Join-Path $PSScriptRoot 'run-ominal-bootstrap-build-windows.ps1'
 
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 
-if (Test-Path -LiteralPath $hostPidFile) {
-    $oldPidText = (Get-Content -LiteralPath $hostPidFile -Raw).Trim()
-    $oldPid = 0
-    if ([int]::TryParse($oldPidText, [ref]$oldPid)) {
-        $existing = Get-Process -Id $oldPid -ErrorAction SilentlyContinue
-        if ($existing) {
-            Write-Output "BOOTSTRAP_ALREADY_ACTIVE HOST_PID=$oldPid"
-            Write-Output "STATUS=$statusFile"
-            Write-Output "WSL_LOG=$BuildLog"
-            exit 0
-        }
-    }
+$existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if ($existingTask -and $existingTask.State -eq 'Running') {
+    Write-Output "BOOTSTRAP_ALREADY_ACTIVE TASK=$TaskName"
+    Write-Output "STATUS=$statusFile"
+    Write-Output "WSL_LOG=$BuildLog"
+    exit 0
+}
+if ($existingTask) {
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
 
+$actionArguments = @(
+    '-NoProfile',
+    '-WindowStyle Hidden',
+    '-ExecutionPolicy Bypass',
+    "-File `"$foregroundRunner`"",
+    "-WslUser `"$WslUser`"",
+    "-AppDir `"$AppDir`"",
+    "-TermuxPackagesDir `"$TermuxPackagesDir`"",
+    "-Architectures `"$Architectures`"",
+    "-BuildLog `"$BuildLog`"",
+    "-BuildJobs $BuildJobs"
+)
+if ($Resume) {
+    $actionArguments += '-Resume'
+}
+
+$powershellCommand = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+if (-not $powershellCommand) {
+    $powershellCommand = Get-Command powershell.exe -ErrorAction Stop
+}
+$powershell = $powershellCommand.Source
+$action = New-ScheduledTaskAction -Execute $powershell -Argument ($actionArguments -join ' ')
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5)
+$settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -StartWhenAvailable
+$principal = New-ScheduledTaskPrincipal `
+    -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) `
+    -LogonType Interactive `
+    -RunLevel Limited
+
 Set-Content -LiteralPath $statusFile -Value 'starting' -Encoding UTF8
+Register-ScheduledTask `
+    -TaskName $TaskName `
+    -Action $action `
+    -Trigger $trigger `
+    -Settings $settings `
+    -Principal $principal `
+    -Description 'Build and validate the ARM64 Ominal Android bootstrap.' | Out-Null
+Start-ScheduledTask -TaskName $TaskName
+Start-Sleep -Seconds 3
 
-$runner = "$AppDir/tools/run-ominal-bootstrap-build-wsl.sh"
-$args = @('-u', $WslUser, 'bash', $runner, $AppDir, $TermuxPackagesDir, $Architectures, $BuildLog)
-
-$process = Start-Process `
-    -FilePath 'wsl.exe' `
-    -ArgumentList $args `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput $stdoutLog `
-    -RedirectStandardError $stderrLog `
-    -PassThru
-
-Set-Content -LiteralPath $hostPidFile -Value $process.Id -Encoding UTF8
-
-Write-Output "BOOTSTRAP_STARTED HOST_PID=$($process.Id)"
+$task = Get-ScheduledTask -TaskName $TaskName
+Write-Output "BOOTSTRAP_TASK_STARTED TASK=$TaskName STATE=$($task.State) RESUME=$($Resume.IsPresent)"
 Write-Output "STATUS=$statusFile"
 Write-Output "WSL_LOG=$BuildLog"
-Write-Output "HOST_STDOUT=$stdoutLog"
-Write-Output "HOST_STDERR=$stderrLog"

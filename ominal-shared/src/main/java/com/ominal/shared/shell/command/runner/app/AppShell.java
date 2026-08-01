@@ -39,14 +39,22 @@ public final class AppShell {
     private final Process mProcess;
     private final ExecutionCommand mExecutionCommand;
     private final AppShellClient mAppShellClient;
+    private final StreamGobbler.OnLineListener mStdoutListener;
+    private final StreamGobbler.OnLineListener mStderrListener;
+    private final DataOutputStream mStdin;
 
     private static final String LOG_TAG = "AppShell";
 
     private AppShell(@NonNull final Process process, @NonNull final ExecutionCommand executionCommand,
-                     final AppShellClient appShellClient) {
+                     final AppShellClient appShellClient,
+                     final StreamGobbler.OnLineListener stdoutListener,
+                     final StreamGobbler.OnLineListener stderrListener) {
         this.mProcess = process;
         this.mExecutionCommand = executionCommand;
         this.mAppShellClient = appShellClient;
+        this.mStdoutListener = stdoutListener;
+        this.mStderrListener = stderrListener;
+        this.mStdin = new DataOutputStream(process.getOutputStream());
     }
 
     /**
@@ -79,6 +87,22 @@ public final class AppShell {
                                    final AppShellClient appShellClient,
                                    @NonNull final IShellEnvironment shellEnvironmentClient,
                                    @Nullable HashMap<String, String> additionalEnvironment,
+                                   final boolean isSynchronous) {
+        return execute(currentPackageContext, executionCommand, appShellClient, shellEnvironmentClient,
+            additionalEnvironment, null, null, isSynchronous);
+    }
+
+    /**
+     * Start an app shell with optional line listeners for a long-lived stdio protocol.
+     * Listener-backed streams are not accumulated in {@link ResultData}, which prevents an
+     * unbounded buffer when the child process remains alive for the app session.
+     */
+    public static AppShell execute(@NonNull final Context currentPackageContext, @NonNull ExecutionCommand executionCommand,
+                                   final AppShellClient appShellClient,
+                                   @NonNull final IShellEnvironment shellEnvironmentClient,
+                                   @Nullable HashMap<String, String> additionalEnvironment,
+                                   @Nullable StreamGobbler.OnLineListener stdoutListener,
+                                   @Nullable StreamGobbler.OnLineListener stderrListener,
                                    final boolean isSynchronous) {
         if (executionCommand.executable == null || executionCommand.executable.isEmpty()) {
             executionCommand.setStateFailed(Errno.ERRNO_FAILED.getCode(),
@@ -135,7 +159,8 @@ public final class AppShell {
             return null;
         }
 
-        final AppShell appShell = new AppShell(process, executionCommand, appShellClient);
+        final AppShell appShell = new AppShell(process, executionCommand, appShellClient,
+            stdoutListener, stderrListener);
         if (isSynchronous) {
             try {
                 appShell.executeInner(currentPackageContext);
@@ -175,9 +200,16 @@ public final class AppShell {
         mExecutionCommand.resultData.exitCode = null;
 
         // setup stdin, and stdout and stderr gobblers
-        DataOutputStream STDIN = new DataOutputStream(mProcess.getOutputStream());
-        StreamGobbler STDOUT = new StreamGobbler(mExecutionCommand.mPid + "-stdout", mProcess.getInputStream(), mExecutionCommand.resultData.stdout, mExecutionCommand.backgroundCustomLogLevel);
-        StreamGobbler STDERR = new StreamGobbler(mExecutionCommand.mPid + "-stderr", mProcess.getErrorStream(), mExecutionCommand.resultData.stderr, mExecutionCommand.backgroundCustomLogLevel);
+        StreamGobbler STDOUT = mStdoutListener == null
+            ? new StreamGobbler(mExecutionCommand.mPid + "-stdout", mProcess.getInputStream(),
+                mExecutionCommand.resultData.stdout, mExecutionCommand.backgroundCustomLogLevel)
+            : new StreamGobbler(mExecutionCommand.mPid + "-stdout", mProcess.getInputStream(),
+                mStdoutListener, null, mExecutionCommand.backgroundCustomLogLevel);
+        StreamGobbler STDERR = mStderrListener == null
+            ? new StreamGobbler(mExecutionCommand.mPid + "-stderr", mProcess.getErrorStream(),
+                mExecutionCommand.resultData.stderr, mExecutionCommand.backgroundCustomLogLevel)
+            : new StreamGobbler(mExecutionCommand.mPid + "-stderr", mProcess.getErrorStream(),
+                mStderrListener, null, mExecutionCommand.backgroundCustomLogLevel);
 
         // start gobbling
         STDOUT.start();
@@ -185,9 +217,9 @@ public final class AppShell {
 
         if (!DataUtils.isNullOrEmpty(mExecutionCommand.stdin)) {
             try {
-                STDIN.write((mExecutionCommand.stdin + "\n").getBytes(StandardCharsets.UTF_8));
-                STDIN.flush();
-                STDIN.close();
+                mStdin.write((mExecutionCommand.stdin + "\n").getBytes(StandardCharsets.UTF_8));
+                mStdin.flush();
+                mStdin.close();
                 //STDIN.write("exit\n".getBytes(StandardCharsets.UTF_8));
                 //STDIN.flush();
             } catch(IOException e) {
@@ -217,7 +249,7 @@ public final class AppShell {
         // they are required for guaranteed cleanup of resources, so lets be
         // safe and do this on Android as well
         try {
-            STDIN.close();
+            mStdin.close();
         } catch (IOException e) {
             // might be closed already
         }
@@ -331,6 +363,20 @@ public final class AppShell {
 
     public ExecutionCommand getExecutionCommand() {
         return mExecutionCommand;
+    }
+
+    /** Write one UTF-8 line to a still-running child process. */
+    public synchronized boolean writeStdinLine(@NonNull String line) {
+        if (!mExecutionCommand.isExecuting()) return false;
+        try {
+            mStdin.write((line + "\n").getBytes(StandardCharsets.UTF_8));
+            mStdin.flush();
+            return true;
+        } catch (IOException e) {
+            Logger.logWarn(LOG_TAG, "Failed writing to \"" +
+                mExecutionCommand.getCommandIdAndLabelLogString() + "\" AppShell: " + e.getMessage());
+            return false;
+        }
     }
 
 

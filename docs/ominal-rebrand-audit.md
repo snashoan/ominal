@@ -9,21 +9,28 @@ This file separates release-blocking package identity from inherited upstream na
 - Java/Kotlin source package declarations were moved from `com.termux` to `com.ominal`.
 - Manifest authorities and permissions are parameterized through the Ominal package entity.
 - Gradle validation rejects bootstrap archives containing `/data/data/com.termux` or `/data/user/0/com.termux`.
-- Source-built bootstrap archives for `aarch64`, `arm`, `i686`, and `x86_64` were generated for `com.ominal`, copied into `app/src/main/cpp`, scanned clean for `/data/data/com.termux`, and accepted by `:app:validateOminalBootstraps` on 2026-07-06.
-- `assembleDebug` produced Ominal debug APKs on 2026-07-06.
+- A current source-built ARM64 bootstrap is required before release. Build status
+  and verification evidence are recorded by `docs/ominal-bootstrap.md`; do not
+  treat an older archive as release evidence after the package source changes.
 - `README.md` and `docs/en/index.md` now describe Ominal instead of the upstream app.
 
 ## Preserved Upstream/Legal References
 
-- `LICENSE.md` and `termux-shared/LICENSE.md` must retain upstream license attribution.
+- `LICENSE.md` and `ominal-shared/LICENSE.md` must retain upstream license attribution.
 - Some upstream package names remain in the bootstrap ecosystem, including packages such as `termux-core`, `termux-exec`, `termux-tools`, and `termux-am`.
 - The build system still consumes the upstream `termux-packages` source layout to produce Ominal-targeted bootstraps.
 - The published `com.termux:termux-am-library` dependency namespace remains external unless that library is forked and republished.
+- The native X server currently exports inherited JNI ABI symbols. Renaming
+  those symbols requires rebuilding that native dependency and is not a string
+  replacement task.
 
 ## Remaining Rebrand Debt
 
-- Internal class, method, resource, and Gradle module names still include inherited `Termux*` identifiers.
-- Several workflow and issue-template files still refer to upstream Termux project names.
+- The explicit settings-import migration retains the source product name so
+  existing users can identify compatible archives; it is not the application
+  identity or runtime package name.
+- Package-build compatibility environment variables and native library names
+  remain where they are contracts with the current upstream package ecosystem.
 - Historical handoff/checkpoint files contain old `com.termux` commands and should not be treated as current install instructions.
 - A full independent ecosystem release would require a package-repo fork with renamed package metadata, package URLs, repository metadata, and update channels.
 

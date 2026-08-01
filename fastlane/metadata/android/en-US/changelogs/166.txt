@@ -1,0 +1,1 @@
+Antigravity chat sessions now recover from a stopped terminal instead of leaving the chat blocked. Finished headless terminal records are discarded before named-session reuse, and an interrupted active turn receives one controlled restart while preserving its chat workspace and context.

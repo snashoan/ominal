@@ -8,5 +8,6 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 -dontobfuscate
+-keep class com.ominal.x11.** { *; }
 #-renamesourcefileattribute SourceFile
 #-keepattributes SourceFile,LineNumberTable

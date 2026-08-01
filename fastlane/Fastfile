@@ -1,0 +1,32 @@
+default_platform(:android)
+
+platform :android do
+  desc "Upload a signed AAB to the Google Play internal testing track"
+  lane :internal do |options|
+    aab = File.expand_path(options[:aab].to_s)
+    json_key = File.expand_path(ENV.fetch("GOOGLE_PLAY_JSON_KEY", ""))
+    version_file = File.expand_path("../version.properties", __dir__)
+    version = File.readlines(version_file, chomp: true)
+      .reject { |line| line.empty? || line.start_with?("#") }
+      .map { |line| line.split("=", 2) }
+      .to_h
+    version_code = version.fetch("versionCode")
+
+    UI.user_error!("Pass aab:/absolute/path/to/release.aab") unless File.file?(aab)
+    UI.user_error!("Set GOOGLE_PLAY_JSON_KEY to a Play service-account JSON file") unless File.file?(json_key)
+    UI.user_error!("AAB filename must contain canonical version code v#{version_code}") unless File.basename(aab).include?("-v#{version_code}-")
+
+    upload_to_play_store(
+      aab: aab,
+      json_key: json_key,
+      track: "internal",
+      release_status: options.fetch(:status, "completed"),
+      validate_only: options[:validate].to_s == "true",
+      metadata_path: File.expand_path("metadata/android", __dir__),
+      skip_upload_metadata: true,
+      skip_upload_changelogs: false,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+end

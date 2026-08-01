@@ -1,0 +1,4 @@
+Introduces the XFCE mobile desktop with a recovery fallback.
+Keeps display startup idempotent and windows fitted after keyboard resizing.
+Adds touch-first pointer behavior, responsive panels, and full app launchers.
+Updates the prepared Linux workspace and desktop packages.

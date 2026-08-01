@@ -1,0 +1,3 @@
+Adds deterministic model, effort, and command discovery for installed agent harnesses.
+Fixes Antigravity response streaming and keeps agent work independent from other chats.
+Prevents Android release version codes from silently moving backwards.

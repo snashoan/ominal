@@ -1,5 +1,5 @@
 name: "Feature request"
-description: "Suggest a new feature for Termux application"
+description: "Propose a focused improvement to Ominal"
 title: "[Feature]: "
 labels: ["feature request"]
 body:
@@ -13,7 +13,6 @@ body:
     attributes:
       label: Additional information
       description: |
-        Does another app/terminal emulator have this feature?
-        Provide links to more background information.
+        Include relevant references, constraints, or prior art.
     validations:
       required: true

@@ -1,0 +1,1 @@
+Attachments and agent-created media now appear directly in conversations and persist with chat history. New or updated workspace images are detected per turn, with native inline previews and a full-screen viewer. The computer-use highlight now follows the actual display edges with consistent rounded geometry.

@@ -2,6 +2,8 @@
 
 Ominal is an Android coding-agent workspace built on a Linux userspace bootstrap, terminal execution, and a chat-first front end.
 
+The current release target is ARM64 hardware running Android 10 or newer.
+
 The current package identity is `com.ominal`. Runtime files are expected under:
 
 ```text
@@ -35,13 +37,10 @@ The runner writes status to:
 build-logs/ominal-bootstrap-status.txt
 ```
 
-The generated archives must be copied into:
+The ARM64 runner copies the accepted archive and checksum into:
 
 ```text
 app/src/main/cpp/bootstrap-aarch64.zip
-app/src/main/cpp/bootstrap-arm.zip
-app/src/main/cpp/bootstrap-i686.zip
-app/src/main/cpp/bootstrap-x86_64.zip
 app/src/main/cpp/bootstrap-ominal.sha256
 ```
 
@@ -62,7 +61,7 @@ Do not push this fork to the upstream Termux remote.
 
 ## Licensing
 
-This fork inherits licensing from upstream Termux app sources. The main app is GPLv3-only, with documented Apache, MIT, and GPL exceptions in subcomponents. Keep `LICENSE.md`, `termux-shared/LICENSE.md`, source notices, and source availability intact.
+This fork inherits licensing from upstream Termux app sources. The main app is GPLv3-only, with documented Apache, MIT, and GPL exceptions in subcomponents. Keep `LICENSE.md`, `ominal-shared/LICENSE.md`, source notices, and source availability intact.
 
 Ominal branding and `com.ominal` package identity do not remove upstream attribution requirements.
 

@@ -1,0 +1,1 @@
+Fixes a startup crash caused by an incompatible native display interface in v148.
