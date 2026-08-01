@@ -65,7 +65,7 @@ jobs:
           echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
 
       - name: Upload runtime build artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ominal-prepared-runtime
           path: |
@@ -192,7 +192,7 @@ jobs:
           fi
 
       - name: Upload signed ${{ matrix.delivery }} AAB
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ominal-${{ steps.version.outputs.name }}-v${{ steps.version.outputs.code }}-${{ matrix.delivery == 'bundled' && 'play' || 'direct-test' }}-aab
           path: |
