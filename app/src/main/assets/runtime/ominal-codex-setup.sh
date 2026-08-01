@@ -32,7 +32,7 @@ apt_strict update
 apt_strict install -y curl
 node --version
 npm --version
-npm install --global --prefix /root/.ominal/npm "@openai/codex@${OMINAL_CODEX_VERSION:-0.144.1}"
+npm install --global --prefix /root/.ominal/npm "@openai/codex@${OMINAL_CODEX_VERSION:-0.144.6}"
 command -v codex
 codex --version
 '

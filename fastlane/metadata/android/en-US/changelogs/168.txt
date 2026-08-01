@@ -1,0 +1,1 @@
+Adds the local Monopot event channel, compact live agent activity, and hash-chained workspace change receipts. The monochrome launch experience now covers cold start while harness communication remains direct and provider-neutral.

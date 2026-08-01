@@ -1,0 +1,7 @@
+Normal terminals now open inside the same Ubuntu environment used by Codex and DUI.
+
+DUI terminal text starts at a compact mobile size. Pinch adjusts application scale, and two-finger vertical drag scrolls terminal and desktop content.
+
+Native failsafe shell access remains available for runtime recovery.
+
+Monolith now remains visible in Android Recents after pressing Home and resumes the retained chat task when reopened.

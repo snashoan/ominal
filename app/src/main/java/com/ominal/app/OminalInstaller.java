@@ -115,7 +115,13 @@ final class OminalInstaller {
             Logger.logInfo(LOG_TAG, "The ominal prefix directory \"" + OMINAL_PREFIX_DIR_PATH + "\" does not exist but another file exists at its destination.");
         }
 
-        final ProgressDialog progress = ProgressDialog.show(activity, null, activity.getString(R.string.bootstrap_installer_body), true, false);
+        final OringutanActivity setupActivity = activity instanceof OringutanActivity
+            ? (OringutanActivity) activity : null;
+        final ProgressDialog progress = setupActivity == null
+            ? ProgressDialog.show(activity, null, activity.getString(R.string.bootstrap_installer_body), true, false)
+            : null;
+        if (setupActivity != null)
+            setupActivity.showSetupProgress(1, "Installing system core", "Unpacking essential command tools", 18);
         new Thread() {
             @Override
             public void run() {
@@ -158,6 +164,8 @@ final class OminalInstaller {
                     final List<Pair<String, String>> symlinks = new ArrayList<>(50);
 
                     final byte[] zipBytes = loadZipBytes();
+                    if (setupActivity != null)
+                        setupActivity.showSetupProgress(1, "Installing system core", "Writing command tools", 42);
                     try (ZipInputStream zipInput = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
                         ZipEntry zipEntry;
                         while ((zipEntry = zipInput.getNextEntry()) != null) {
@@ -207,6 +215,8 @@ final class OminalInstaller {
 
                     if (symlinks.isEmpty())
                         throw new RuntimeException("No SYMLINKS.txt encountered");
+                    if (setupActivity != null)
+                        setupActivity.showSetupProgress(1, "Installing system core", "Linking system components", 78);
                     for (Pair<String, String> symlink : symlinks) {
                         Os.symlink(symlink.first, symlink.second);
                     }
@@ -218,6 +228,9 @@ final class OminalInstaller {
                     }
 
                     installCompatibilityCommands();
+
+                    if (setupActivity != null)
+                        setupActivity.showSetupProgress(1, "Installing system core", "Core installation complete", 100);
 
                     Logger.logInfo(LOG_TAG, "Bootstrap packages installed successfully.");
 
@@ -232,7 +245,7 @@ final class OminalInstaller {
                 } finally {
                     activity.runOnUiThread(() -> {
                         try {
-                            progress.dismiss();
+                            if (progress != null) progress.dismiss();
                         } catch (RuntimeException e) {
                             // Activity already dismissed - ignore.
                         }
@@ -249,6 +262,15 @@ final class OminalInstaller {
         sendBootstrapCrashReportNotification(activity, message);
 
         activity.runOnUiThread(() -> {
+            if (activity instanceof OringutanActivity) {
+                ((OringutanActivity) activity).showSetupFailure(
+                    "The system core could not be installed.",
+                    () -> {
+                        FileUtils.deleteFile("ominal prefix directory", OMINAL_PREFIX_DIR_PATH, true);
+                        OminalInstaller.setupBootstrapIfNeeded(activity, whenDone);
+                    });
+                return;
+            }
             try {
                 new AlertDialog.Builder(activity).setTitle(R.string.bootstrap_error_title).setMessage(R.string.bootstrap_error_body)
                     .setNegativeButton(R.string.bootstrap_error_abort, (dialog, which) -> {

@@ -1,0 +1,4 @@
+Keeps Codex work active while switching views or apps.
+Keeps chat input available while a task is running.
+Shows live working and token status in the Linux display.
+Adds a smoother Omega startup transition.

@@ -6,11 +6,14 @@
 build/
 release/
 *.apk
+*.aab
 *.so
+!app/src/main/jniLibs/arm64-v8a/libominal-display.so
 .externalNativeBuild
 .cxx
 *.zip
 app/src/main/cpp/bootstrap-*.zip
+ominal-runtime-pack/src/main/assets/runtime/archives/*.tgz
 
 # Local configuration file (sdk path, etc)
 local.properties
@@ -18,6 +21,7 @@ local.properties
 # Local agent sources, auth, and generated run artifacts
 /build-logs/
 /.artifacts/
+/artifacts/
 /external/
 /external-apks/
 /codex/
@@ -43,11 +47,20 @@ replay_pid*.log
 /*.xml
 /play-store-*/
 
+# Device QA captures and local release tooling
+/art/*.png
+/art/*.xml
+/art/*.mp4
+/art/mono-chat-import-*/
+/build-tools/*.jar
+
 # Gradle generated files
 .gradle/
 
 # Signing files
 .signing/
+/.secrets/
+/play-service-account*.json
 
 # Intellij
 .idea/

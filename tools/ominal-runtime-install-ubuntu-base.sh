@@ -7,12 +7,13 @@ RUNTIME_ROOT="${OMINAL_RUNTIME_ROOT:-$HOME/.ominal/runtime}"
 ARCHIVE_PATH="${1:?missing normalized Ubuntu base archive path}"
 RUNTIME_VERSION="${OMINAL_ROOTFS_VERSION:-ubuntu-base-24.04.4-arm64-nohardlinks-v3}"
 DNS_SERVERS="${OMINAL_DNS_SERVERS:-1.1.1.1 8.8.8.8}"
-PROOT_BIN="$RUNTIME_ROOT/proot/root/bin/proot"
+PROOT_BIN="$PREFIX/bin/proot"
+PROOT_LOADER="${PROOT_LOADER:-$PREFIX/libexec/proot/loader}"
 LINUX_ROOT="$RUNTIME_ROOT/linux"
 ROOTFS="$LINUX_ROOT/rootfs"
 ROOTFS_READY="$ROOTFS/.ominal-rootfs-ready"
 
-if [ ! -x "$PROOT_BIN" ]; then
+if [ ! -x "$PROOT_BIN" ] || [ ! -x "$PROOT_LOADER" ]; then
     printf '%s\n' 'Ominal PRoot runtime is missing.' >&2
     exit 64
 fi
@@ -22,7 +23,7 @@ if [ ! -f "$ARCHIVE_PATH" ]; then
 fi
 
 mkdir -p "$LINUX_ROOT" "$RUNTIME_ROOT/tmp"
-export PREFIX HOME PROOT_TMP_DIR="$RUNTIME_ROOT/tmp"
+export PREFIX HOME PROOT_LOADER PROOT_TMP_DIR="$RUNTIME_ROOT/tmp"
 
 write_resolver() {
     target_rootfs="$1"
@@ -36,9 +37,15 @@ write_resolver() {
 
 validate_rootfs() {
     target_rootfs="$1"
-    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$PROOT_BIN" -0 -r "$target_rootfs" \
-        -b /dev -b /proc -b /sys -b "$RUNTIME_ROOT/tmp:/tmp" -w /root \
-        /bin/bash -lc 'test -x /usr/bin/tar && test -x /usr/bin/perl && test -f /etc/os-release'
+    (
+        # Keep the Android exec bridge for bootstrap tools, but never expose it
+        # inside the Linux guest.
+        unset LD_PRELOAD
+        PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            exec "$PROOT_BIN" -0 -r "$target_rootfs" \
+            -b /dev -b /proc -b /sys -b "$RUNTIME_ROOT/tmp:/tmp" -w /root \
+            /bin/bash -lc 'test -x /usr/bin/tar && test -x /usr/bin/perl && test -f /etc/os-release'
+    )
 }
 
 current_version=""
@@ -49,7 +56,7 @@ if [ "$current_version" != "$RUNTIME_VERSION" ]; then
     STAGING_ROOTFS="$LINUX_ROOT/rootfs.stage.$$"
     mkdir -p "$STAGING_ROOTFS/tmp"
     trap 'rm -rf "$STAGING_ROOTFS"' EXIT HUP INT TERM
-    /system/bin/tar -xzf "$ARCHIVE_PATH" -C "$STAGING_ROOTFS"
+    "$PREFIX/bin/tar" -xzf "$ARCHIVE_PATH" -C "$STAGING_ROOTFS"
     write_resolver "$STAGING_ROOTFS"
     validate_rootfs "$STAGING_ROOTFS"
     printf '%s\n' "$RUNTIME_VERSION" > "$STAGING_ROOTFS/.ominal-rootfs-ready"

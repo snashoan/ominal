@@ -62,6 +62,7 @@ import com.ominal.view.TerminalViewClient;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.ViewPager;
 
@@ -604,7 +605,7 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
         if (getDrawer().isDrawerOpen(Gravity.LEFT)) {
             getDrawer().closeDrawers();
         } else {
-            finishActivityIfNotFinishing();
+            super.onBackPressed();
         }
     }
 
@@ -910,7 +911,8 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
 
     public static void updateOminalActivityStyling(Context context, boolean recreateActivity) {
         // Make sure that terminal styling is always applied.
-        Intent stylingIntent = new Intent(OMINAL_ACTIVITY.ACTION_RELOAD_STYLE);
+        Intent stylingIntent = new Intent(OMINAL_ACTIVITY.ACTION_RELOAD_STYLE)
+            .setPackage(context.getPackageName());
         stylingIntent.putExtra(OMINAL_ACTIVITY.EXTRA_RECREATE_ACTIVITY, recreateActivity);
         context.sendBroadcast(stylingIntent);
     }
@@ -921,7 +923,8 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
         intentFilter.addAction(OMINAL_ACTIVITY.ACTION_RELOAD_STYLE);
         intentFilter.addAction(OMINAL_ACTIVITY.ACTION_REQUEST_PERMISSIONS);
 
-        registerReceiver(mOminalActivityBroadcastReceiver, intentFilter);
+        ContextCompat.registerReceiver(this, mOminalActivityBroadcastReceiver, intentFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
     private void unregisterOminalActivityBroadcastReceiver() {

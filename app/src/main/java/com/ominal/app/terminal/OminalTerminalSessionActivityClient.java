@@ -21,6 +21,7 @@ import com.ominal.shared.interact.ShareUtils;
 import com.ominal.shared.runtime.shell.command.runner.terminal.OminalSession;
 import com.ominal.shared.runtime.interact.TextInputDialogUtils;
 import com.ominal.app.OminalActivity;
+import com.ominal.app.OminalProotTerminal;
 import com.ominal.shared.runtime.terminal.OminalTerminalSessionClientBase;
 import com.ominal.shared.runtime.OminalConstants;
 import com.ominal.app.OminalService;
@@ -378,7 +379,25 @@ public class OminalTerminalSessionActivityClient extends OminalTerminalSessionCl
                 workingDirectory = currentSession.getCwd();
             }
 
-            OminalSession newOminalSession = service.createOminalSession(null, null, null, workingDirectory, isFailSafe, sessionName);
+            String executable = null;
+            String[] arguments = null;
+            if (!isFailSafe) {
+                if (!OminalProotTerminal.isReady()) {
+                    new AlertDialog.Builder(mActivity)
+                        .setTitle("Linux environment unavailable")
+                        .setMessage("Return to chat and wait for setup to finish. "
+                            + "A failsafe terminal remains available from the new-session menu.")
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
+                    return;
+                }
+                workingDirectory = OminalProotTerminal.normalizeWorkspace(workingDirectory);
+                executable = OminalProotTerminal.EXECUTABLE_PATH;
+                arguments = new String[]{workingDirectory};
+            }
+
+            OminalSession newOminalSession = service.createOminalSession(
+                executable, arguments, null, workingDirectory, isFailSafe, sessionName);
             if (newOminalSession == null) return;
 
             TerminalSession newTerminalSession = newOminalSession.getTerminalSession();

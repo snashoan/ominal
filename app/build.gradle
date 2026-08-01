@@ -14,15 +14,82 @@ ext {
     packageVariant = System.getenv("OMINAL_PACKAGE_VARIANT") ?: "apt-android-7" // Default: "apt-android-7"
 }
 
+def localBootstrapsValue = System.getenv("OMINAL_USE_LOCAL_BOOTSTRAPS")
+def useLocalOminalBootstraps = localBootstrapsValue != null
+    ? localBootstrapsValue.equals("1") || localBootstrapsValue.equalsIgnoreCase("true")
+    : project.ext.ominalAppPackageName == "com.ominal"
+
+def releaseSigningPropertiesFile = rootProject.file(".signing/keystore.properties")
+def releaseSigningProperties = new Properties()
+if (releaseSigningPropertiesFile.exists()) {
+    releaseSigningPropertiesFile.withInputStream { releaseSigningProperties.load(it) }
+}
+def releaseSigningPropertyNames = ["storeFile", "storePassword", "keyAlias", "keyPassword"]
+def hasReleaseSigning = releaseSigningPropertyNames.every {
+    releaseSigningProperties.getProperty(it)?.trim()
+}
+def runtimeDelivery = (project.findProperty("ominalRuntimeDelivery")
+    ?: System.getenv("OMINAL_RUNTIME_DELIVERY") ?: "legacy").toString()
+def preparedRootfsUrl = (project.findProperty("ominalPreparedRootfsUrl")
+    ?: System.getenv("OMINAL_PREPARED_ROOTFS_URL") ?: "").toString()
+def preparedRootfsSha256 = (project.findProperty("ominalPreparedRootfsSha256")
+    ?: System.getenv("OMINAL_PREPARED_ROOTFS_SHA256") ?: "").toString().toLowerCase(Locale.ROOT)
+def preparedRootfsAsset = "runtime/archives/ominal-ubuntu-24.04.4-arm64-prepared-v3.tgz"
+def versionPropertiesFile = rootProject.file("version.properties")
+if (!versionPropertiesFile.isFile()) {
+    throw new GradleException("Missing canonical version file: " + versionPropertiesFile)
+}
+def versionProperties = new Properties()
+versionPropertiesFile.withInputStream { versionProperties.load(it) }
+def configuredVersionCode = versionProperties.getProperty("versionCode", "").trim()
+def appVersionName = versionProperties.getProperty("versionName", "").trim()
+def requestedVersionCode = (project.findProperty("ominalAppVersionCode")
+    ?: System.getenv("OMINAL_APP_VERSION_CODE") ?: "").toString().trim()
+def requestedVersionName = (project.findProperty("ominalAppVersionName")
+    ?: System.getenv("OMINAL_APP_VERSION_NAME") ?: "").toString().trim()
+if (requestedVersionCode && requestedVersionCode != configuredVersionCode) {
+    throw new GradleException("Version code overrides are not allowed. Update version.properties.")
+}
+if (requestedVersionName && requestedVersionName != appVersionName) {
+    throw new GradleException("Version name overrides are not allowed. Update version.properties.")
+}
+def ominalBootstrapAarch64 = file("src/main/cpp/bootstrap-aarch64.zip")
+def generatedOminalJniLibs = layout.buildDirectory.dir("generated/ominal-jni-libs")
+def generatedProotLoader = generatedOminalJniLibs.map {
+    it.file("arm64-v8a/libominal-proot-loader.so")
+}
+def appVersionCode
+try {
+    appVersionCode = configuredVersionCode.toInteger()
+} catch (NumberFormatException ignored) {
+    throw new GradleException("Ominal app version code must be a positive integer: " + configuredVersionCode)
+}
+if (appVersionCode <= 0) {
+    throw new GradleException("Ominal app version code must be a positive integer: " + configuredVersionCode)
+}
+if (!(runtimeDelivery in ["legacy", "bootstrap", "bundled"])) {
+    throw new GradleException("Unsupported Ominal runtime delivery profile: " + runtimeDelivery)
+}
+def buildConfigString = { String value ->
+    '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
+}
+
 android {
     namespace "com.ominal"
 
+    sourceSets.main.jniLibs.srcDir generatedOminalJniLibs
+
+    if (runtimeDelivery == "legacy") {
+        sourceSets.main.assets.srcDir "src/legacy/assets"
+    }
+
+    buildFeatures {
+        aidl true
+    }
+
     compileSdkVersion project.properties.compileSdkVersion.toInteger()
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
-    def appVersionName = System.getenv("OMINAL_APP_VERSION_NAME") ?: ""
     def apkVersionTag = System.getenv("OMINAL_APK_VERSION_TAG") ?: ""
-    def splitAPKsForDebugBuilds = System.getenv("OMINAL_SPLIT_APKS_FOR_DEBUG_BUILDS") ?: "1"
-    def splitAPKsForReleaseBuilds = System.getenv("OMINAL_SPLIT_APKS_FOR_RELEASE_BUILDS") ?: "0" // F-Droid does not support split APKs #1904
 
     dependencies {
         implementation "androidx.annotation:annotation:1.9.0"
@@ -46,16 +113,23 @@ android {
         applicationId project.ext.ominalAppPackageName
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 141
-        versionName "0.118.0"
+        versionCode appVersionCode
+        versionName appVersionName
 
-        if (appVersionName) versionName = appVersionName
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+
         validateVersionName(versionName)
 
         buildConfigField "String", "OMINAL_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by OminalApplication class
+        buildConfigField "String", "OMINAL_RUNTIME_DELIVERY", buildConfigString(runtimeDelivery)
+        buildConfigField "String", "OMINAL_PREPARED_ROOTFS_URL", buildConfigString(preparedRootfsUrl)
+        buildConfigField "String", "OMINAL_PREPARED_ROOTFS_SHA256", buildConfigString(preparedRootfsSha256)
+        buildConfigField "String", "OMINAL_PREPARED_ROOTFS_ASSET", buildConfigString(preparedRootfsAsset)
 
         manifestPlaceholders.OMINAL_PACKAGE_NAME = project.ext.ominalAppPackageName
-        manifestPlaceholders.OMINAL_APP_NAME = "Ominal"
+        manifestPlaceholders.OMINAL_APP_NAME = "Monolith"
         manifestPlaceholders.OMINAL_API_APP_NAME = "Ominal:API"
         manifestPlaceholders.OMINAL_BOOT_APP_NAME = "Ominal:Boot"
         manifestPlaceholders.OMINAL_FLOAT_APP_NAME = "Ominal:Float"
@@ -69,15 +143,6 @@ android {
             }
         }
 
-        splits {
-            abi {
-                enable ((gradle.startParameter.taskNames.any { it.contains("Debug") } && splitAPKsForDebugBuilds == "1") ||
-                    (gradle.startParameter.taskNames.any { it.contains("Release") } && splitAPKsForReleaseBuilds == "1"))
-                reset ()
-                include 'arm64-v8a'
-                universalApk false
-            }
-        }
     }
 
     signingConfigs {
@@ -87,6 +152,15 @@ android {
             storePassword 'xrj45yWGLbsO7W0v'
             keyPassword 'xrj45yWGLbsO7W0v'
         }
+
+        if (hasReleaseSigning) {
+            release {
+                storeFile rootProject.file(releaseSigningProperties.getProperty("storeFile"))
+                storePassword releaseSigningProperties.getProperty("storePassword")
+                keyAlias releaseSigningProperties.getProperty("keyAlias")
+                keyPassword releaseSigningProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -94,6 +168,7 @@ android {
             minifyEnabled true
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) signingConfig signingConfigs.release
         }
 
         debug {
@@ -131,14 +206,17 @@ android {
         }
     }
 
+    if (runtimeDelivery == "bundled") {
+        assetPacks = [":ominal-runtime-pack"]
+    }
+
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             if (variant.buildType.name == "debug") {
-                def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("ominal-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("monolith-v" + appVersionCode + "-dev.apk")
             } else if (variant.buildType.name == "release") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("ominal-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("ominal-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "arm64-v8a") + ".apk")
             }
         }
     }
@@ -148,15 +226,105 @@ android {
     }
 }
 
+def prepareOminalProotLoader = tasks.register("prepareOminalProotLoader") {
+    inputs.file(ominalBootstrapAarch64)
+    outputs.file(generatedProotLoader)
+    doLast {
+        if (!ominalBootstrapAarch64.isFile()) {
+            throw new GradleException("Missing source-built Ominal bootstrap: " + ominalBootstrapAarch64)
+        }
+        File loader = zipTree(ominalBootstrapAarch64).matching {
+            include "libexec/proot/loader"
+        }.singleFile
+        File target = generatedProotLoader.get().asFile
+        target.parentFile.mkdirs()
+        target.bytes = loader.bytes
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name.endsWith("JniLibFolders")) {
+        task.dependsOn(prepareOminalProotLoader)
+    }
+}
+
+tasks.register("validateReleaseSigning") {
+    doLast {
+        if (!hasReleaseSigning) {
+            throw new GradleException("Missing release signing configuration at .signing/keystore.properties")
+        }
+    }
+}
+
+tasks.register("validateReleaseRuntime") {
+    doLast {
+        if (runtimeDelivery == "legacy") {
+            throw new GradleException("Release bundles require -PominalRuntimeDelivery=bootstrap or bundled")
+        }
+        if (!(preparedRootfsSha256 ==~ /[0-9a-f]{64}/)) {
+            throw new GradleException("A 64-character ominalPreparedRootfsSha256 is required")
+        }
+        if (runtimeDelivery == "bootstrap" && !preparedRootfsUrl.startsWith("https://")) {
+            throw new GradleException("Bootstrap bundles require an HTTPS ominalPreparedRootfsUrl")
+        }
+        if (runtimeDelivery == "bundled") {
+            File preparedAsset = rootProject.file("ominal-runtime-pack/src/main/assets/" + preparedRootfsAsset)
+            if (!preparedAsset.isFile()) {
+                throw new GradleException("Bundled runtime asset is missing: " + preparedAsset)
+            }
+        }
+    }
+}
+
+def versionChangelogDirectory =
+    rootProject.file("fastlane/metadata/android/en-US/changelogs")
+def versionChangelogFile = new File(versionChangelogDirectory, appVersionCode + ".txt")
+tasks.register("verifyVersioning") {
+    inputs.file(versionPropertiesFile)
+    inputs.dir(versionChangelogDirectory)
+    doLast {
+        if (!versionChangelogFile.isFile()
+            || versionChangelogFile.getText("UTF-8").trim().isEmpty()) {
+            throw new GradleException(
+                "Missing release changelog for version code " + appVersionCode + ": "
+                    + versionChangelogFile)
+        }
+        def recordedCodes = versionChangelogDirectory.listFiles()
+            .findAll { it.isFile() && it.name ==~ /\d+\.txt/ }
+            .collect { it.name.substring(0, it.name.length() - 4).toInteger() }
+        def highestRecordedCode = recordedCodes.isEmpty() ? 0 : recordedCodes.max()
+        if (highestRecordedCode != appVersionCode) {
+            throw new GradleException(
+                "version.properties code " + appVersionCode
+                    + " must match the newest changelog code " + highestRecordedCode)
+        }
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == "preBuild") {
+        task.dependsOn("verifyVersioning")
+    } else if (task.name == "preReleaseBuild") {
+        task.dependsOn("validateReleaseSigning")
+        task.dependsOn("validateReleaseRuntime")
+    }
+}
+
 dependencies {
     testImplementation "junit:junit:4.13.2"
-    testImplementation "org.robolectric:robolectric:4.10"
+    testImplementation "org.robolectric:robolectric:4.16.1"
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
 }
 
 task versionName {
     doLast {
         print android.defaultConfig.versionName
+    }
+}
+
+task versionCode {
+    doLast {
+        print android.defaultConfig.versionCode
     }
 }
 
@@ -167,12 +335,8 @@ def validateVersionName(String versionName) {
         throw new GradleException("The versionName '"  + versionName + "' is not a valid version as per semantic version '2.0.0' spec in the format 'major.minor.patch(-prerelease)(+buildmetadata)'. https://semver.org/spec/v2.0.0.html.")
 }
 
-def downloadBootstrap(String arch, String expectedChecksum, String version) {
+def downloadBootstrap(String arch, String expectedChecksum, String version, boolean useLocalBootstraps) {
     def digest = java.security.MessageDigest.getInstance("SHA-256")
-    def localBootstrapsValue = System.getenv("OMINAL_USE_LOCAL_BOOTSTRAPS")
-    def useLocalBootstraps = localBootstrapsValue != null
-        ? localBootstrapsValue.equals("1") || localBootstrapsValue.equalsIgnoreCase("true")
-        : project.ext.ominalAppPackageName == "com.ominal"
 
     def localUrl = "src/main/cpp/bootstrap-" + arch + ".zip"
     def file = new File(projectDir, localUrl)
@@ -224,9 +388,11 @@ def downloadBootstrap(String arch, String expectedChecksum, String version) {
 
 clean {
     doLast {
-        def tree = fileTree(new File(projectDir, 'src/main/cpp'))
-        tree.include 'bootstrap-*.zip'
-        tree.each { it.delete() }
+        if (!useLocalOminalBootstraps) {
+            def tree = fileTree(new File(projectDir, 'src/main/cpp'))
+            tree.include 'bootstrap-*.zip'
+            tree.each { it.delete() }
+        }
     }
 }
 
@@ -235,10 +401,10 @@ task downloadBootstraps() {
         def packageVariant = project.ext.packageVariant
         if (packageVariant == "apt-android-7") {
             def version = "2026.02.12-r1" + "%2B" + "apt.android-7"
-            downloadBootstrap("aarch64", "ea2aeba8819e517db711f8c32369e89e7c52cee73e07930ff91185e1ab93f4f3", version)
+            downloadBootstrap("aarch64", "ea2aeba8819e517db711f8c32369e89e7c52cee73e07930ff91185e1ab93f4f3", version, useLocalOminalBootstraps)
         } else if (packageVariant == "apt-android-5") {
             def version = "2022.04.28-r6" + "+" + packageVariant
-            downloadBootstrap("aarch64", "913609d439415c828c5640be1b0561467e539cb1c7080662decaaca2fb4820e7", version)
+            downloadBootstrap("aarch64", "913609d439415c828c5640be1b0561467e539cb1c7080662decaaca2fb4820e7", version, useLocalOminalBootstraps)
         } else {
             throw new GradleException("Unsupported OMINAL_PACKAGE_VARIANT \"" + packageVariant + "\"")
         }
@@ -248,10 +414,12 @@ task downloadBootstraps() {
 def scanBootstrapArchivePrefixes = { File zipFile, List<String> forbiddenPrefixes, String requiredPrefix ->
     def forbiddenCounts = forbiddenPrefixes.collectEntries { [(it): 0] }
     def requiredCount = 0
+    def entryNames = new LinkedHashSet<String>()
     def zip = new java.util.zip.ZipFile(zipFile)
     try {
         zip.entries().each { entry ->
             if (entry.isDirectory()) return
+            entryNames.add(entry.name)
             def entryText = new String(zip.getInputStream(entry).bytes, "ISO-8859-1")
             forbiddenPrefixes.each { prefix ->
                 if (entryText.contains(prefix)) forbiddenCounts[prefix]++
@@ -261,7 +429,7 @@ def scanBootstrapArchivePrefixes = { File zipFile, List<String> forbiddenPrefixe
     } finally {
         zip.close()
     }
-    return [forbiddenCounts: forbiddenCounts, requiredCount: requiredCount]
+    return [forbiddenCounts: forbiddenCounts, requiredCount: requiredCount, entryNames: entryNames]
 }
 
 task validateOminalBootstraps() {
@@ -272,6 +440,12 @@ task validateOminalBootstraps() {
         def legacyPackageName = "com." + ["t", "e", "r", "m", "u", "x"].join("")
         def forbiddenPrefixes = ["/data/data/" + legacyPackageName, "/data/user/0/" + legacyPackageName]
         def requiredPrefix = "/data/data/" + appPackageName + "/files/usr"
+        def requiredRuntimeEntries = [
+            "bin/bash",
+            "bin/proot",
+            "libexec/proot/loader",
+            "lib/libtermux-exec-ld-preload.so"
+        ]
         def checksumManifest = new File(projectDir, "src/main/cpp/bootstrap-ominal.sha256")
         def expectedHashes = [:]
         def failures = []
@@ -307,6 +481,10 @@ task validateOminalBootstraps() {
             if (scan.requiredCount == 0) {
                 failures.add(archive.name + " does not contain expected Ominal prefix: " + requiredPrefix)
             }
+            def missingRuntimeEntries = requiredRuntimeEntries.findAll { !scan.entryNames.contains(it) }
+            if (!missingRuntimeEntries.isEmpty()) {
+                failures.add(archive.name + " is missing required Ominal runtime entries: " + missingRuntimeEntries)
+            }
 
             if (expectedHashes.containsKey(archive.name)) {
                 def digest = java.security.MessageDigest.getInstance("SHA-256")
@@ -327,7 +505,7 @@ task validateOminalBootstraps() {
         }
 
         if (!failures.isEmpty()) {
-            throw new GradleException("Invalid bootstrap archives for " + appPackageName + ". Rebuild the Ominal bootstrap set with OMINAL_APP__PACKAGE_NAME=" + appPackageName + " instead of patching zip binaries.\n - " + failures.join("\n - "))
+            throw new GradleException("Invalid bootstrap archives for " + appPackageName + ". Rebuild the Ominal bootstrap set with TERMUX_APP__PACKAGE_NAME=" + appPackageName + " instead of patching zip binaries.\n - " + failures.join("\n - "))
         }
     }
 }

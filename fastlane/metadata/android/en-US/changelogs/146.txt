@@ -1,0 +1,3 @@
+Improves background reliability without interrupting startup with battery settings.
+Adds a visible Omega entrance on devices with Android animations disabled.
+Adds native model selection, secure Codex session import, formatted Markdown, and a privacy-safe agent activity trace.

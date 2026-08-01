@@ -1,1 +1,1 @@
-include ':app', ':ominal-shared', ':terminal-emulator', ':terminal-view'
+include ':app', ':ominal-shared', ':terminal-emulator', ':terminal-view', ':ominal-runtime-pack'

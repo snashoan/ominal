@@ -1,13 +1,5 @@
-Termux is a terminal emulator application enhanced with a large set of command line utilities ported to Android OS. The main goal is to bring a Linux command line experience to users of mobile devices with no rooting or other special setup required.
+Ominal is a mobile workspace for coding agents. Conversations remain the primary interface, with each workspace connected to an isolated local shell and display session when work needs to run.
 
-* Enjoy the Bash and Zsh shells.
-* Edit files with nano and vim.
-* Access servers over SSH.
-* Compile C/C++ code with clang.
-* Use the Python console as a pocket calculator.
-* Check out projects with Git and Subversion.
-* Run text-based games with frotz.
+Set up an account, start a conversation, attach files, and move between the chat and the active workspace without leaving the app. Ominal prepares its local runtime during first launch, then keeps each workspace's agent context, files, and terminal activity together.
 
-At first start a small base system is being configured. The GNU Bash, Coreutils, Findutils and other core utilities are available out-of-box. Additionally, we provide more than 1000 other packages installable by using the 'pkg' utility which currently is a frontend for the 'apt' package manager. All provided software has been patched and compiled with Android NDK to provide max compatibility with Android OS.
-
-To learn more about application usage tips and tricks, long-press anywhere on the terminal and select the Help menu option to access Termux Wiki. This resource is also accessible directly in a web browser: https://wiki.termux.com/wiki/Main_Page.
+The runtime is designed for current Android devices and does not require device rooting. It can install development tools inside its app-managed Linux environment while keeping the Android app and its data isolated from other apps.

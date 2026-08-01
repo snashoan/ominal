@@ -1,5 +1,6 @@
 package com.ominal.app;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -7,6 +8,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.net.wifi.WifiManager;
 import android.os.Binder;
@@ -17,6 +19,7 @@ import android.os.PowerManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 
 import com.ominal.R;
 import com.ominal.app.event.SystemEventReceiver;
@@ -319,10 +322,6 @@ public final class OminalService extends Service implements AppShell.AppShellCli
         mWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, OminalConstants.OMINAL_APP_NAME.toLowerCase());
         mWifiLock.acquire();
 
-        if (!PermissionUtils.checkIfBatteryOptimizationsDisabled(this)) {
-            PermissionUtils.requestDisableBatteryOptimizations(this);
-        }
-
         updateNotification();
 
         Logger.logDebug(LOG_TAG, "WakeLocks acquired successfully");
@@ -366,6 +365,8 @@ public final class OminalService extends Service implements AppShell.AppShellCli
 
         executionCommand.executableUri = intent.getData();
         executionCommand.isPluginExecutionCommand = true;
+        executionCommand.stdin =
+            IntentUtils.getStringExtraIfSet(intent, OMINAL_SERVICE.EXTRA_STDIN, null);
 
         // If EXTRA_RUNNER is passed, use that, otherwise check EXTRA_BACKGROUND and default to Runner.TERMINAL_SESSION
         executionCommand.runner = IntentUtils.getStringExtraIfSet(intent, OMINAL_SERVICE.EXTRA_RUNNER,
@@ -383,8 +384,6 @@ public final class OminalService extends Service implements AppShell.AppShellCli
             // Get full path including fragment (anything after last "#")
             executionCommand.executable = UriUtils.getUriFilePathWithFragment(executionCommand.executableUri);
             executionCommand.arguments = IntentUtils.getStringArrayExtraIfSet(intent, OMINAL_SERVICE.EXTRA_ARGUMENTS, null);
-            if (Runner.APP_SHELL.equalsRunner(executionCommand.runner))
-                executionCommand.stdin = IntentUtils.getStringExtraIfSet(intent, OMINAL_SERVICE.EXTRA_STDIN, null);
             executionCommand.backgroundCustomLogLevel = IntentUtils.getIntegerExtraIfSet(intent, OMINAL_SERVICE.EXTRA_BACKGROUND_CUSTOM_LOG_LEVEL, null);
         }
 
@@ -538,19 +537,38 @@ public final class OminalService extends Service implements AppShell.AppShellCli
             executionCommand.shellName = ShellUtils.getExecutableBasename(executionCommand.executable);
 
         OminalSession newOminalSession = null;
+        boolean reusedSession = false;
         ShellCreateMode shellCreateMode = processShellCreateMode(executionCommand);
         if (shellCreateMode == null) return;
         if (ShellCreateMode.NO_SHELL_WITH_NAME.equals(shellCreateMode)) {
             newOminalSession = getOminalSessionForShellName(executionCommand.shellName);
-            if (newOminalSession != null)
+            if (newOminalSession != null) {
+                reusedSession = true;
                 Logger.logVerbose(LOG_TAG, "Existing OminalSession with \"" + executionCommand.shellName + "\" shell name found for shell create mode \"" + shellCreateMode.getMode() + "\"");
-            else
+            } else {
                 Logger.logVerbose(LOG_TAG, "No existing OminalSession with \"" + executionCommand.shellName + "\" shell name found for shell create mode \"" + shellCreateMode.getMode() + "\"");
+            }
         }
 
         if (newOminalSession == null)
             newOminalSession = createOminalSession(executionCommand);
         if (newOminalSession == null) return;
+
+        if (!DataUtils.isNullOrEmpty(executionCommand.stdin)) {
+            String terminalInput = executionCommand.stdin.endsWith("\n")
+                ? executionCommand.stdin : executionCommand.stdin + "\n";
+            TerminalSession terminalSession = newOminalSession.getTerminalSession();
+            if (reusedSession) {
+                terminalSession.write(terminalInput);
+            } else {
+                mHandler.postDelayed(() -> {
+                    if (terminalSession.isRunning()) terminalSession.write(terminalInput);
+                }, 120);
+            }
+        }
+
+        if (reusedSession && executionCommand.isPluginExecutionCommand)
+            mShellManager.mPendingPluginExecutionCommands.remove(executionCommand);
 
         handleSessionAction(DataUtils.getIntFromString(executionCommand.sessionAction,
             OMINAL_SERVICE.VALUE_EXTRA_SESSION_ACTION_SWITCH_TO_NEW_SESSION_AND_OPEN_ACTIVITY),
@@ -784,7 +802,8 @@ public final class OminalService extends Service implements AppShell.AppShellCli
 
         // Set pending intent to be launched when notification is clicked
         Intent notificationIntent = OminalActivity.newInstance(this);
-        PendingIntent contentIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0);
+        PendingIntent contentIntent = PendingIntent.getActivity(this, 0, notificationIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
 
         // Set notification text
@@ -827,7 +846,9 @@ public final class OminalService extends Service implements AppShell.AppShellCli
 
         // Set Exit button action
         Intent exitIntent = new Intent(this, OminalService.class).setAction(OMINAL_SERVICE.ACTION_STOP_SERVICE);
-        builder.addAction(android.R.drawable.ic_delete, res.getString(R.string.notification_action_exit), PendingIntent.getService(this, 0, exitIntent, 0));
+        builder.addAction(android.R.drawable.ic_delete, res.getString(R.string.notification_action_exit),
+            PendingIntent.getService(this, 0, exitIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
 
 
         // Set Wakelock button actions
@@ -835,7 +856,8 @@ public final class OminalService extends Service implements AppShell.AppShellCli
         Intent toggleWakeLockIntent = new Intent(this, OminalService.class).setAction(newWakeAction);
         String actionTitle = res.getString(wakeLockHeld ? R.string.notification_action_wake_unlock : R.string.notification_action_wake_lock);
         int actionIcon = wakeLockHeld ? android.R.drawable.ic_lock_idle_lock : android.R.drawable.ic_lock_lock;
-        builder.addAction(actionIcon, actionTitle, PendingIntent.getService(this, 0, toggleWakeLockIntent, 0));
+        builder.addAction(actionIcon, actionTitle, PendingIntent.getService(this, 0, toggleWakeLockIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
 
 
         return builder.build();
@@ -854,7 +876,12 @@ public final class OminalService extends Service implements AppShell.AppShellCli
             // Exit if we are updating after the user disabled all locks with no sessions or tasks running.
             requestStopService();
         } else {
-            ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify(OminalConstants.OMINAL_APP_NOTIFICATION_ID, buildNotification());
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    == PackageManager.PERMISSION_GRANTED) {
+                ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE))
+                    .notify(OminalConstants.OMINAL_APP_NOTIFICATION_ID, buildNotification());
+            }
         }
     }
 
@@ -944,8 +971,16 @@ public final class OminalService extends Service implements AppShell.AppShellCli
         for (int i = 0, len = mShellManager.mOminalSessions.size(); i < len; i++) {
             ominalSession = mShellManager.mOminalSessions.get(i);
             String shellName = ominalSession.getExecutionCommand().shellName;
-            if (shellName != null && shellName.equals(name))
+            if (shellName != null && shellName.equals(name)) {
+                if (!ominalSession.getTerminalSession().isRunning()) {
+                    // Headless named sessions do not have an activity to remove their finished
+                    // terminal. Finalize and discard it so NO_SHELL_WITH_NAME can relaunch.
+                    ominalSession.finish();
+                    mShellManager.mOminalSessions.remove(ominalSession);
+                    return null;
+                }
                 return ominalSession;
+            }
         }
         return null;
     }
