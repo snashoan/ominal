@@ -1,0 +1,89 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0a0a0a;
+  color: #f4f4f4;
+}
+
+body {
+  margin: 0;
+  background: #0a0a0a;
+}
+
+main {
+  width: min(720px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 56px 0 96px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.mark {
+  display: block;
+  width: 48px;
+  height: 48px;
+}
+
+.mark-link {
+  display: block;
+  text-decoration: none;
+}
+
+h1 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 650;
+}
+
+h2 {
+  margin: 40px 0 12px;
+  font-size: 19px;
+  font-weight: 650;
+}
+
+p, li {
+  color: #c6c6c6;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.effective {
+  color: #898989;
+}
+
+a {
+  color: #ffffff;
+  text-underline-offset: 3px;
+}
+
+code {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root, body {
+    background: #ffffff;
+    color: #111111;
+  }
+
+  p, li {
+    color: #444444;
+  }
+
+  .effective {
+    color: #747474;
+  }
+
+  a {
+    color: #111111;
+  }
+
+  .mark {
+    filter: invert(1);
+  }
+}

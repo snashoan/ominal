@@ -157,6 +157,8 @@ public final class OringutanActivity extends AppCompatActivity
     private static final String DISPLAY_DIR_NAME = "display";
     private static final String DISPLAY_ACTIVITY_FILE_NAME = "ominal-display-activity.json";
     private static final String DISPLAY_URL = "http://127.0.0.1:6080/ominal.html";
+    private static final String PRIVACY_POLICY_URL =
+        "https://snashoan.github.io/ominal/privacy/";
     private static final String DISPLAY_START_COMMAND = "command -v ominal-display-start >/dev/null 2>&1 && ominal-display-start || printf 'Install $PREFIX/bin/ominal-display-start first.\\n'";
     private static final int DISPLAY_HEALTH_RETRIES = 30;
     private static final int DISPLAY_HEALTH_RETRY_DELAY_MS = 300;
@@ -232,6 +234,7 @@ public final class OringutanActivity extends AppCompatActivity
     private ScrollView mScrollView;
     private EditText mPromptInput;
     private ImageButton mHarnessControlsButton;
+    private TextView mHarnessContextView;
     private LinearLayout mCommandSuggestionsView;
     private LinearLayout mCommandSuggestionsRow;
     private ImageButton mAttachButton;
@@ -560,6 +563,11 @@ public final class OringutanActivity extends AppCompatActivity
             mActiveSession != null, false));
         sections.add(new OminalInteractionSheet.Section("Preferences", preferences));
 
+        ArrayList<OminalInteractionSheet.Row> information = new ArrayList<>();
+        information.add(new OminalInteractionSheet.Row("privacy", "Privacy",
+            "How local data and connected agents are handled", "Open", false, true, false));
+        sections.add(new OminalInteractionSheet.Section("Information", information));
+
         OminalInteractionSheet.show(this, interactionSheetTheme(), "Settings",
             "Account and device-local controls.", sections, id -> {
                 if ("agent".equals(id)) {
@@ -576,6 +584,9 @@ public final class OringutanActivity extends AppCompatActivity
                     else showLoloModeDialog();
                 } else if ("terminal".equals(id)) {
                     openAgentTerminalForActiveChat();
+                } else if ("privacy".equals(id)) {
+                    startExternalActivity(new Intent(Intent.ACTION_VIEW,
+                        Uri.parse(PRIVACY_POLICY_URL)));
                 }
             });
     }
@@ -818,9 +829,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void ensureDefaultUiProperties() {
         File file = uiConfigFile();
-        Properties current = new Properties();
-        loadUiProperties(current, file);
-        if (UI_CONFIG_VERSION.equals(current.getProperty("ui.version"))) return;
+        if (file.isFile()) return;
         try {
             writeFile(file, defaultUiPropertiesTemplate());
         } catch (IOException e) {
@@ -1369,7 +1378,7 @@ public final class OringutanActivity extends AppCompatActivity
         builder.append("ui.version=").append(UI_CONFIG_VERSION).append('\n');
         builder.append("# Edit like .bashrc: one key=value per line, comments start with #.\n");
         builder.append("# 'export key=value' also works, but the app only reads these UI keys.\n");
-        builder.append("# Restart Ominal after saving.\n");
+        builder.append("# From an agent session, run: ominal-event reload-ui\n");
         builder.append("# Colors accept #RRGGBB or #AARRGGBB.\n\n");
         appendColor(builder, "color.canvas", spec.canvas);
         appendColor(builder, "color.panel", spec.panel);
@@ -2217,6 +2226,19 @@ public final class OringutanActivity extends AppCompatActivity
         LinearLayout.LayoutParams harnessParams = new LinearLayout.LayoutParams(dp(38), dp(38));
         harnessParams.setMargins(dp(2), 0, 0, 0);
         actionRail.addView(mHarnessControlsButton, harnessParams);
+
+        mHarnessContextView = new TextView(this);
+        mHarnessContextView.setTextColor(ui.muted);
+        mHarnessContextView.setTextSize(12.5f);
+        mHarnessContextView.setGravity(Gravity.CENTER_VERTICAL);
+        mHarnessContextView.setIncludeFontPadding(false);
+        mHarnessContextView.setSingleLine(true);
+        mHarnessContextView.setEllipsize(TextUtils.TruncateAt.END);
+        mHarnessContextView.setMaxWidth(dp(156));
+        mHarnessContextView.setPadding(dp(4), 0, dp(8), 0);
+        mHarnessContextView.setOnClickListener(v -> showHarnessControlsDialog());
+        actionRail.addView(mHarnessContextView, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)));
         updateHarnessControls();
 
         View actionSpacer = new View(this);
@@ -3686,6 +3708,7 @@ public final class OringutanActivity extends AppCompatActivity
         if (mHarnessControlsButton == null) return;
         if (mActiveSession == null) {
             mHarnessControlsButton.setVisibility(View.GONE);
+            if (mHarnessContextView != null) mHarnessContextView.setVisibility(View.GONE);
             return;
         }
         OminalAgentHarness harness =
@@ -3693,14 +3716,18 @@ public final class OringutanActivity extends AppCompatActivity
         OminalHarnessManifest manifest =
             OminalHarnessManifest.load(mActiveSession.harnessId);
         StringBuilder label = new StringBuilder(harness.getDisplayName());
+        String modelLabel = "Auto";
         if (manifest == null) {
-            if (!OminalHarnessTerminal.CODEX_ID.equals(mActiveSession.harnessId))
+            if (!OminalHarnessTerminal.CODEX_ID.equals(mActiveSession.harnessId)) {
                 label.append("  ·  setting up");
+                modelLabel = "Setting up";
+            }
         } else {
             String modelId = activeModelId(mActiveSession);
             String effortId = activeEffortId(mActiveSession);
             OminalHarnessManifest.Model model = findModel(manifest, modelId);
             label.append("  ·  ").append(model == null ? "Automatic" : model.label);
+            modelLabel = model == null ? "Auto" : model.label;
             if (!availableEfforts(manifest).isEmpty())
                 label.append("  ·  ").append(effortId.isEmpty() ? "Auto effort" : effortId);
         }
@@ -3711,6 +3738,11 @@ public final class OringutanActivity extends AppCompatActivity
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             mHarnessControlsButton.setTooltipText("Agent controls");
         mHarnessControlsButton.setVisibility(View.VISIBLE);
+        if (mHarnessContextView != null) {
+            mHarnessContextView.setText(harness.getDisplayName() + "  ·  " + modelLabel);
+            mHarnessContextView.setContentDescription(label.toString().replace("  ·  ", ", "));
+            mHarnessContextView.setVisibility(View.VISIBLE);
+        }
     }
 
     private void showHarnessControlsDialog() {
@@ -4321,6 +4353,7 @@ public final class OringutanActivity extends AppCompatActivity
         mObservedAgentEventCount = allEvents.size();
         OminalAgentEventLog.Summary events = OminalAgentEventLog.summarize(newEvents);
         if (!events.status.isEmpty()) setStatus(events.status);
+        if (events.reloadUi) setStatus("Appearance update ready");
         if (!events.openDisplay) return;
 
         setDisplayNeedsUser(events.userInputRequired);
@@ -4548,6 +4581,8 @@ public final class OringutanActivity extends AppCompatActivity
             + "autonomously for GUI work. If user input, visual confirmation, login, or manual control is truly "
             + "required, run `ominal-event request-user-input \"short reason\"`. Run `ominal-event open-display "
             + "\"short reason\"` when the user should see the display but does not need to type. "
+            + "The user theme is `/root/.ominal/ui.properties`. After editing it, run "
+            + "`ominal-event reload-ui` to apply it without restarting the harness. "
             + "Use `ominal-install` for Linux packages and downloaded .deb files; never use raw `dpkg -i`. "
             + "Put images, audio, video, or PDFs created for the user under ./"
             + MEDIA_DIR_NAME + "; Monolith surfaces new and changed media inline in the chat. "
@@ -4614,6 +4649,11 @@ public final class OringutanActivity extends AppCompatActivity
             }
             writeRuntimeContract(session, harnessId);
             if (activeSession) scrollToBottom();
+            if (events.reloadUi) {
+                mUi = loadUiSpec();
+                recreate();
+                return;
+            }
             startNextPendingTurn(session);
         });
     }
@@ -5363,7 +5403,7 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void renderMarkdown(TextView target, String markdown) {
-        String text = markdown == null ? "" : markdown;
+        String text = OminalChatText.forDisplay(markdown);
         if (mMarkwon == null) target.setText(text);
         else mMarkwon.setMarkdown(target, text);
     }

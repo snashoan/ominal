@@ -27,6 +27,7 @@ public class OminalAgentEventLogTest {
         assertTrue(summary.userInputRequired);
         assertEquals("Enter the code", summary.reason);
         assertEquals("Signing in", summary.status);
+        assertFalse(summary.reloadUi);
     }
 
     @Test
@@ -58,5 +59,18 @@ public class OminalAgentEventLogTest {
         assertEquals(OminalAgentEventLog.TYPE_ANDROID_SETTINGS,
             summary.androidRequests.get(0).type);
         assertEquals("https://openai.com", summary.androidRequests.get(1).message);
+    }
+
+    @Test
+    public void requestsUiReloadWithoutOpeningDisplay() {
+        ArrayList<OminalAgentEventLog.Event> events = new ArrayList<>();
+        events.add(OminalAgentEventLog.parse(
+            "{\"schemaVersion\":1,\"type\":\"reload_ui\",\"message\":\"\"}"));
+
+        OminalAgentEventLog.Summary summary = OminalAgentEventLog.summarize(events);
+
+        assertTrue(summary.reloadUi);
+        assertFalse(summary.openDisplay);
+        assertFalse(summary.userInputRequired);
     }
 }

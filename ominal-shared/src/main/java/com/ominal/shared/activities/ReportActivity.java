@@ -1,6 +1,7 @@
 package com.ominal.shared.activities;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
@@ -10,7 +11,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -36,6 +37,11 @@ import io.noties.markwon.Markwon;
 import io.noties.markwon.recycler.MarkwonAdapter;
 import io.noties.markwon.recycler.SimpleEntry;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+
 /**
  * An activity to show reports in markdown format as per CommonMark spec based on config passed as {@link ReportInfo}.
  * Add Following to `AndroidManifest.xml` to use in an app:
@@ -58,7 +64,7 @@ public class ReportActivity extends AppCompatActivity {
     private static final String CACHE_DIR_BASENAME = "report_activity";
     private static final String CACHE_FILE_BASENAME_PREFIX = "report_info_";
 
-    public static final int REQUEST_GRANT_STORAGE_PERMISSION_FOR_SAVE_FILE = 1000;
+    public static final int REQUEST_CREATE_REPORT_FILE = 1000;
 
     public static final int ACTIVITY_TEXT_SIZE_LIMIT_IN_BYTES = 1000 * 1024; // 1MB
 
@@ -217,26 +223,39 @@ public class ReportActivity extends AppCompatActivity {
         } else if (id == R.id.menu_item_copy_report) {
             ShareUtils.copyTextToClipboard(this, ReportInfo.getReportInfoMarkdownString(mReportInfo), null);
         } else if (id == R.id.menu_item_save_report_to_file) {
-            ShareUtils.saveTextToFile(this, mReportInfo.reportSaveFileLabel,
-                mReportInfo.reportSaveFilePath, ReportInfo.getReportInfoMarkdownString(mReportInfo),
-                true, REQUEST_GRANT_STORAGE_PERMISSION_FOR_SAVE_FILE);
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("text/markdown");
+            String fileName = new File(mReportInfo.reportSaveFilePath).getName();
+            if (fileName.isEmpty()) fileName = "report.md";
+            intent.putExtra(Intent.EXTRA_TITLE, fileName);
+            try {
+                startActivityForResult(intent, REQUEST_CREATE_REPORT_FILE);
+            } catch (RuntimeException e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Unable to open report destination", e);
+                Logger.showToast(this, "Unable to choose where to save the report.", true);
+            }
         }
 
         return false;
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            Logger.logInfo(LOG_TAG, "Storage permission granted by user on request.");
-            if (requestCode == REQUEST_GRANT_STORAGE_PERMISSION_FOR_SAVE_FILE) {
-                ShareUtils.saveTextToFile(this, mReportInfo.reportSaveFileLabel,
-                    mReportInfo.reportSaveFilePath, ReportInfo.getReportInfoMarkdownString(mReportInfo),
-                    true, -1);
-            }
-        } else {
-            Logger.logInfo(LOG_TAG, "Storage permission denied by user on request.");
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQUEST_CREATE_REPORT_FILE || resultCode != RESULT_OK
+            || data == null || data.getData() == null) return;
+
+        Uri destination = data.getData();
+        try (OutputStream output = getContentResolver().openOutputStream(destination, "wt")) {
+            if (output == null) throw new IOException("Content resolver returned no output stream");
+            output.write(ReportInfo.getReportInfoMarkdownString(mReportInfo)
+                .getBytes(StandardCharsets.UTF_8));
+            Logger.showToast(this, getString(R.string.msg_file_saved_successfully,
+                mReportInfo.reportSaveFileLabel, destination.toString()), false);
+        } catch (IOException | RuntimeException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Unable to save report", e);
+            Logger.showToast(this, "Unable to save the report.", true);
         }
     }
 

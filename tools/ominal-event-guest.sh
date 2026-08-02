@@ -6,9 +6,10 @@ event_type="${1:-}"
 case "$event_type" in
     open-display) event_type=open_display ;;
     request-user-input) event_type=request_user_input ;;
-    open_display|request_user_input|status) ;;
+    reload-ui) event_type=reload_ui ;;
+    open_display|request_user_input|status|reload_ui) ;;
     *)
-        printf '%s\n' 'usage: ominal-event open-display|request-user-input|status [MESSAGE]' >&2
+        printf '%s\n' 'usage: ominal-event open-display|request-user-input|status|reload-ui [MESSAGE]' >&2
         exit 64
         ;;
 esac

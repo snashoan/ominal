@@ -19,5 +19,5 @@ Run **Release Android App Bundles** from GitHub Actions. Supply the pinned boots
 For a local upload, set `GOOGLE_PLAY_JSON_KEY` to the service-account JSON and run:
 
 ```powershell
-.\tools\publish-internal.ps1 -Aab .\release\ominal-0.121.0-v168-bundled.aab -ValidateOnly
+.\tools\publish-internal.ps1 -Aab .\release\monolith-0.121.1-v170-bundled.aab -ValidateOnly
 ```

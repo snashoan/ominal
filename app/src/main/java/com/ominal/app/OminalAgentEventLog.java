@@ -17,6 +17,7 @@ public final class OminalAgentEventLog {
     public static final String TYPE_OPEN_DISPLAY = "open_display";
     public static final String TYPE_REQUEST_USER_INPUT = "request_user_input";
     public static final String TYPE_STATUS = "status";
+    public static final String TYPE_RELOAD_UI = "reload_ui";
     public static final String TYPE_ANDROID_OPEN = "android_open";
     public static final String TYPE_ANDROID_SETTINGS = "android_settings";
     public static final String TYPE_ANDROID_APP = "android_app";
@@ -45,6 +46,7 @@ public final class OminalAgentEventLog {
             if (!TYPE_OPEN_DISPLAY.equals(type)
                 && !TYPE_REQUEST_USER_INPUT.equals(type)
                 && !TYPE_STATUS.equals(type)
+                && !TYPE_RELOAD_UI.equals(type)
                 && !TYPE_ANDROID_OPEN.equals(type)
                 && !TYPE_ANDROID_SETTINGS.equals(type)
                 && !TYPE_ANDROID_APP.equals(type)) return null;
@@ -59,6 +61,7 @@ public final class OminalAgentEventLog {
         boolean userInput = false;
         String reason = "";
         String status = "";
+        boolean reloadUi = false;
         ArrayList<Event> androidRequests = new ArrayList<>();
         for (Event event : events) {
             if (TYPE_OPEN_DISPLAY.equals(event.type)) openDisplay = true;
@@ -69,11 +72,12 @@ public final class OminalAgentEventLog {
             if ((TYPE_OPEN_DISPLAY.equals(event.type) || TYPE_REQUEST_USER_INPUT.equals(event.type))
                 && !event.message.isEmpty()) reason = event.message;
             if (TYPE_STATUS.equals(event.type) && !event.message.isEmpty()) status = event.message;
+            if (TYPE_RELOAD_UI.equals(event.type)) reloadUi = true;
             if (TYPE_ANDROID_OPEN.equals(event.type)
                 || TYPE_ANDROID_SETTINGS.equals(event.type)
                 || TYPE_ANDROID_APP.equals(event.type)) androidRequests.add(event);
         }
-        return new Summary(openDisplay, userInput, reason, status,
+        return new Summary(openDisplay, userInput, reason, status, reloadUi,
             Collections.unmodifiableList(androidRequests));
     }
 
@@ -92,14 +96,16 @@ public final class OminalAgentEventLog {
         public final boolean userInputRequired;
         public final String reason;
         public final String status;
+        public final boolean reloadUi;
         public final List<Event> androidRequests;
 
         Summary(boolean openDisplay, boolean userInputRequired, String reason, String status,
-                List<Event> androidRequests) {
+                boolean reloadUi, List<Event> androidRequests) {
             this.openDisplay = openDisplay;
             this.userInputRequired = userInputRequired;
             this.reason = reason;
             this.status = status;
+            this.reloadUi = reloadUi;
             this.androidRequests = androidRequests;
         }
     }

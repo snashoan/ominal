@@ -190,10 +190,6 @@ android {
         }
     }
 
-    lint {
-        disable 'ProtectedPermissions'
-    }
-
     testOptions {
         unitTests {
             includeAndroidResources = true
@@ -301,12 +297,53 @@ tasks.register("verifyVersioning") {
     }
 }
 
+def playPermissionAllowlist = [
+    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.INTERNET",
+    "android.permission.WAKE_LOCK",
+    "android.permission.VIBRATE",
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+    "android.permission.POST_NOTIFICATIONS",
+    project.ext.ominalAppPackageName + ".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+] as Set
+
+tasks.register("verifyPlayPolicyManifest") {
+    dependsOn("processReleaseMainManifest")
+    doLast {
+        def manifestFiles = fileTree(new File(buildDir, "intermediates")) {
+            include "merged_manifest/release/**/AndroidManifest.xml"
+            include "merged_manifests/release/**/AndroidManifest.xml"
+        }.files
+        if (manifestFiles.isEmpty()) {
+            throw new GradleException("Could not locate the merged release AndroidManifest.xml")
+        }
+
+        File manifest = manifestFiles.max { it.lastModified() }
+        String manifestText = manifest.getText("UTF-8")
+        def matcher = manifestText =~ /<uses-permission(?:-sdk-\d+)?\b[^>]*android:name="([^"]+)"/
+        Set<String> declared = matcher.collect { it[1] } as Set
+        Set<String> unexpected = new TreeSet<>(declared)
+        unexpected.removeAll(playPermissionAllowlist)
+        if (!unexpected.isEmpty()) {
+            throw new GradleException(
+                "Merged release manifest contains permissions outside the Play allowlist: " + unexpected)
+        }
+        if (manifestText.contains("android:requestLegacyExternalStorage=\"true\"")) {
+            throw new GradleException("Merged release manifest enables legacy external storage")
+        }
+        logger.lifecycle("Verified Play permission allowlist: " + new TreeSet<>(declared))
+    }
+}
+
 tasks.configureEach { task ->
     if (task.name == "preBuild") {
         task.dependsOn("verifyVersioning")
     } else if (task.name == "preReleaseBuild") {
         task.dependsOn("validateReleaseSigning")
         task.dependsOn("validateReleaseRuntime")
+    } else if (task.name == "assembleRelease" || task.name == "bundleRelease") {
+        task.dependsOn("verifyPlayPolicyManifest")
     }
 }
 

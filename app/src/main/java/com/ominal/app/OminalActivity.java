@@ -761,55 +761,6 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
 
 
 
-    /**
-     * For processes to access primary external storage (/sdcard, /storage/emulated/0, ~/storage/shared),
-     * ominal needs to be granted legacy WRITE_EXTERNAL_STORAGE or MANAGE_EXTERNAL_STORAGE permissions
-     * if targeting targetSdkVersion 30 (android 11) and running on sdk 30 (android 11) and higher.
-     */
-    public void requestStoragePermission(boolean isPermissionCallback) {
-        new Thread() {
-            @Override
-            public void run() {
-                // Do not ask for permission again
-                int requestCode = isPermissionCallback ? -1 : PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION;
-
-                // If permission is granted, then also setup storage symlinks.
-                if(PermissionUtils.checkAndRequestLegacyOrManageExternalStoragePermission(
-                    OminalActivity.this, requestCode, !isPermissionCallback)) {
-                    if (isPermissionCallback)
-                        Logger.logInfoAndShowToast(OminalActivity.this, LOG_TAG,
-                            getString(com.ominal.shared.R.string.msg_storage_permission_granted_on_request));
-
-                    OminalInstaller.setupStorageSymlinks(OminalActivity.this);
-                } else {
-                    if (isPermissionCallback)
-                        Logger.logInfoAndShowToast(OminalActivity.this, LOG_TAG,
-                            getString(com.ominal.shared.R.string.msg_storage_permission_not_granted_on_request));
-                }
-            }
-        }.start();
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        Logger.logVerbose(LOG_TAG, "onActivityResult: requestCode: " + requestCode + ", resultCode: "  + resultCode + ", data: "  + IntentUtils.getIntentString(data));
-        if (requestCode == PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION) {
-            requestStoragePermission(true);
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        Logger.logVerbose(LOG_TAG, "onRequestPermissionsResult: requestCode: " + requestCode + ", permissions: "  + Arrays.toString(permissions) + ", grantResults: "  + Arrays.toString(grantResults));
-        if (requestCode == PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION) {
-            requestStoragePermission(true);
-        }
-    }
-
-
-
     public int getNavBarHeight() {
         return mNavBarHeight;
     }
@@ -921,7 +872,6 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(OMINAL_ACTIVITY.ACTION_NOTIFY_APP_CRASH);
         intentFilter.addAction(OMINAL_ACTIVITY.ACTION_RELOAD_STYLE);
-        intentFilter.addAction(OMINAL_ACTIVITY.ACTION_REQUEST_PERMISSIONS);
 
         ContextCompat.registerReceiver(this, mOminalActivityBroadcastReceiver, intentFilter,
             ContextCompat.RECEIVER_NOT_EXPORTED);
@@ -931,24 +881,12 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
         unregisterReceiver(mOminalActivityBroadcastReceiver);
     }
 
-    private void fixOminalActivityBroadcastReceiverIntent(Intent intent) {
-        if (intent == null) return;
-
-        String extraReloadStyle = intent.getStringExtra(OMINAL_ACTIVITY.EXTRA_RELOAD_STYLE);
-        if ("storage".equals(extraReloadStyle)) {
-            intent.removeExtra(OMINAL_ACTIVITY.EXTRA_RELOAD_STYLE);
-            intent.setAction(OMINAL_ACTIVITY.ACTION_REQUEST_PERMISSIONS);
-        }
-    }
-
     class OminalActivityBroadcastReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
 
             if (mIsVisible) {
-                fixOminalActivityBroadcastReceiverIntent(intent);
-
                 switch (intent.getAction()) {
                     case OMINAL_ACTIVITY.ACTION_NOTIFY_APP_CRASH:
                         Logger.logDebug(LOG_TAG, "Received intent to notify app crash");
@@ -957,10 +895,6 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
                     case OMINAL_ACTIVITY.ACTION_RELOAD_STYLE:
                         Logger.logDebug(LOG_TAG, "Received intent to reload styling");
                         reloadActivityStyling(intent.getBooleanExtra(OMINAL_ACTIVITY.EXTRA_RECREATE_ACTIVITY, true));
-                        return;
-                    case OMINAL_ACTIVITY.ACTION_REQUEST_PERMISSIONS:
-                        Logger.logDebug(LOG_TAG, "Received intent to request storage permissions");
-                        requestStoragePermission(false);
                         return;
                     default:
                 }

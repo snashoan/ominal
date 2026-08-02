@@ -1,0 +1,1 @@
+Removes unnecessary sensitive permissions, decodes escaped Unicode in chat, shows the active agent and model, and supports persistent agent-editable themes.
