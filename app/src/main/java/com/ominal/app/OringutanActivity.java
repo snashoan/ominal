@@ -565,11 +565,11 @@ public final class OringutanActivity extends AppCompatActivity
 
         ArrayList<OminalInteractionSheet.Row> information = new ArrayList<>();
         information.add(new OminalInteractionSheet.Row("privacy", "Privacy",
-            "How local data and connected agents are handled", "Open", false, true, false));
+            "How app data and connected agents are handled", "Open", false, true, false));
         sections.add(new OminalInteractionSheet.Section("Information", information));
 
         OminalInteractionSheet.show(this, interactionSheetTheme(), "Settings",
-            "Account and device-local controls.", sections, id -> {
+            "Account and device controls.", sections, id -> {
                 if ("agent".equals(id)) {
                     if (mRootFrame != null)
                         mRootFrame.postDelayed(this::showRunnerPairingChooser, 160);
@@ -616,7 +616,7 @@ public final class OringutanActivity extends AppCompatActivity
 
         if (codex && mCodexSignedIn) {
             rows.add(new OminalInteractionSheet.Row("logout", "Log out",
-                "Remove the local Codex session", "", false, true, true));
+                "Remove the Codex session", "", false, true, true));
         }
 
         Dialog dialog = OminalInteractionSheet.show(this, interactionSheetTheme(),

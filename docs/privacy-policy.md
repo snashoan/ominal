@@ -2,18 +2,18 @@
 
 Effective: August 2, 2026
 
-Monolith (`com.ominal`) is a local-first Android application maintained by
-snashoan. It provides a conversation interface for user-selected coding-agent
-harnesses and a Linux workspace that runs on the user's device.
+Monolith (`com.ominal`) is an independent Android project by snashoan. It
+provides a conversation interface for user-selected coding-agent harnesses and
+a Linux workspace.
 
 ## Data stored on the device
 
 Monolith may store the following inside its Android app-private storage:
 
-- conversations, agent status, and local execution receipts;
+- conversations, agent status, and execution receipts;
 - files copied into a conversation workspace through Android's system document picker;
 - Linux runtime files, installed command-line tools, and user-created workspace files;
-- interface preferences, including the local theme configuration;
+- interface preferences, including the theme configuration;
 - authentication material created by a selected agent harness during that harness's sign-in flow.
 
 Monolith does not enable Android backup for this app-private data. Other apps
@@ -29,17 +29,17 @@ provider to produce a response. The provider's privacy policy and account terms
 govern its processing of that data.
 
 Provider passwords are not collected by Monolith. Authentication takes place
-through the provider's own browser or command-line sign-in flow. Resulting local
+through the provider's own browser or command-line sign-in flow. Resulting
 credentials remain in the app-private Linux environment unless the user or the
 provider's software exports them.
 
 ## Network and websites
 
-The app and its local Linux environment may connect to the internet to:
+The app and its Linux environment may connect to the internet to:
 
 - communicate with the agent provider selected by the user;
 - download or update user-selected command-line tools and Linux packages;
-- open websites requested by the user or agent in the local browser.
+- open websites requested by the user or agent in the browser.
 
 Websites and external services can collect data under their own policies.
 Monolith does not control those services.
@@ -67,7 +67,7 @@ Monolith does not create a Monolith account. Clearing the app's storage or
 uninstalling the app removes its app-private data. Files deliberately exported
 to shared storage must be removed separately by the user.
 
-Deleting local Monolith data does not delete data already processed by an
+Deleting Monolith app data does not delete data already processed by an
 external agent provider. Provider-account and provider-data deletion requests
 must be made through that provider.
 

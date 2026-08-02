@@ -1,5 +1,7 @@
-Ominal is a mobile workspace for coding agents. Conversations remain the primary interface, with each workspace connected to an isolated local shell and display session when work needs to run.
+Built for people who want coding agents without living in a terminal all day. Conversations stay up front, and each one has its own shell, files, and display when work needs to happen.
 
-Set up an account, start a conversation, attach files, and move between the chat and the active workspace without leaving the app. Ominal prepares its local runtime during first launch, then keeps each workspace's agent context, files, and terminal activity together.
+Pick a supported agent harness, sign in through its normal flow, attach files, and move between the conversation and workspace without leaving the app. The first launch prepares the Linux environment. After that, agent context, files, and terminal activity stay with the conversation.
 
-The runtime is designed for current Android devices and does not require device rooting. It can install development tools inside its app-managed Linux environment while keeping the Android app and its data isolated from other apps.
+This is an experimental developer build, not a hosted AI service. It does not provide models or run a model backend. The selected harness talks to its provider under that provider's terms.
+
+Agent tools can run commands and change files in the app workspace. Check important actions and outputs before relying on them.

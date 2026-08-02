@@ -7,19 +7,19 @@ with the merged release manifest and the installed build shown in review media.
 
 ### App functionality
 
-Monolith runs user-started local Linux shell and coding-agent sessions. A user
+Monolith runs user-started Linux shell and coding-agent sessions. A user
 can start a request in chat and leave the app while the requested command or
 agent turn continues. During that work Monolith displays an ongoing Android
 notification that returns the user to the active session.
 
 The command API can also run a command explicitly requested by an authorized
-companion integration. That work uses the same visible notification and local
+companion integration. That work uses the same visible notification and app
 runtime boundary.
 
 ### Impact if the task is deferred
 
 The requested command or agent turn would not begin promptly. The user would
-see a stalled conversation and dependent local display or file operations would
+see a stalled conversation and dependent display or file operations would
 not occur.
 
 ### Impact if the task is interrupted
@@ -53,7 +53,7 @@ them.
 ## Data safety baseline
 
 - Monolith has no developer-operated account or model backend.
-- Conversations and workspaces are stored locally.
+- Conversations and workspaces are stored in app-private storage.
 - User prompts, context, and files may be sent directly to the external agent
   provider selected by the user for app functionality.
 - No ads, analytics SDK, advertising ID, location, contacts, microphone, or
