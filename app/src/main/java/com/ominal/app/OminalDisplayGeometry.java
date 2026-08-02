@@ -47,7 +47,11 @@ public final class OminalDisplayGeometry {
     public static int unconsumedSystemInset(int systemBottom, int windowHeight,
                                              int decorHeight) {
         int alreadyExcluded = Math.max(0, windowHeight - Math.max(0, decorHeight));
-        return Math.max(0, systemBottom - alreadyExcluded);
+        return remainingInset(systemBottom, alreadyExcluded);
+    }
+
+    public static int remainingInset(int requestedInset, int alreadyExcluded) {
+        return Math.max(0, Math.max(0, requestedInset) - Math.max(0, alreadyExcluded));
     }
 
     public String toX11Spec() {

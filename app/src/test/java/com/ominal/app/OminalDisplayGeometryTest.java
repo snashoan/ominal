@@ -46,4 +46,12 @@ public class OminalDisplayGeometryTest {
         assertEquals(44, OminalDisplayGeometry.unconsumedSystemInset(44, 2340, 2340));
         assertEquals(0, OminalDisplayGeometry.unconsumedSystemInset(44, 2340, 2296));
     }
+
+    @Test
+    public void appliesOnlyInsetsNotAlreadyConsumedBySystemLayout() {
+        assertEquals(96, OminalDisplayGeometry.remainingInset(96, 0));
+        assertEquals(0, OminalDisplayGeometry.remainingInset(96, 96));
+        assertEquals(32, OminalDisplayGeometry.remainingInset(96, 64));
+        assertEquals(0, OminalDisplayGeometry.remainingInset(-1, -1));
+    }
 }

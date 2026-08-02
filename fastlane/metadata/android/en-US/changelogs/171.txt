@@ -1,0 +1,1 @@
+Improves keyboard and system-bar fitting across phones, makes the send control circular, and refines the launch experience.

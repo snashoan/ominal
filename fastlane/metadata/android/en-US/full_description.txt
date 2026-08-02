@@ -1,7 +1,9 @@
-Built for people who want coding agents without living in a terminal all day. Conversations stay up front, and each one has its own shell, files, and display when work needs to happen.
+Monolith gives machine intelligence a complete Linux workspace on your phone. Start a conversation, connect a supported intelligence provider, and work through a clean chat interface.
 
-Pick a supported agent harness, sign in through its normal flow, attach files, and move between the conversation and workspace without leaving the app. The first launch prepares the Linux environment. After that, agent context, files, and terminal activity stay with the conversation.
+Each chat keeps its own files, terminal, and screen. Ask it to write code, run commands, manage files, browse the web, or use apps. Open the screen at any time to see the work and take control yourself.
 
-This is an experimental developer build, not a hosted AI service. It does not provide models or run a model backend. The selected harness talks to its provider under that provider's terms.
+Long-running sessions can continue in the background. The ongoing notification takes you straight back to active work.
 
-Agent tools can run commands and change files in the app workspace. Check important actions and outputs before relying on them.
+Monolith does not provide a model or hosted intelligence service. You choose a supported provider and sign in through that provider's own flow. Requests are handled under that provider's terms.
+
+Connected tools can run commands and change workspace files, so review important actions and results.

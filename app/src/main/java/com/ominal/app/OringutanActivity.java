@@ -326,6 +326,10 @@ public final class OringutanActivity extends AppCompatActivity
     private int mDisplaySystemInsetBottom;
     private int mDisplayImeInsetBottom;
     private boolean mDisplayInsetsReady;
+    private int mChatInsetLeft;
+    private int mChatInsetTop;
+    private int mChatInsetRight;
+    private int mChatInsetBottom;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -5745,10 +5749,27 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void configureDisplayImeInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(getWindow().getDecorView(), (view, insets) -> {
+            Insets systemBars = insets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemBars());
             Insets navigation = insets.getInsetsIgnoringVisibility(
                 WindowInsetsCompat.Type.navigationBars());
             Insets mandatoryGestures = insets.getInsets(
                 WindowInsetsCompat.Type.mandatorySystemGestures());
+            Insets cutout = insets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.displayCutout());
+            Insets ime = insets.isVisible(WindowInsetsCompat.Type.ime())
+                ? insets.getInsets(WindowInsetsCompat.Type.ime())
+                : Insets.NONE;
+            mChatInsetLeft = Math.max(systemBars.left,
+                Math.max(mandatoryGestures.left, cutout.left));
+            mChatInsetTop = Math.max(systemBars.top,
+                Math.max(mandatoryGestures.top, cutout.top));
+            mChatInsetRight = Math.max(systemBars.right,
+                Math.max(mandatoryGestures.right, cutout.right));
+            mChatInsetBottom = Math.max(ime.bottom, Math.max(systemBars.bottom,
+                Math.max(mandatoryGestures.bottom, cutout.bottom)));
+            if (mDrawerLayout != null) mDrawerLayout.post(this::applyChatViewportInsets);
+
             int reportedSystemBottom = Math.max(navigation.bottom, mandatoryGestures.bottom);
             int stableSystemBottom = reportedSystemBottom > 0
                 ? reportedSystemBottom
@@ -5774,6 +5795,35 @@ public final class OringutanActivity extends AppCompatActivity
                 mNativeDisplayView.post(mNativeDisplayView::refreshDisplaySize);
             return insets;
         });
+    }
+
+    private void applyChatViewportInsets() {
+        if (mDrawerLayout == null) return;
+        ViewGroup.LayoutParams rawParams = mDrawerLayout.getLayoutParams();
+        if (!(rawParams instanceof FrameLayout.LayoutParams)) return;
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) rawParams;
+
+        android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
+        int[] location = new int[2];
+        mDrawerLayout.getLocationOnScreen(location);
+        int excludedLeft = Math.max(0, location[0] - params.leftMargin);
+        int excludedTop = Math.max(0, location[1] - params.topMargin);
+        int excludedRight = Math.max(0, metrics.widthPixels
+            - location[0] - mDrawerLayout.getWidth() - params.rightMargin);
+        int excludedBottom = Math.max(0, metrics.heightPixels
+            - location[1] - mDrawerLayout.getHeight() - params.bottomMargin);
+
+        int left = OminalDisplayGeometry.remainingInset(mChatInsetLeft, excludedLeft);
+        int top = OminalDisplayGeometry.remainingInset(mChatInsetTop, excludedTop);
+        int right = OminalDisplayGeometry.remainingInset(mChatInsetRight, excludedRight);
+        int bottom = OminalDisplayGeometry.remainingInset(mChatInsetBottom, excludedBottom);
+        if (params.leftMargin == left && params.topMargin == top
+            && params.rightMargin == right && params.bottomMargin == bottom) {
+            return;
+        }
+        params.setMargins(left, top, right, bottom);
+        mDrawerLayout.setLayoutParams(params);
     }
 
     private int navigationBarHeightFallback() {
@@ -6254,7 +6304,11 @@ public final class OringutanActivity extends AppCompatActivity
         button.setScaleType(ImageButton.ScaleType.CENTER);
         button.setPadding(dp(10), dp(10), dp(10), dp(10));
         button.setContentDescription(contentDescription);
-        button.setBackground(makeSurfaceDrawable(ui.composerSend, true));
+        GradientDrawable background = new GradientDrawable();
+        background.setShape(GradientDrawable.OVAL);
+        background.setColor(ui.composerSend.fill);
+        background.setStroke(dp(1), ui.composerSend.stroke);
+        button.setBackground(background);
         attachNativeRipple(button);
         attachPressFeedback(button);
         return button;
