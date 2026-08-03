@@ -119,7 +119,7 @@ jobs:
           (cd "$target" && sha256sum --check --strict bootstrap-ominal.sha256)
 
       - name: Download prepared runtime
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: ominal-prepared-runtime
           path: build/runtime
