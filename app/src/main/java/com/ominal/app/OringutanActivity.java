@@ -146,9 +146,8 @@ public final class OringutanActivity extends AppCompatActivity
     private static final String LAUNCHER_LIGHT_COMPONENT = "com.ominal.LauncherLightV3";
     private static final String LAUNCHER_DARK_COMPONENT = "com.ominal.LauncherDarkV3";
     private static final String CHAT_ROOT_NAME = ".ominal/chats";
-    private static final String UI_CONFIG_FILE_NAME = ".ominal/ui.properties";
-    private static final String UI_RC_FILE_NAME = ".ominalrc";
-    private static final String UI_CONFIG_VERSION = "ominal-closed-v6";
+    private static final String UI_CONFIG_FILE_NAME = ".ominal/themes/custom.properties";
+    private static final String UI_CONFIG_VERSION = "monolith-custom-v1";
     private static final String ATTACHMENTS_DIR_NAME = "attachments";
     private static final String MEDIA_DIR_NAME = "media";
     private static final String AGENT_RUNTIME_DIR_NAME = ".ominal";
@@ -163,6 +162,7 @@ public final class OringutanActivity extends AppCompatActivity
     private static final int DISPLAY_HEALTH_RETRIES = 30;
     private static final int DISPLAY_HEALTH_RETRY_DELAY_MS = 300;
     private static final int NATIVE_DISPLAY_HEALTH_RETRIES = 240;
+    private static final int DISPLAY_NAVIGATION_HEIGHT_DP = 60;
     private static final String NODE_VERSION = "24.18.0";
     private static final String CODEX_VERSION = "0.144.6";
     private static final String ROOTFS_ASSET = "runtime/archives/ubuntu-base-24.04.4-arm64-nohardlinks.tgz";
@@ -220,6 +220,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     private final ArrayList<ChatSession> mSessions = new ArrayList<>();
     private final SimpleDateFormat mClockFormat = new SimpleDateFormat("HH:mm", Locale.US);
+    private final OminalChatScrollState mChatScrollState = new OminalChatScrollState();
 
     private DrawerLayout mDrawerLayout;
     private LinearLayout mChatDrawerList;
@@ -244,6 +245,7 @@ public final class OringutanActivity extends AppCompatActivity
     private WebView mDisplayWebView;
     private LorieView mNativeDisplayView;
     private View mDisplayPane;
+    private View mDisplayNavigationBar;
     private FrameLayout mDisplayWarmHost;
     private TextView mDisplayAvailabilityView;
     private LinearLayout mDisplayAgentStatusView;
@@ -276,12 +278,15 @@ public final class OringutanActivity extends AppCompatActivity
     private Runnable mSetupRetryAction;
     private AgentTurnView mActiveAgentTurnView;
     private Markwon mMarkwon;
+    private boolean mChatScrollGestureActive;
 
     private SharedPreferences mPrefs;
     private ChatSession mActiveSession;
     private OminalAgentRuntime mAgentRuntime;
     private BrandSkin mSkin = BRAND_SKINS[0];
     private UiSpec mUi = UiSpec.defaults(BRAND_SKINS[0]);
+    private String mDisplayName = BRAND_SKINS[0].name;
+    private boolean mCustomThemeEnabled;
     private boolean mBootstrapReady;
     private boolean mRuntimeReady;
     private boolean mRuntimeSetupInFlight;
@@ -368,7 +373,7 @@ public final class OringutanActivity extends AppCompatActivity
             @Override
             public void handleOnBackPressed() {
                 if (mMode == MODE_DISPLAY) {
-                    switchMode(MODE_CHAT);
+                    navigateDisplayBack();
                     return;
                 }
                 if (mDrawerLayout != null && mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
@@ -777,11 +782,16 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private UiSpec loadUiSpec() {
+        UiSpec base = isLightAppearanceEnabled()
+            ? UiSpec.light(skin()) : UiSpec.defaults(skin());
         Properties properties = new Properties();
         loadUiProperties(properties, uiConfigFile());
-        loadUiProperties(properties, uiRcFile());
-        return isLightAppearanceEnabled()
-            ? UiSpec.light(skin()) : UiSpec.fromProperties(skin(), properties);
+        mCustomThemeEnabled = Boolean.parseBoolean(
+            properties.getProperty("theme.enabled", "false").trim());
+        mDisplayName = mCustomThemeEnabled
+            ? normalizeDisplayName(properties.getProperty("app.name"), skin().name)
+            : skin().name;
+        return mCustomThemeEnabled ? UiSpec.fromProperties(base, properties) : base;
     }
 
     private void loadUiProperties(Properties properties, File file) {
@@ -823,10 +833,6 @@ public final class OringutanActivity extends AppCompatActivity
         return new File(OminalConstants.OMINAL_HOME_DIR_PATH, UI_CONFIG_FILE_NAME);
     }
 
-    private File uiRcFile() {
-        return new File(OminalConstants.OMINAL_HOME_DIR_PATH, UI_RC_FILE_NAME);
-    }
-
     private UiSpec ui() {
         return mUi != null ? mUi : UiSpec.defaults(skin());
     }
@@ -839,6 +845,17 @@ public final class OringutanActivity extends AppCompatActivity
         } catch (IOException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to write default UI config", e);
         }
+    }
+
+    private String normalizeDisplayName(String value, String fallback) {
+        if (value == null) return fallback;
+        String normalized = value.replaceAll("[\\p{Cntrl}]", " ").trim();
+        if (normalized.isEmpty()) return fallback;
+        return normalized.length() > 32 ? normalized.substring(0, 32).trim() : normalized;
+    }
+
+    private String uiDisplayName() {
+        return TextUtils.isEmpty(mDisplayName) ? skin().name : mDisplayName;
     }
 
     private void ensureProviderCommands() {
@@ -1378,10 +1395,14 @@ public final class OringutanActivity extends AppCompatActivity
     private String defaultUiPropertiesTemplate() {
         UiSpec spec = UiSpec.defaults(skin());
         StringBuilder builder = new StringBuilder();
-        builder.append("# Ominal UI properties\n");
+        builder.append("# Monolith custom appearance\n");
         builder.append("ui.version=").append(UI_CONFIG_VERSION).append('\n');
+        builder.append("theme.id=custom\n");
+        builder.append("theme.enabled=false\n");
+        builder.append("app.name=").append(skin().name).append('\n');
         builder.append("# Edit like .bashrc: one key=value per line, comments start with #.\n");
-        builder.append("# 'export key=value' also works, but the app only reads these UI keys.\n");
+        builder.append("# Built-in defaults are immutable; enable this file to overlay them.\n");
+        builder.append("# 'export key=value' also works, but the app reads only documented UI keys.\n");
         builder.append("# From an agent session, run: ominal-event reload-ui\n");
         builder.append("# Colors accept #RRGGBB or #AARRGGBB.\n\n");
         appendColor(builder, "color.canvas", spec.canvas);
@@ -1468,6 +1489,7 @@ public final class OringutanActivity extends AppCompatActivity
         mDisplayModeButton = null;
         mSwapButton = null;
         mDisplayPane = null;
+        mDisplayNavigationBar = null;
         mDisplayAvailabilityView = null;
         mDisplayAgentStatusView = null;
         mDisplayAgentStatusText = null;
@@ -1540,7 +1562,7 @@ public final class OringutanActivity extends AppCompatActivity
         ImageView mark = new ImageView(this);
         mark.setImageResource(R.drawable.splash_mark);
         mark.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        mark.setContentDescription("Monolith");
+        mark.setContentDescription(uiDisplayName());
         content.addView(mark, new LinearLayout.LayoutParams(dp(64), dp(64)));
 
         TextView title = new TextView(this);
@@ -2778,6 +2800,8 @@ public final class OringutanActivity extends AppCompatActivity
         if (mMode == MODE_DISPLAY) {
             View displayPane = getOrCreateDisplayPane();
             attachDisplayPaneToWarmHost(displayPane);
+            mDisplayWarmHost.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
             displayPane.setVisibility(View.VISIBLE);
             if (mNativeDisplayView != null) {
                 mNativeDisplayView.setViewportUpdatesEnabled(true);
@@ -2810,6 +2834,8 @@ public final class OringutanActivity extends AppCompatActivity
         }
         attachDisplayPaneToWarmHost(mDisplayPane);
         mDisplayPane.setVisibility(View.VISIBLE);
+        mDisplayWarmHost.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
     }
 
     private void releaseNativeDisplayInput() {
@@ -2936,9 +2962,30 @@ public final class OringutanActivity extends AppCompatActivity
     private View createChatPane() {
         UiSpec ui = ui();
         mActiveAgentTurnView = null;
+        mChatScrollState.reset();
+        mChatScrollGestureActive = false;
         mScrollView = new ScrollView(this);
         mScrollView.setFillViewport(true);
         mScrollView.setBackgroundColor(ui.chat.fill);
+        mScrollView.setOnTouchListener((view, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                case MotionEvent.ACTION_MOVE:
+                    mChatScrollGestureActive = true;
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    updateChatScrollPreference();
+                    mChatScrollGestureActive = false;
+                    break;
+                default:
+                    break;
+            }
+            return false;
+        });
+        mScrollView.setOnScrollChangeListener((view, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+            if (mChatScrollGestureActive) updateChatScrollPreference();
+        });
 
         mMessagesView = new LinearLayout(this);
         mMessagesView.setOrientation(LinearLayout.VERTICAL);
@@ -2955,7 +3002,7 @@ public final class OringutanActivity extends AppCompatActivity
         if (mAgentRuntime != null && mActiveSession != null)
             bindAgentSnapshotToChat(mAgentRuntime.snapshot(mActiveSession.id));
 
-        scrollToBottom();
+        scrollToBottom(true);
         return mScrollView;
     }
 
@@ -3024,11 +3071,17 @@ public final class OringutanActivity extends AppCompatActivity
 
         if (mActiveSession == null) return pane;
 
+        LinearLayout displayShell = new LinearLayout(this);
+        displayShell.setOrientation(LinearLayout.VERTICAL);
+        displayShell.setBackgroundColor(Color.BLACK);
+        pane.addView(displayShell, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
         FrameLayout screen = new FrameLayout(this);
         screen.setPadding(0, 0, 0, 0);
         screen.setBackgroundColor(Color.BLACK);
-        pane.addView(screen, new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        displayShell.addView(screen, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
         if (usesNativeDisplay()) {
             mNativeDisplayView = new LorieView(this);
@@ -3095,12 +3148,81 @@ public final class OringutanActivity extends AppCompatActivity
         screen.addView(mDisplayAvailabilityView, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        pane.addView(createDisplayOverlay(), new FrameLayout.LayoutParams(
+        screen.addView(createDisplayOverlay(), new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        mDisplayNavigationBar = createDisplayNavigationBar();
+        displayShell.addView(mDisplayNavigationBar, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(DISPLAY_NAVIGATION_HEIGHT_DP)));
 
         mDisplayPane = pane;
         startDisplayAfterFirstLayout();
         return mDisplayPane;
+    }
+
+    private View createDisplayNavigationBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER);
+        bar.setPadding(dp(10), dp(5), dp(10), dp(5));
+        bar.setBackgroundColor(Color.rgb(8, 8, 9));
+
+        addDisplayNavigationButton(bar, R.drawable.splash_mark, "Chat",
+            view -> switchMode(MODE_CHAT));
+        addDisplayNavigationButton(bar, R.drawable.ic_dui_back, "Back",
+            view -> navigateDisplayBack());
+        addDisplayNavigationButton(bar, R.drawable.ic_dui_home, "Home",
+            view -> showDisplayHome());
+        addDisplayNavigationButton(bar, R.drawable.ic_dui_recents, "Open windows",
+            view -> showDisplayRecents());
+        addDisplayNavigationButton(bar, R.drawable.ic_dui_keyboard, "Keyboard",
+            view -> showDisplayKeyboard());
+        return bar;
+    }
+
+    private void addDisplayNavigationButton(LinearLayout bar, int iconRes,
+                                            String description, View.OnClickListener listener) {
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(iconRes);
+        button.setImageTintList(ColorStateList.valueOf(Color.WHITE));
+        button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        button.setPadding(dp(11), dp(11), dp(11), dp(11));
+        button.setContentDescription(description);
+        button.setBackground(makeRoundedDrawable(
+            Color.TRANSPARENT, Color.TRANSPARENT, dp(14)));
+        button.setOnClickListener(listener);
+        attachNativeRipple(button);
+        attachPressFeedback(button);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(50), 1);
+        params.setMargins(dp(2), 0, dp(2), 0);
+        bar.addView(button, params);
+    }
+
+    private void navigateDisplayBack() {
+        if (mNativeDisplayView != null && LorieView.connected()) {
+            mNativeDisplayView.navigateBack();
+            return;
+        }
+        if (mDisplayWebView == null) {
+            switchMode(MODE_CHAT);
+            return;
+        }
+        mDisplayWebView.dispatchKeyEvent(new android.view.KeyEvent(
+            android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ESCAPE));
+        mDisplayWebView.dispatchKeyEvent(new android.view.KeyEvent(
+            android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ESCAPE));
+    }
+
+    private void showDisplayHome() {
+        if (mNativeDisplayView != null) mNativeDisplayView.showDesktop();
+    }
+
+    private void showDisplayRecents() {
+        if (mNativeDisplayView != null) mNativeDisplayView.showWindowSwitcher();
+    }
+
+    private void showDisplayKeyboard() {
+        if (mNativeDisplayView != null) mNativeDisplayView.showKeyboard();
     }
 
     private void startDisplayAfterFirstLayout() {
@@ -4561,6 +4683,7 @@ public final class OringutanActivity extends AppCompatActivity
         environment.put("OMINAL_DISPLAY_GEOMETRY", getDisplayGeometry());
         environment.put("OMINAL_DISPLAY_DPI", Integer.toString(currentDisplayGeometry().densityDpi));
         environment.put("OMINAL_LOLO_MODE", isLoloModeEnabled() ? "1" : "0");
+        environment.put("OMINAL_UI_CONFIG", "/root/.ominal/themes/custom.properties");
         if (session != null) {
             environment.put("OMINAL_AGENT_SESSION", session.id);
             environment.put("OMINAL_EVENT_LOG",
@@ -4585,7 +4708,8 @@ public final class OringutanActivity extends AppCompatActivity
             + "autonomously for GUI work. If user input, visual confirmation, login, or manual control is truly "
             + "required, run `ominal-event request-user-input \"short reason\"`. Run `ominal-event open-display "
             + "\"short reason\"` when the user should see the display but does not need to type. "
-            + "The user theme is `/root/.ominal/ui.properties`. After editing it, run "
+            + "The optional custom theme is `/root/.ominal/themes/custom.properties`; built-in themes "
+            + "are immutable. Set `theme.enabled=true`, edit documented keys, then run "
             + "`ominal-event reload-ui` to apply it without restarting the harness. "
             + "Use `ominal-install` for Linux packages and downloaded .deb files; never use raw `dpkg -i`. "
             + "Put images, audio, video, or PDFs created for the user under ./"
@@ -5004,6 +5128,7 @@ public final class OringutanActivity extends AppCompatActivity
         session.messages.add(message);
         if (persist) appendHistory(session, message);
         if (session == mActiveSession && mMode == MODE_CHAT && !shouldHideSystemReadyMessage(message)) {
+            if ("user".equals(message.role)) mChatScrollState.followLatest();
             renderChatMessage(session, message, true);
         }
     }
@@ -5678,8 +5803,23 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void scrollToBottom() {
+        scrollToBottom(false);
+    }
+
+    private void scrollToBottom(boolean force) {
         if (mScrollView == null) return;
-        mScrollView.post(() -> mScrollView.fullScroll(View.FOCUS_DOWN));
+        if (force) mChatScrollState.followLatest();
+        if (!mChatScrollState.shouldFollowLatest()) return;
+        mScrollView.post(() -> {
+            if (mScrollView != null && mChatScrollState.shouldFollowLatest())
+                mScrollView.fullScroll(View.FOCUS_DOWN);
+        });
+    }
+
+    private void updateChatScrollPreference() {
+        if (mScrollView == null || mMessagesView == null) return;
+        mChatScrollState.onUserScroll(mScrollView.getScrollY(), mScrollView.getHeight(),
+            mMessagesView.getHeight(), dp(56));
     }
 
     private void animateModeView(View view) {
@@ -5930,7 +6070,8 @@ public final class OringutanActivity extends AppCompatActivity
             metrics.widthPixels, metrics.heightPixels,
             mDisplayNavigationInsetLeft, mDisplayNavigationInsetTop,
             mDisplayNavigationInsetRight,
-            Math.max(mDisplayNavigationInsetBottom, mDisplaySystemInsetBottom),
+            Math.max(mDisplayNavigationInsetBottom, mDisplaySystemInsetBottom)
+                + dp(DISPLAY_NAVIGATION_HEIGHT_DP),
             metrics.densityDpi);
     }
 
@@ -6636,6 +6777,62 @@ public final class OringutanActivity extends AppCompatActivity
 
         static UiSpec defaults(BrandSkin skin) {
             return fromProperties(skin, new Properties());
+        }
+
+        static UiSpec fromProperties(UiSpec base, Properties properties) {
+            Properties merged = new Properties();
+            putColor(merged, "color.canvas", base.canvas);
+            putColor(merged, "color.panel", base.panel);
+            putColor(merged, "color.panelSoft", base.panelSoft);
+            putColor(merged, "color.ink", base.ink);
+            putColor(merged, "color.muted", base.muted);
+            putColor(merged, "color.accent", base.accent);
+            putColor(merged, "color.accentDark", base.accentDark);
+            putColor(merged, "color.border", base.border);
+            putColor(merged, "color.dark", base.dark);
+            putColor(merged, "color.onDark", base.onDark);
+            putColor(merged, "color.onDarkMuted", base.onDarkMuted);
+            putSurface(merged, "surface.app", base.app);
+            putSurface(merged, "surface.header", base.header);
+            putSurface(merged, "surface.toolbarButton", base.toolbarButton);
+            putSurface(merged, "surface.toolbarButtonActive", base.toolbarButtonActive);
+            putSurface(merged, "surface.drawer", base.drawer);
+            putSurface(merged, "surface.drawerSearch", base.drawerSearch);
+            putSurface(merged, "surface.drawerRow", base.drawerRow);
+            putSurface(merged, "surface.drawerRowActive", base.drawerRowActive);
+            putSurface(merged, "surface.chat", base.chat);
+            putSurface(merged, "surface.bubble.user", base.bubbleUser);
+            putSurface(merged, "surface.bubble.agent", base.bubbleAgent);
+            putSurface(merged, "surface.composer", base.composer);
+            putSurface(merged, "surface.composerInput", base.composerInput);
+            putSurface(merged, "surface.composerIcon", base.composerIcon);
+            putSurface(merged, "surface.composerSend", base.composerSend);
+            putSurface(merged, "surface.buttonPrimary", base.buttonPrimary);
+            putSurface(merged, "surface.buttonSecondary", base.buttonSecondary);
+            putSurface(merged, "surface.modeButton", base.modeButton);
+            putSurface(merged, "surface.modeButtonActive", base.modeButtonActive);
+            putSurface(merged, "surface.terminalBlock", base.terminalBlock);
+            putSurface(merged, "surface.displayHome", base.displayHome);
+            putSurface(merged, "surface.displayTile", base.displayTile);
+            for (String key : properties.stringPropertyNames())
+                merged.setProperty(key, properties.getProperty(key));
+
+            BrandSkin skin = new BrandSkin("custom", "", "", "",
+                base.canvas, base.panel, base.ink, base.muted, base.accent,
+                base.accentDark, base.border, base.dark, base.onDark);
+            return fromProperties(skin, merged);
+        }
+
+        private static void putColor(Properties properties, String key, int color) {
+            properties.setProperty(key, String.format(Locale.US, "#%08X", color));
+        }
+
+        private static void putSurface(Properties properties, String key, SurfaceSpec surface) {
+            putColor(properties, key + ".fill", surface.fill);
+            putColor(properties, key + ".stroke", surface.stroke);
+            putColor(properties, key + ".text", surface.text);
+            properties.setProperty(key + ".radius",
+                Integer.toString(surface.radiusDp));
         }
 
         static UiSpec light(BrandSkin skin) {

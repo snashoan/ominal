@@ -333,6 +333,32 @@ public final class LorieView extends SurfaceView {
         sendKeyEvent(0, keyCode, false, 0);
     }
 
+    /** Exits transient or fullscreen X11 UI without leaving the Android display surface. */
+    public void navigateBack() {
+        if (!mInputBridgeActive || !connected()) return;
+        sendAndroidKey(KeyEvent.KEYCODE_ESCAPE);
+    }
+
+    /** Uses XFCE's show-desktop shortcut so fullscreen clients cannot trap the user. */
+    public void showDesktop() {
+        sendShortcut(new int[]{KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_ALT_LEFT},
+            KeyEvent.KEYCODE_D);
+    }
+
+    /** Opens the window switcher while keeping the Linux session and every client alive. */
+    public void showWindowSwitcher() {
+        sendShortcut(new int[]{KeyEvent.KEYCODE_ALT_LEFT}, KeyEvent.KEYCODE_TAB);
+    }
+
+    private void sendShortcut(int[] modifiers, int keyCode) {
+        if (!mInputBridgeActive || !connected()) return;
+        for (int modifier : modifiers) sendKeyEvent(0, modifier, true, 0);
+        sendKeyEvent(0, keyCode, true, 0);
+        sendKeyEvent(0, keyCode, false, 0);
+        for (int index = modifiers.length - 1; index >= 0; index--)
+            sendKeyEvent(0, modifiers[index], false, 0);
+    }
+
     private void sendContentZoomShortcut(boolean zoomIn) {
         sendKeyEvent(0, KeyEvent.KEYCODE_CTRL_LEFT, true, 0);
         if (zoomIn) sendKeyEvent(0, KeyEvent.KEYCODE_SHIFT_LEFT, true, 0);

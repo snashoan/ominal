@@ -66,6 +66,7 @@ configure_xfce() {
     icon_size=$((bottom_bar_height * 58 / 100))
     [ "$icon_size" -ge 40 ] || icon_size=40
     [ "$icon_size" -le 52 ] || icon_size=52
+    desktop_icon_size=64
 
     rm -rf "$panel_root"
     mkdir -p "$channel_root" "$panel_root" "$desktop_root" "$autostart_root" "$rules_root"
@@ -114,13 +115,51 @@ EOF
 </channel>
 EOF
 
+    shortcuts_file="$channel_root/xfce4-keyboard-shortcuts.xml"
+    if [ ! -f "$shortcuts_file" ]; then
+        cat >"$shortcuts_file" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-keyboard-shortcuts" version="1.0"/>
+EOF
+    fi
+    python3 - "$shortcuts_file" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+path = sys.argv[1]
+tree = ET.parse(path)
+root = tree.getroot()
+
+def child(parent, name, kind="empty", value=None):
+    node = next((item for item in parent.findall("property")
+                 if item.get("name") == name), None)
+    if node is None:
+        node = ET.SubElement(parent, "property", {"name": name})
+    node.set("type", kind)
+    if value is None:
+        node.attrib.pop("value", None)
+    else:
+        node.set("value", str(value))
+    return node
+
+xfwm = child(root, "xfwm4")
+custom = child(xfwm, "custom")
+child(custom, "<Primary><Alt>d", "string", "show_desktop_key")
+child(custom, "<Alt>Tab", "string", "cycle_windows_key")
+tree.write(path, encoding="UTF-8", xml_declaration=True)
+PY
+
     if [ ! -f "$channel_root/xfce4-desktop.xml" ]; then
         cat >"$channel_root/xfce4-desktop.xml" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <channel name="xfce4-desktop" version="1.0">
   <property name="desktop-icons" type="empty">
     <property name="style" type="int" value="2"/>
-    <property name="icon-size" type="uint" value="$icon_size"/>
+    <property name="icon-size" type="uint" value="$desktop_icon_size"/>
+    <property name="gravity" type="int" value="1"/>
+    <property name="use-custom-font-size" type="bool" value="true"/>
+    <property name="font-size" type="double" value="15"/>
+    <property name="center-text" type="bool" value="true"/>
     <property name="single-click" type="bool" value="true"/>
     <property name="show-tooltips" type="bool" value="false"/>
     <property name="file-icons" type="empty">
@@ -164,6 +203,39 @@ EOF
 EOF
     fi
 
+    # Preserve the user's backdrop while enforcing a touch-sized horizontal app home.
+    python3 - "$channel_root/xfce4-desktop.xml" "$desktop_icon_size" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+path, icon_size = sys.argv[1], sys.argv[2]
+tree = ET.parse(path)
+root = tree.getroot()
+
+def child(parent, name, kind="empty", value=None):
+    node = next((item for item in parent.findall("property")
+                 if item.get("name") == name), None)
+    if node is None:
+        node = ET.SubElement(parent, "property", {"name": name})
+    node.set("type", kind)
+    if value is None:
+        node.attrib.pop("value", None)
+    else:
+        node.set("value", str(value))
+    return node
+
+icons = child(root, "desktop-icons")
+child(icons, "style", "int", 2)
+child(icons, "icon-size", "uint", icon_size)
+child(icons, "gravity", "int", 1)
+child(icons, "use-custom-font-size", "bool", "true")
+child(icons, "font-size", "double", 15)
+child(icons, "center-text", "bool", "true")
+child(icons, "single-click", "bool", "true")
+child(icons, "show-tooltips", "bool", "false")
+tree.write(path, encoding="UTF-8", xml_declaration=True)
+PY
+
     cat >"$channel_root/xfce4-panel.xml" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <channel name="xfce4-panel" version="1.0">
@@ -176,8 +248,8 @@ EOF
       <property name="position-locked" type="bool" value="true"/>
       <property name="size" type="uint" value="$bottom_bar_height"/>
       <property name="nrows" type="uint" value="1"/>
-      <property name="autohide-behavior" type="uint" value="0"/>
-      <property name="disable-struts" type="bool" value="false"/>
+      <property name="autohide-behavior" type="uint" value="2"/>
+      <property name="disable-struts" type="bool" value="true"/>
       <property name="background-style" type="uint" value="1"/>
       <property name="background-rgba" type="array">
         <value type="double" value="0.031"/>
@@ -303,8 +375,7 @@ read_workarea() {
     work_x=0
     work_y=0
     work_width="$screen_width"
-    work_height=$((screen_height - ${OMINAL_BOTTOM_BAR_HEIGHT:-0}))
-    [ "$work_height" -gt 0 ] || work_height="$screen_height"
+    work_height="$screen_height"
     net_workarea="$(xprop -root _NET_WORKAREA 2>/dev/null \
         | sed -n 's/^[^=]*=[[:space:]]*//p' | head -n 1 | tr ',' ' ')"
     set -- $net_workarea

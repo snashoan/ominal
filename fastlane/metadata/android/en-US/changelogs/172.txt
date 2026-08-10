@@ -1,0 +1,1 @@
+Makes the computer display recoverable with persistent touch navigation, explicit keyboard access, a mobile app layout, and stable chat scrolling while responses stream.

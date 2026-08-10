@@ -13,8 +13,7 @@ CODEX_HOME="${OMINAL_CODEX_HOME:-$HOME/.ominal/codex}"
 CLAUDE_HOME="${OMINAL_CLAUDE_HOME:-$HOME/.ominal/harnesses/claude}"
 ANTIGRAVITY_HOME="${OMINAL_ANTIGRAVITY_HOME:-$HOME/.ominal/harnesses/antigravity}"
 CAPABILITIES_HOME="${OMINAL_CAPABILITIES_HOME:-$HOME/.ominal/harness-capabilities}"
-UI_CONFIG_HOME="${OMINAL_UI_CONFIG_HOME:-$HOME/.ominal/ui.properties}"
-UI_RC_HOME="${OMINAL_UI_RC_HOME:-$HOME/.ominalrc}"
+UI_CONFIG_HOME="${OMINAL_UI_CONFIG_HOME:-$HOME/.ominal/themes/custom.properties}"
 PROOT_ID="${OMINAL_PROOT_ID:-0:0}"
 XDG_OPEN_BRIDGE="$PREFIX/bin/ominal-xdg-open-guest"
 HARNESS_DISCOVER_BRIDGE="$PREFIX/bin/ominal-harness-discover"
@@ -45,7 +44,7 @@ esac
 mkdir -p "$RUNTIME_ROOT/tmp" "$SHM_DIR" "$ROOTFS/.l2s" "$WORKSPACE" \
     "$ROOTFS/root/workspace" "$ROOTFS/root/.codex" "$ROOTFS/root/.claude" \
     "$ROOTFS/root/.gemini" "$ROOTFS/root/.ominal/harness-capabilities" \
-    "$ROOTFS/root/.ominal" \
+    "$ROOTFS/root/.ominal/themes" \
     "$CODEX_HOME" "$CLAUDE_HOME" "$ANTIGRAVITY_HOME" "$CAPABILITIES_HOME"
 chmod 1777 "$SHM_DIR"
 
@@ -118,12 +117,9 @@ if [ -d "$HOST_HOME/.config/git" ]; then
     set -- -b "$HOST_HOME/.config/git:/root/.config/git" "$@"
 fi
 if [ -f "$UI_CONFIG_HOME" ]; then
-    [ -e "$ROOTFS/root/.ominal/ui.properties" ] || : > "$ROOTFS/root/.ominal/ui.properties"
-    set -- -b "$UI_CONFIG_HOME:/root/.ominal/ui.properties" "$@"
-fi
-if [ -f "$UI_RC_HOME" ]; then
-    [ -e "$ROOTFS/root/.ominalrc" ] || : > "$ROOTFS/root/.ominalrc"
-    set -- -b "$UI_RC_HOME:/root/.ominalrc" "$@"
+    [ -e "$ROOTFS/root/.ominal/themes/custom.properties" ] \
+        || : > "$ROOTFS/root/.ominal/themes/custom.properties"
+    set -- -b "$UI_CONFIG_HOME:/root/.ominal/themes/custom.properties" "$@"
 fi
 if [ -x "$XDG_OPEN_BRIDGE" ]; then
     if [ ! -e "$ROOTFS/usr/local/bin/xdg-open" ]; then
