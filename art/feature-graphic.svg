@@ -1,28 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500">
-  <rect width="1024" height="500" fill="#000"/>
-  <g fill="none" stroke="#1b1b1b" stroke-width="1">
-    <path d="M64 72H960M64 428H960M96 48V452M928 48V452"/>
-    <path d="M64 112H960M64 388H960" stroke-dasharray="3 9"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500" fill="none">
+  <rect width="1024" height="500" fill="#050506"/>
+  <path d="M0 70H1024M0 430H1024" stroke="#18181b"/>
+  <g transform="translate(72 48) scale(3.75)" stroke="#ff174f" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M28 28C38 24 70 24 80 28L54 54Z" fill="#ff174f" fill-opacity=".15" stroke-width="1.7"/>
+    <path d="M28 80C38 84 70 84 80 80L54 54Z" fill="#ff174f" fill-opacity=".15" stroke-width="1.7"/>
+    <ellipse cx="54" cy="28" rx="26" ry="4" stroke-width="1.5"/>
+    <ellipse cx="54" cy="80" rx="26" ry="4" stroke-width="1.5"/>
+    <path d="M31 41A28 28 0 0 0 26 51M77 41A28 28 0 0 1 82 51M26 57A28 28 0 0 0 31 67M82 57A28 28 0 0 1 77 67" stroke-width="1.2"/>
   </g>
-  <g fill="#666" font-family="Consolas, Menlo, monospace" font-size="13">
-    <text x="64" y="57">MONOLITH / SYSTEM INTERFACE</text>
-    <text x="770" y="57">STATE: READY</text>
-    <text x="64" y="449">SESSION 01</text>
-    <text x="835" y="449">AARCH64</text>
-  </g>
-  <g transform="translate(132 145) scale(2)">
-    <path fill="none" stroke="#fff" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round"
-      d="M34 69.5C26.2 66.2 20.8 58.9 20.8 50.5C20.8 38.5 30.5 28.8 42.5 28.8C54.5 28.8 64.3 38.5 64.3 50.5C64.3 58.9 58.9 66.2 51 69.5"/>
-    <path fill="#fff"
-      d="M20.8 71.1H36.2V75.5H20.8ZM30.7 67.8H36.2V75.5H30.7ZM48.8 67.8H54.3V75.5H48.8ZM48.8 71.1H64.3V75.5H48.8ZM71.6 71.1H90.1V75.5H71.6Z"/>
-  </g>
-  <text x="414" y="231" fill="#fff" font-family="Segoe UI, Arial, sans-serif" font-size="66" font-weight="600">Monolith</text>
-  <text x="418" y="279" fill="#b5b5b5" font-family="Segoe UI, Arial, sans-serif" font-size="22">MACHINE INTELLIGENCE. A FULL LINUX COMPUTER.</text>
-  <g fill="#777" font-family="Consolas, Menlo, monospace" font-size="14">
-    <text x="419" y="337">CHAT</text>
-    <text x="516" y="337">FILES</text>
-    <text x="622" y="337">TERMINAL</text>
-    <text x="762" y="337">SCREEN</text>
-  </g>
+  <text x="500" y="220" fill="#f5f5f7" font-family="Segoe UI, Arial, sans-serif" font-size="92" font-weight="600">GIR</text>
+  <text x="506" y="267" fill="#ff315e" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="600">COMPUTER INTELLIGENCE</text>
+  <text x="506" y="315" fill="#b7b7bd" font-family="Segoe UI, Arial, sans-serif" font-size="25">A complete Linux workspace,</text>
+  <text x="506" y="348" fill="#b7b7bd" font-family="Segoe UI, Arial, sans-serif" font-size="25">in conversation.</text>
+  <text x="506" y="405" fill="#707078" font-family="Consolas, Menlo, monospace" font-size="14">CHAT / FILES / TERMINAL / SCREEN</text>
 </svg>

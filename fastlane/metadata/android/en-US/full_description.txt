@@ -1,9 +1,9 @@
-Monolith gives machine intelligence a complete Linux workspace on your phone. Start a conversation, connect a supported intelligence provider, and work through a clean chat interface.
+GIR gives computer intelligence a complete Linux workspace on your phone. Start a conversation, connect a supported intelligence provider, and work through a clean chat interface.
 
-Each chat keeps its own files, terminal, and screen. Ask it to write code, run commands, manage files, browse the web, or use apps. Open the screen at any time to see the work and take control yourself.
+Each conversation keeps its own files, terminal, and screen. Ask it to write code, run commands, manage files, browse the web, or use apps. Open the screen at any time to see the work and take control yourself.
 
 Long-running sessions can continue in the background. The ongoing notification takes you straight back to active work.
 
-Monolith does not provide a model or hosted intelligence service. You choose a supported provider and sign in through that provider's own flow. Requests are handled under that provider's terms.
+GIR does not provide a model or hosted intelligence service. You choose a supported provider and sign in through that provider's own flow. Requests are handled under that provider's terms.
 
 Connected tools can run commands and change workspace files, so review important actions and results.
