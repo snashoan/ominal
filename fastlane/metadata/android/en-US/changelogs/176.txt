@@ -1,0 +1,1 @@
+Applies GIR's bundled wallpaper across XFCE monitor profiles while preserving user-selected backgrounds; keeps the mobile desktop titleless and free of duplicate docks.

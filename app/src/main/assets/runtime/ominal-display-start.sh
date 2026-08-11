@@ -24,7 +24,7 @@ case "$DESKTOP_SESSION" in
     ;;
 esac
 
-host_session_version="ominal-display-host-v40-$DISPLAY_BACKEND-$DESKTOP_SESSION-$DISPLAY_GEOMETRY-$DISPLAY_DPI"
+host_session_version="ominal-display-host-v46-$DISPLAY_BACKEND-$DESKTOP_SESSION-$DISPLAY_GEOMETRY-$DISPLAY_DPI"
 host_session_marker="$DISPLAY_DIR/session-version"
 reset_host_session=0
 if [ "$(cat "$host_session_marker" 2>/dev/null || true)" != "$host_session_version" ]; then
@@ -125,11 +125,11 @@ cat > "$GUEST_SCRIPT" <<'OMINAL_GUEST_DISPLAY'
 #!/bin/bash
 set -eu
 display_dir=/root/.ominal/display
-desktop_version="ominal-mobile-v41-$OMINAL_DISPLAY_BACKEND-$OMINAL_DESKTOP_SESSION"
+desktop_version="ominal-mobile-v47-$OMINAL_DISPLAY_BACKEND-$OMINAL_DESKTOP_SESSION"
 mkdir -p "$display_dir" /root/.local/bin
 export OMINAL_WORKDIR=/root/workspace
 
-required_commands="jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xdotool wmctrl scrot xrdb ominal-screen"
+required_commands="jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xdotool wmctrl scrot xrdb file yad xdg-mime update-desktop-database ominal-screen ominal-open-executable"
 if [ "$OMINAL_DESKTOP_SESSION" = xfce ]; then
   required_commands="xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes $required_commands"
 fi
@@ -205,8 +205,6 @@ export QT_ENABLE_HIGHDPI_SCALING=1 QT_SCALE_FACTOR_ROUNDING_POLICY=PassThrough
 export ELM_SCALE="$ui_scale" FLTK_SCALING_FACTOR="$ui_scale" WINIT_X11_SCALE_FACTOR="$ui_scale"
 export SAL_FORCEDPI=96
 export MOZ_ENABLE_WAYLAND=0 MOZ_USE_XINPUT2=1
-export MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1
-export MOZ_DISABLE_GPU_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1
 export MOZ_WEBRENDER=0 LIBGL_ALWAYS_SOFTWARE=1
 font_dpi=96
 top_bar_height=$(((short_side * 12 / 100 + ui_scale - 1) / ui_scale))
@@ -502,10 +500,31 @@ export QT_ENABLE_HIGHDPI_SCALING=1 QT_SCALE_FACTOR_ROUNDING_POLICY=PassThrough
 export ELM_SCALE=$ui_scale FLTK_SCALING_FACTOR=$ui_scale WINIT_X11_SCALE_FACTOR=$ui_scale
 export SAL_FORCEDPI=96
 export MOZ_ENABLE_WAYLAND=0 MOZ_USE_XINPUT2=1
-export MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1
-export MOZ_DISABLE_GPU_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1
 export MOZ_WEBRENDER=0 LIBGL_ALWAYS_SOFTWARE=1
 EOF
+
+applications_dir=/root/.local/share/applications
+mkdir -p "$applications_dir"
+cat >"$applications_dir/ominal-executable.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=GIR executable approval
+Comment=Confirm before granting executable permission
+Exec=/usr/local/bin/ominal-open-executable %f
+TryExec=/usr/local/bin/ominal-open-executable
+Icon=application-x-executable
+Terminal=false
+NoDisplay=true
+StartupNotify=true
+MimeType=application/x-executable;application/x-pie-executable;application/x-shellscript;text/x-shellscript;application/vnd.appimage;
+EOF
+chmod 644 "$applications_dir/ominal-executable.desktop"
+update-desktop-database "$applications_dir" >/dev/null 2>&1 || true
+for executable_mime in application/x-executable application/x-pie-executable \
+    application/x-shellscript text/x-shellscript application/vnd.appimage; do
+  xdg-mime default ominal-executable.desktop "$executable_mime"
+done
 
 cat > /root/.local/bin/ominal-terminal <<EOF
 #!/bin/sh
@@ -545,12 +564,21 @@ EOF
 
 cat > /root/.local/bin/ominal-browser <<"EOF"
 #!/bin/sh
-if wmctrl -xa Navigator.firefox >/dev/null 2>&1; then exit 0; fi
+url="${1:-about:blank}"
+case "$url" in http://*|https://*|about:blank) ;; *) exit 64 ;; esac
 profile_root=/var/lib/ominal/browser-user
 mkdir -p "$profile_root/Downloads" "$profile_root/.mozilla"
 chown -R nobody:nogroup "$profile_root" 2>/dev/null || true
-exec su -m -s /bin/sh nobody -c \
-  'HOME=/var/lib/ominal/browser-user XDG_DOWNLOAD_DIR=/var/lib/ominal/browser-user/Downloads DISPLAY="$DISPLAY" MOZ_ENABLE_WAYLAND=0 MOZ_USE_XINPUT2=1 MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1 MOZ_DISABLE_GPU_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 MOZ_WEBRENDER=0 LIBGL_ALWAYS_SOFTWARE=1 exec firefox --new-window about:blank'
+export OMINAL_BROWSER_URL="$url"
+if wmctrl -xa Navigator.firefox >/dev/null 2>&1; then
+  nohup su -m -s /bin/sh nobody -c \
+    'HOME=/var/lib/ominal/browser-user XDG_DOWNLOAD_DIR=/var/lib/ominal/browser-user/Downloads DISPLAY="$DISPLAY" MOZ_ENABLE_WAYLAND=0 MOZ_USE_XINPUT2=1 MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_WEBRENDER=0 LIBGL_ALWAYS_SOFTWARE=1 firefox --new-tab "$OMINAL_BROWSER_URL"' \
+    </dev/null >/dev/null 2>&1 &
+else
+  nohup su -m -s /bin/sh nobody -c \
+    'HOME=/var/lib/ominal/browser-user XDG_DOWNLOAD_DIR=/var/lib/ominal/browser-user/Downloads DISPLAY="$DISPLAY" MOZ_ENABLE_WAYLAND=0 MOZ_USE_XINPUT2=1 MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_WEBRENDER=0 LIBGL_ALWAYS_SOFTWARE=1 firefox --new-window "$OMINAL_BROWSER_URL"' \
+    </dev/null >/dev/null 2>&1 &
+fi
 EOF
 
 cat > /root/.local/bin/ominal-settings <<"EOF"

@@ -1,0 +1,1 @@
+Finishes GIR's white visual identity across launcher, loading, navigation, and the mobile desktop; removes redundant desktop chrome and preserves custom wallpapers.

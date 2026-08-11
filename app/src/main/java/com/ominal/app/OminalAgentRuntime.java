@@ -121,6 +121,7 @@ public final class OminalAgentRuntime {
 
     private static final class TurnStream {
         @NonNull final OminalAgentTransport.TurnRequest request;
+        @NonNull final String transportId;
         @NonNull final String turnId;
         @Nullable final OminalExecutionReceipt.WorkspaceSnapshot before;
         final long startedAt;
@@ -128,9 +129,11 @@ public final class OminalAgentRuntime {
 
         TurnStream(@NonNull String sessionId,
                    @NonNull OminalAgentTransport.TurnRequest request,
+                   @NonNull String transportId,
                    @Nullable OminalExecutionReceipt.WorkspaceSnapshot before,
                    long startedAt) {
             this.request = request;
+            this.transportId = transportId;
             this.before = before;
             this.startedAt = startedAt;
             turnId = sessionId + "-" + startedAt;
@@ -188,7 +191,8 @@ public final class OminalAgentRuntime {
         synchronized (this) {
             Snapshot existing = mSnapshots.get(sessionId);
             if (existing != null && !existing.isIdle()) return false;
-            mTurnStreams.put(sessionId, new TurnStream(sessionId, request, before, startedAt));
+            mTurnStreams.put(sessionId, new TurnStream(sessionId, request,
+                transport.transportId(), before, startedAt));
             Snapshot started = new Snapshot(nextRevision(), PHASE_RUNNING, sessionId,
                 request.harnessId, request.savedThreadId,
                 "Starting " + harnessName(request.harnessId), "",
@@ -357,7 +361,7 @@ public final class OminalAgentRuntime {
             TurnStream stream = mTurnStreams.get(sessionId);
             if (stream == null) return null;
             MonopotEvent event = new MonopotEvent(sessionId, stream.turnId,
-                stream.nextSequence++, stream.request.harnessId, draft,
+                stream.nextSequence++, stream.request.harnessId, stream.transportId, draft,
                 System.currentTimeMillis());
             try {
                 MonopotEventLog.append(chatDirectory(sessionId), event);

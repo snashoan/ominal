@@ -1,68 +1,83 @@
-# Ominal
+<p align="center">
+  <img src="art/gir-mark.svg" width="128" height="128" alt="GIR light-cone mark">
+</p>
 
-Ominal is an Android coding-agent workspace built on a Linux userspace bootstrap, terminal execution, and a chat-first front end.
+<h1 align="center">GIR</h1>
 
-The current release target is ARM64 hardware running Android 10 or newer.
+<p align="center">
+  A chat-first Android computer where an intelligence harness and its user share
+  one persistent Linux workspace and touch display.
+</p>
 
-The current package identity is `com.ominal`. Runtime files are expected under:
+GIR keeps conversation at the front. Each chat owns its working files and agent
+session; terminal output and the graphical desktop stay available without
+turning the product into a terminal-first interface.
 
-```text
-/data/data/com.ominal/files/usr
+## What works
+
+- Persistent agent sessions scoped to individual chats and workspaces.
+- A native Android chat surface with Markdown, attachments, and inline media.
+- A Linux userspace with package management, terminal tools, and an XFCE desktop.
+- A shared portrait display controlled through touch, the Android keyboard, or an agent.
+- Harness-driven authentication, model discovery, and commands.
+- Monopot events for structured chat, progress, media, and computer-use state.
+- Immutable Light and Dark themes plus separately stored custom themes.
+
+## Architecture
+
+| Layer | Responsibility |
+| --- | --- |
+| Android shell | Chat, navigation, lifecycle, permissions, files, and native display input |
+| Agent runtime | Persistent per-chat harness processes and structured event transport |
+| Linux workspace | ARM64 Ubuntu userspace, packages, repositories, and graphical applications |
+| Monopot | Provider-neutral events between harnesses, chat, media, and computer use |
+| Display | Native X11 surface with phone geometry, touch input, and mobile window policy |
+
+The Android package is `com.ominal`. Runtime files live under
+`/data/data/com.ominal/files`, while the guest sees its own `/root` workspace.
+Bootstraps are source-built for this package identity; the build rejects archives
+that still target upstream application paths.
+
+## Build
+
+Requirements:
+
+- JDK 17
+- Android SDK with API 35 and NDK support
+- PowerShell 7 on Windows, or a compatible shell on Linux
+
+Build and test the developer APK:
+
+```powershell
+.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon
 ```
 
-The app build intentionally rejects bootstraps that still target `com.termux` data paths.
+Validate only the packaged runtime archives:
 
-## Current Scope
+```powershell
+.\gradlew.bat :app:validateOminalBootstraps
+```
 
-- Chat-first Android shell UI for a coding agent.
-- Local executable area under the app sandbox.
-- Source-built bootstrap archives for `com.ominal`.
-- Validation before Java compilation to prevent accidentally shipping upstream-package bootstraps.
-
-This repo is not ready to publish until the generated bootstraps, Android build, and device or emulator smoke tests all pass.
-
-## Bootstrap Build
-
-Do not binary-patch bootstrap zips. Build them from package sources configured for `com.ominal`.
-
-The WSL/Docker runner is:
+When bootstrap contents change, rebuild them from their package sources. Do not
+binary-patch upstream archives. The Windows entry point is:
 
 ```powershell
 .\tools\start-ominal-bootstrap-build-windows.ps1
 ```
 
-The runner writes status to:
+Generated archives, APKs, AABs, device captures, signing material, auth files,
+and build logs are intentionally excluded from Git.
 
-```text
-build-logs/ominal-bootstrap-status.txt
-```
+## Interface contracts
 
-The ARM64 runner copies the accepted archive and checksum into:
-
-```text
-app/src/main/cpp/bootstrap-aarch64.zip
-app/src/main/cpp/bootstrap-ominal.sha256
-```
-
-Then run:
-
-```powershell
-.\gradlew.bat :app:validateOminalBootstraps
-.\gradlew.bat assembleDebug
-```
-
-## Git Hygiene
-
-Local agent sources, auth files, external clones, build logs, screenshots, and downloaded APKs are ignored.
-
-Generated bootstrap zips may exceed normal GitHub blob limits. Use an Ominal-owned remote plus Git LFS or release assets for bootstraps unless the target remote explicitly supports large files.
-
-Do not push this fork to the upstream Termux remote.
+- [Monopot protocol](docs/MONOPOT.md)
+- [Custom themes](docs/UI_THEMES.md)
+- [GIR mark](docs/GIR_MARK.md)
+- [Quick start](docs/GIR_QUICKSTART.md)
 
 ## Licensing
 
-This fork inherits licensing from upstream Termux app sources. The main app is GPLv3-only, with documented Apache, MIT, and GPL exceptions in subcomponents. Keep `LICENSE.md`, `ominal-shared/LICENSE.md`, source notices, and source availability intact.
-
-Ominal branding and `com.ominal` package identity do not remove upstream attribution requirements.
-
-See `docs/ominal-rebrand-audit.md` for the current boundary between completed Ominal package identity work and remaining inherited upstream naming.
+GIR remains a GPLv3 derivative of `termux/termux-app`. The renamed package,
+runtime, and public identity do not remove upstream attribution or source
+availability requirements. See [LICENSE.md](LICENSE.md) and the component license
+files for inherited Apache, MIT, and GPL exceptions.

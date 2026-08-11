@@ -2,20 +2,24 @@
 
 <!DOCTYPE resources [
     <!ENTITY OMINAL_PACKAGE_NAME "com.ominal">
-    <!ENTITY OMINAL_APP_NAME "Monolith">
-    <!ENTITY OMINAL_API_APP_NAME "Ominal:API">
-    <!ENTITY OMINAL_BOOT_APP_NAME "Ominal:Boot">
-    <!ENTITY OMINAL_FLOAT_APP_NAME "Ominal:Float">
-    <!ENTITY OMINAL_STYLING_APP_NAME "Ominal:Styling">
-    <!ENTITY OMINAL_TASKER_APP_NAME "Ominal:Tasker">
-    <!ENTITY OMINAL_WIDGET_APP_NAME "Ominal:Widget">
+    <!ENTITY OMINAL_APP_NAME "GIR">
+    <!ENTITY OMINAL_API_APP_NAME "GIR:API">
+    <!ENTITY OMINAL_BOOT_APP_NAME "GIR:Boot">
+    <!ENTITY OMINAL_FLOAT_APP_NAME "GIR:Float">
+    <!ENTITY OMINAL_STYLING_APP_NAME "GIR:Styling">
+    <!ENTITY OMINAL_TASKER_APP_NAME "GIR:Tasker">
+    <!ENTITY OMINAL_WIDGET_APP_NAME "GIR:Widget">
     ]>
 
 <resources>
+    <string name="url_route_title">Open sign-in link</string>
+    <string name="url_route_internal">Browser in screen</string>
+    <string name="url_route_external">Another browser</string>
+    <string name="url_route_external_title">Open with</string>
 
-    <string name="application_name">Monolith</string>
+    <string name="application_name">GIR</string>
     <string name="shared_user_label">&OMINAL_APP_NAME; user</string>
-    <string name="oringutan_title">Codex</string>
+    <string name="oringutan_title">GIR</string>
     <string name="oringutan_attach_file">Attach</string>
     <string name="oringutan_send">Send</string>
     <string name="oringutan_open_terminal">Open terminal</string>

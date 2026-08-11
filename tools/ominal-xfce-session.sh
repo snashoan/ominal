@@ -19,9 +19,7 @@ settings_icon="${OMINAL_SETTINGS_ICON:-preferences-system}"
 screen_icon="${OMINAL_SCREEN_ICON:-video-display}"
 chat_icon="${OMINAL_CHAT_ICON:-go-previous}"
 jwm_top_spacer=$((geometry_width - top_bar_height))
-jwm_dock_spacer=$(((geometry_width - bottom_bar_height * 5) / 2))
 [ "$jwm_top_spacer" -ge 0 ] || jwm_top_spacer=0
-[ "$jwm_dock_spacer" -ge 0 ] || jwm_dock_spacer=0
 
 mkdir -p "$display_dir"
 
@@ -63,14 +61,35 @@ configure_xfce() {
     desktop_root=/root/Desktop
     autostart_root=/root/.config/autostart
     rules_root=/root/.config/devilspie2
-    icon_size=$((bottom_bar_height * 58 / 100))
-    [ "$icon_size" -ge 40 ] || icon_size=40
-    [ "$icon_size" -le 52 ] || icon_size=52
     desktop_icon_size=64
+    wallpaper_root=/root/.local/share/backgrounds
+    bundled_wallpaper=/usr/local/share/gir/gir-final-wallpaper.png
+    default_wallpaper="$wallpaper_root/gir-final-wallpaper.png"
+    legacy_wallpaper="$wallpaper_root/gir-fabric.svg"
 
     rm -rf "$panel_root"
-    mkdir -p "$channel_root" "$panel_root" "$desktop_root" "$autostart_root" "$rules_root"
+    mkdir -p "$channel_root" "$panel_root" "$desktop_root" "$autostart_root" \
+        "$rules_root" "$config_root/desktop" "$wallpaper_root"
     rm -rf /root/.cache/sessions
+
+    if [ -f "$bundled_wallpaper" ]; then
+        cp -f "$bundled_wallpaper" "$default_wallpaper"
+    else
+        default_wallpaper="$legacy_wallpaper"
+        cat >"$default_wallpaper" <<'EOF'
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="2131">
+  <rect width="1080" height="2131" fill="#050506"/>
+</svg>
+EOF
+    fi
+    chmod 644 "$default_wallpaper"
+
+    desktop_layout_version=bottom-up-v1
+    desktop_layout_marker="$display_dir/desktop-layout-version"
+    if [ "$(cat "$desktop_layout_marker" 2>/dev/null || true)" != "$desktop_layout_version" ]; then
+        rm -f "$config_root/desktop"/icons.screen*.rc
+        printf '%s' "$desktop_layout_version" >"$desktop_layout_marker"
+    fi
 
     cat >"$channel_root/xsettings.xml" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -105,8 +124,8 @@ EOF
     <property name="focus_delay" type="int" value="0"/>
     <property name="raise_delay" type="int" value="0"/>
     <property name="use_compositing" type="bool" value="false"/>
-    <property name="titleless_maximize" type="bool" value="false"/>
-    <property name="borderless_maximize" type="bool" value="false"/>
+    <property name="titleless_maximize" type="bool" value="true"/>
+    <property name="borderless_maximize" type="bool" value="true"/>
     <property name="easy_click" type="string" value="None"/>
     <property name="workspace_count" type="int" value="1"/>
     <property name="wrap_windows" type="bool" value="false"/>
@@ -156,7 +175,7 @@ PY
   <property name="desktop-icons" type="empty">
     <property name="style" type="int" value="2"/>
     <property name="icon-size" type="uint" value="$desktop_icon_size"/>
-    <property name="gravity" type="int" value="1"/>
+    <property name="gravity" type="int" value="5"/>
     <property name="use-custom-font-size" type="bool" value="true"/>
     <property name="font-size" type="double" value="15"/>
     <property name="center-text" type="bool" value="true"/>
@@ -174,8 +193,8 @@ PY
       <property name="monitor0" type="empty">
         <property name="workspace0" type="empty">
           <property name="color-style" type="int" value="0"/>
-          <property name="image-style" type="int" value="0"/>
-          <property name="last-image" type="string" value=""/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="$default_wallpaper"/>
           <property name="rgba1" type="array">
             <value type="double" value="0"/>
             <value type="double" value="0"/>
@@ -187,8 +206,8 @@ PY
       <property name="monitorbuiltin" type="empty">
         <property name="workspace0" type="empty">
           <property name="color-style" type="int" value="0"/>
-          <property name="image-style" type="int" value="0"/>
-          <property name="last-image" type="string" value=""/>
+          <property name="image-style" type="int" value="5"/>
+          <property name="last-image" type="string" value="$default_wallpaper"/>
           <property name="rgba1" type="array">
             <value type="double" value="0"/>
             <value type="double" value="0"/>
@@ -203,12 +222,14 @@ PY
 EOF
     fi
 
-    # Preserve the user's backdrop while enforcing a touch-sized horizontal app home.
-    python3 - "$channel_root/xfce4-desktop.xml" "$desktop_icon_size" <<'PY'
+    # Preserve valid user backdrops while enforcing a touch-sized, bottom-up app home.
+    python3 - "$channel_root/xfce4-desktop.xml" "$desktop_icon_size" \
+        "$default_wallpaper" "$legacy_wallpaper" <<'PY'
+import os
 import sys
 import xml.etree.ElementTree as ET
 
-path, icon_size = sys.argv[1], sys.argv[2]
+path, icon_size, default_wallpaper, legacy_wallpaper = sys.argv[1:5]
 tree = ET.parse(path)
 root = tree.getroot()
 
@@ -227,16 +248,41 @@ def child(parent, name, kind="empty", value=None):
 icons = child(root, "desktop-icons")
 child(icons, "style", "int", 2)
 child(icons, "icon-size", "uint", icon_size)
-child(icons, "gravity", "int", 1)
+child(icons, "gravity", "int", 5)
 child(icons, "use-custom-font-size", "bool", "true")
 child(icons, "font-size", "double", 15)
 child(icons, "center-text", "bool", "true")
 child(icons, "single-click", "bool", "true")
 child(icons, "show-tooltips", "bool", "false")
+
+backdrop = child(root, "backdrop")
+screen = child(backdrop, "screen0")
+for monitor_name in ("monitor0", "monitorbuiltin"):
+    child(child(screen, monitor_name), "workspace0")
+
+retired_wallpapers = {
+    legacy_wallpaper,
+    "/usr/share/backgrounds/xfce/xfce-shapes.svg",
+}
+for monitor in screen.findall("property"):
+    if not monitor.get("name", "").startswith("monitor"):
+        continue
+    workspaces = [node for node in monitor.findall("property")
+                  if node.get("name", "").startswith("workspace")]
+    if not workspaces:
+        workspaces = [child(monitor, "workspace0")]
+    for workspace in workspaces:
+        image = child(workspace, "last-image", "string", "")
+        current_image = image.get("value", "")
+        if (not current_image or current_image in retired_wallpapers
+                or not os.path.isfile(current_image)):
+            image.set("value", default_wallpaper)
+            child(workspace, "image-style", "int", 5)
 tree.write(path, encoding="UTF-8", xml_declaration=True)
 PY
 
-    cat >"$channel_root/xfce4-panel.xml" <<EOF
+    # GIR owns visible navigation; XFCE only needs a hidden panel process for session health.
+    cat >"$channel_root/xfce4-panel.xml" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <channel name="xfce4-panel" version="1.0">
   <property name="configver" type="int" value="2"/>
@@ -244,82 +290,25 @@ PY
     <value type="int" value="2"/>
     <property name="panel-2" type="empty">
       <property name="position" type="string" value="p=10;x=0;y=0"/>
-      <property name="length" type="uint" value="100"/>
+      <property name="length" type="uint" value="1"/>
       <property name="position-locked" type="bool" value="true"/>
-      <property name="size" type="uint" value="$bottom_bar_height"/>
+      <property name="size" type="uint" value="1"/>
       <property name="nrows" type="uint" value="1"/>
-      <property name="autohide-behavior" type="uint" value="2"/>
+      <property name="autohide-behavior" type="uint" value="1"/>
       <property name="disable-struts" type="bool" value="true"/>
       <property name="background-style" type="uint" value="1"/>
       <property name="background-rgba" type="array">
-        <value type="double" value="0.031"/>
-        <value type="double" value="0.031"/>
-        <value type="double" value="0.039"/>
-        <value type="double" value="1"/>
+        <value type="double" value="0"/>
+        <value type="double" value="0"/>
+        <value type="double" value="0"/>
+        <value type="double" value="0"/>
       </property>
-      <property name="enter-opacity" type="uint" value="100"/>
-      <property name="leave-opacity" type="uint" value="100"/>
-      <property name="icon-size" type="uint" value="$icon_size"/>
-      <property name="plugin-ids" type="array">
-        <value type="int" value="20"/>
-        <value type="int" value="26"/>
-        <value type="int" value="27"/>
-        <value type="int" value="28"/>
-        <value type="int" value="21"/>
-        <value type="int" value="22"/>
-        <value type="int" value="23"/>
-        <value type="int" value="24"/>
-        <value type="int" value="25"/>
-      </property>
+      <property name="enter-opacity" type="uint" value="0"/>
+      <property name="leave-opacity" type="uint" value="0"/>
+      <property name="plugin-ids" type="array"/>
     </property>
   </property>
-  <property name="plugins" type="empty">
-    <property name="plugin-20" type="string" value="separator">
-      <property name="expand" type="bool" value="true"/>
-      <property name="style" type="uint" value="0"/>
-    </property>
-    <property name="plugin-26" type="string" value="launcher">
-      <property name="items" type="array">
-        <value type="string" value="ominal-chat.desktop"/>
-      </property>
-    </property>
-    <property name="plugin-27" type="string" value="launcher">
-      <property name="items" type="array">
-        <value type="string" value="ominal-home.desktop"/>
-      </property>
-    </property>
-    <property name="plugin-28" type="string" value="tasklist">
-      <property name="show-labels" type="bool" value="false"/>
-      <property name="flat-buttons" type="bool" value="true"/>
-      <property name="show-handle" type="bool" value="false"/>
-      <property name="grouping" type="uint" value="1"/>
-      <property name="sort-order" type="uint" value="1"/>
-    </property>
-    <property name="plugin-21" type="string" value="launcher">
-      <property name="items" type="array">
-        <value type="string" value="ominal-files.desktop"/>
-      </property>
-    </property>
-    <property name="plugin-22" type="string" value="launcher">
-      <property name="items" type="array">
-        <value type="string" value="ominal-browser.desktop"/>
-      </property>
-    </property>
-    <property name="plugin-23" type="string" value="launcher">
-      <property name="items" type="array">
-        <value type="string" value="ominal-terminal.desktop"/>
-      </property>
-    </property>
-    <property name="plugin-24" type="string" value="launcher">
-      <property name="items" type="array">
-        <value type="string" value="ominal-settings.desktop"/>
-      </property>
-    </property>
-    <property name="plugin-25" type="string" value="separator">
-      <property name="expand" type="bool" value="true"/>
-      <property name="style" type="uint" value="0"/>
-    </property>
-  </property>
+  <property name="plugins" type="empty"/>
 </channel>
 EOF
 
@@ -334,22 +323,9 @@ EOF
     write_desktop_entry "$desktop_root/Editor.desktop" "Editor" \
         /root/.local/bin/ominal-editor "$editor_icon" Utility
 
-    for launcher_id in 21 22 23 24 26 27; do
-        mkdir -p "$panel_root/launcher-$launcher_id"
-    done
-    cp "$desktop_root/Files.desktop" "$panel_root/launcher-21/ominal-files.desktop"
-    cp "$desktop_root/Firefox.desktop" "$panel_root/launcher-22/ominal-browser.desktop"
-    cp "$desktop_root/Terminal.desktop" "$panel_root/launcher-23/ominal-terminal.desktop"
-    cp "$desktop_root/Settings.desktop" "$panel_root/launcher-24/ominal-settings.desktop"
-    write_desktop_entry "$panel_root/launcher-26/ominal-chat.desktop" "Chat" \
-        /root/.local/bin/ominal-chat "$chat_icon" Utility
-    write_desktop_entry "$panel_root/launcher-27/ominal-home.desktop" "Home" \
-        /root/.local/bin/ominal-home user-home Utility
-
     cat >"$rules_root/ominal-mobile.lua" <<'EOF'
-if get_window_type() == "WINDOW_TYPE_NORMAL" then
-    maximize()
-end
+-- Window placement is owned by ominal-geometry-keeper so dialogs are
+-- classified before any maximize action is applied.
 EOF
 cat >/root/.local/bin/ominal-home <<'EOF'
 #!/bin/sh
@@ -391,14 +367,7 @@ read_workarea() {
 }
 constrain_window() {
     window_id="$1"
-    window_bounds="$(xwininfo -id "$window_id" 2>/dev/null | awk '
-        /Absolute upper-left X:/ { x = $4 }
-        /Absolute upper-left Y:/ { y = $4 }
-        /^[[:space:]]*Width:/ { width = $2 }
-        /^[[:space:]]*Height:/ { height = $2 }
-        END {
-            if (width != "" && height != "") print x, y, width, height
-        }')"
+    window_bounds="$(read_window_bounds "$window_id")"
     set -- $window_bounds
     [ "$#" -eq 4 ] || return
     is_integer "$1" && is_integer "$2" && is_integer "$3" && is_integer "$4" || return
@@ -417,6 +386,80 @@ constrain_window() {
             2>/dev/null || true
         wmctrl -i -r "$window_id" -b add,maximized_vert,maximized_horz \
             2>/dev/null || true
+    fi
+}
+read_window_bounds() {
+    xwininfo -id "$1" 2>/dev/null | awk '
+        /Absolute upper-left X:/ { x = $4 }
+        /Absolute upper-left Y:/ { y = $4 }
+        /^[[:space:]]*Width:/ { width = $2 }
+        /^[[:space:]]*Height:/ { height = $2 }
+        END {
+            if (width != "" && height != "") print x, y, width, height
+        }'
+}
+normalize_window_hints() {
+    window_id="$1"
+    min_size="$(xprop -id "$window_id" WM_NORMAL_HINTS 2>/dev/null \
+        | awk '/minimum size:/ {print $(NF - 2), $NF; exit}')"
+    set -- $min_size
+    min_width="${1:-0}"
+    min_height="${2:-0}"
+    case "$min_width:$min_height" in
+      *[!0-9:]*|'':*) return ;;
+    esac
+    if [ "$min_width" -gt "$work_width" ] || [ "$min_height" -gt "$work_height" ]; then
+        xprop -id "$window_id" -remove WM_NORMAL_HINTS 2>/dev/null || true
+    fi
+}
+place_dialog() {
+    window_id="$1"
+    window_bounds="$(read_window_bounds "$window_id")"
+    set -- $window_bounds
+    [ "$#" -eq 4 ] || return
+    is_integer "$1" && is_integer "$2" && is_integer "$3" && is_integer "$4" || return
+    current_x="$1"
+    current_y="$2"
+    current_width="$3"
+    current_height="$4"
+    current_right=$((current_x + current_width))
+    current_bottom=$((current_y + current_height))
+    work_right=$((work_x + work_width))
+    work_bottom=$((work_y + work_height))
+    tolerance=$((16 * ${OMINAL_UI_SCALE:-1}))
+
+    if [ "$current_x" -ge $((work_x - tolerance)) ] \
+        && [ "$current_x" -le $((work_x + tolerance)) ] \
+        && [ "$current_y" -ge $((work_y - tolerance)) ] \
+        && [ "$current_right" -ge $((work_right - tolerance)) ] \
+        && [ "$current_right" -le $((work_right + tolerance)) ] \
+        && [ "$current_bottom" -ge $((work_bottom - tolerance)) ] \
+        && [ "$current_bottom" -le $((work_bottom + tolerance)) ]; then
+        return
+    fi
+
+    target_outer_height="$current_height"
+    [ "$target_outer_height" -le "$work_height" ] || target_outer_height="$work_height"
+    target_y=$((work_bottom - target_outer_height))
+    target_client_height="$target_outer_height"
+    frame_extents="$(xprop -id "$window_id" _NET_FRAME_EXTENTS 2>/dev/null \
+        | sed -n 's/^[^=]*=[[:space:]]*//p' | tr ',' ' ')"
+    set -- $frame_extents
+    if [ "$#" -ge 4 ] && is_integer "$3" && is_integer "$4"; then
+        frame_vertical=$(($3 + $4))
+        if [ "$frame_vertical" -lt "$target_client_height" ]; then
+            target_client_height=$((target_client_height - frame_vertical))
+        fi
+    fi
+    [ "$target_client_height" -gt 0 ] || target_client_height=1
+
+    wmctrl -i -r "$window_id" -b remove,fullscreen,maximized_vert,maximized_horz \
+        2>/dev/null || true
+    wmctrl -i -r "$window_id" -e "0,$work_x,$target_y,$work_width,$target_client_height" \
+        2>/dev/null || true
+    wmctrl -i -r "$window_id" -b add,maximized_horz,above 2>/dev/null || true
+    if [ "$target_outer_height" -ge $((work_height - tolerance)) ]; then
+        wmctrl -i -r "$window_id" -b add,maximized_vert 2>/dev/null || true
     fi
 }
 raise_docks() {
@@ -456,23 +499,31 @@ while sleep 0.15; do
     esac
     for window_id in $(wmctrl -l 2>/dev/null | awk '{print $1}'); do
         window_type="$(xprop -id "$window_id" _NET_WM_WINDOW_TYPE 2>/dev/null || true)"
+        window_state="$(xprop -id "$window_id" _NET_WM_STATE 2>/dev/null || true)"
+        transient_for="$(xprop -id "$window_id" WM_TRANSIENT_FOR 2>/dev/null || true)"
+        window_class="$(xprop -id "$window_id" WM_CLASS 2>/dev/null || true)"
+        window_role="$(xprop -id "$window_id" WM_WINDOW_ROLE 2>/dev/null \
+            | tr '[:upper:]' '[:lower:]' || true)"
+        dialog_window=false
         case "$window_type" in
-          *_NET_WM_WINDOW_TYPE_NORMAL*)
-            min_size="$(xprop -id "$window_id" WM_NORMAL_HINTS 2>/dev/null \
-                | awk '/minimum size:/ {print $(NF - 2), $NF; exit}')"
-            set -- $min_size
-            min_width="${1:-0}"
-            min_height="${2:-0}"
-            case "$min_width:$min_height" in
-              *[!0-9:]*|'':*) ;;
-              *)
-                if [ "$min_width" -gt "$work_width" ] \
-                    || [ "$min_height" -gt "$work_height" ]; then
-                    xprop -id "$window_id" -remove WM_NORMAL_HINTS 2>/dev/null || true
-                fi
-                ;;
-            esac
-            window_state="$(xprop -id "$window_id" _NET_WM_STATE 2>/dev/null || true)"
+          *_NET_WM_WINDOW_TYPE_DIALOG*|*_NET_WM_WINDOW_TYPE_UTILITY*|*_NET_WM_WINDOW_TYPE_SPLASH*)
+            dialog_window=true ;;
+        esac
+        case "$window_state" in *_NET_WM_STATE_MODAL*) dialog_window=true ;; esac
+        case "$transient_for" in *"window id #"*) dialog_window=true ;; esac
+        case "$window_class" in
+          *'"yad", "Yad"'*|*'"zenity", "Zenity"'*) dialog_window=true ;;
+        esac
+        case "$window_role" in
+          *dialog*|*popup*|*prompt*|*chooser*) dialog_window=true ;;
+        esac
+        case "$window_type" in
+          *_NET_WM_WINDOW_TYPE_NORMAL*|*_NET_WM_WINDOW_TYPE_DIALOG*|*_NET_WM_WINDOW_TYPE_UTILITY*|*_NET_WM_WINDOW_TYPE_SPLASH*)
+            normalize_window_hints "$window_id"
+            if [ "$dialog_window" = true ]; then
+                place_dialog "$window_id"
+                continue
+            fi
             case "$window_state" in
               *MAXIMIZED_HORZ*MAXIMIZED_VERT*|*MAXIMIZED_VERT*MAXIMIZED_HORZ*)
                 if [ "$geometry_changed" = true ]; then
@@ -546,14 +597,6 @@ write_jwm_config() {
     <Option>notitle</Option>
     <Option>noborder</Option>
   </Group>
-  <Tray x="0" y="-1" width="0" height="$bottom_bar_height" autohide="off">
-    <Spacer width="$jwm_dock_spacer"/>
-    <TrayButton label="" icon="$chat_icon">exec:/root/.local/bin/ominal-chat</TrayButton>
-    <TrayButton label="" icon="$files_icon">exec:/root/.local/bin/ominal-files</TrayButton>
-    <TrayButton label="" icon="$browser_icon">exec:/root/.local/bin/ominal-browser</TrayButton>
-    <TrayButton label="" icon="$terminal_icon">exec:/root/.local/bin/ominal-terminal</TrayButton>
-    <TrayButton label="" icon="$settings_icon">exec:/root/.local/bin/ominal-settings</TrayButton>
-  </Tray>
   <WindowStyle decorations="flat">
     <Font>Sans-$wm_font_size</Font>
     <Width>0</Width>

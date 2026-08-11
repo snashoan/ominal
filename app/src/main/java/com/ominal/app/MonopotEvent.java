@@ -45,6 +45,7 @@ public final class MonopotEvent {
     @NonNull public final String turnId;
     public final long sequence;
     @NonNull public final String harnessId;
+    @NonNull public final String transportId;
     @NonNull public final String channel;
     @NonNull public final String state;
     @NonNull public final String summary;
@@ -53,11 +54,18 @@ public final class MonopotEvent {
 
     public MonopotEvent(@NonNull String chatId, @NonNull String turnId, long sequence,
                         @NonNull String harnessId, @NonNull Draft draft, long timestamp) {
+        this(chatId, turnId, sequence, harnessId, harnessId, draft, timestamp);
+    }
+
+    public MonopotEvent(@NonNull String chatId, @NonNull String turnId, long sequence,
+                        @NonNull String harnessId, @NonNull String transportId,
+                        @NonNull Draft draft, long timestamp) {
         if (sequence < 1L) throw new IllegalArgumentException("Sequence must be positive");
         this.chatId = chatId;
         this.turnId = turnId;
         this.sequence = sequence;
         this.harnessId = harnessId;
+        this.transportId = transportId;
         channel = draft.channel;
         state = draft.state;
         summary = draft.summary;
@@ -73,6 +81,7 @@ public final class MonopotEvent {
             .put("turnId", turnId)
             .put("sequence", sequence)
             .put("harnessId", harnessId)
+            .put("transportId", transportId)
             .put("channel", channel)
             .put("state", state)
             .put("summary", summary)
@@ -87,9 +96,10 @@ public final class MonopotEvent {
         long sequence = object.optLong("sequence", 0L);
         if (!isChannel(channel) || sequence < 1L) return null;
         try {
+            String harnessId = object.optString("harnessId", "");
             return new MonopotEvent(object.optString("chatId", ""),
-                object.optString("turnId", ""), sequence,
-                object.optString("harnessId", ""),
+                object.optString("turnId", ""), sequence, harnessId,
+                object.optString("transportId", harnessId),
                 new Draft(channel, object.optString("state", ""),
                     object.optString("summary", ""), object.optJSONObject("detail")),
                 object.optLong("timestamp", 0L));

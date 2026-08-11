@@ -8,7 +8,7 @@ import java.util.List;
 
 /** Builds the non-secret runtime context exposed to the active coding agent. */
 public final class OminalRuntimeContract {
-    public static final int SCHEMA_VERSION = 5;
+    public static final int SCHEMA_VERSION = 6;
 
     private OminalRuntimeContract() {}
 
@@ -101,10 +101,27 @@ public final class OminalRuntimeContract {
             .put("name", "ominal-event")
             .put("purpose", "Send structured UI events to the Ominal app"));
         tools.put(new JSONObject()
+            .put("name", "ominal-theme")
+            .put("purpose", "Create, edit, activate, and inspect named custom UI themes"));
+        tools.put(new JSONObject()
             .put("name", "ominal-device")
             .put("purpose", "Open selected Android apps, links, and Settings")
             .put("available", loloModeEnabled));
         root.put("tools", tools);
+
+        root.put("ui", new JSONObject()
+            .put("publicName", "GIR")
+            .put("appearanceControl", "theme-list")
+            .put("builtInThemes", new JSONArray().put("dark").put("light"))
+            .put("themeDirectory", "/root/.ominal/themes")
+            .put("activeThemeFile", "/root/.ominal/themes/active")
+            .put("themeCommand", "ominal-theme")
+            .put("namedThemes", true)
+            .put("namedThemesVisibleInAppearance", true)
+            .put("namedThemesRequireExplicitUserRequest", true)
+            .put("liveReload", true)
+            .put("builtInThemesImmutable", true)
+            .put("semanticControlsImmutable", true));
 
         root.put("android", new JSONObject()
             .put("mode", "lolo")
@@ -122,6 +139,7 @@ public final class OminalRuntimeContract {
         root.put("permissions", new JSONObject()
             .put("workspaceReadWrite", true)
             .put("displayControl", true)
+            .put("uiAppearanceControl", true)
             .put("requestUserInput", true)
             .put("androidBridge", loloModeEnabled));
         return root.toString(2);

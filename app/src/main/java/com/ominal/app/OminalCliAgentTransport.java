@@ -78,6 +78,12 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
         return mHarnessId;
     }
 
+    @NonNull
+    @Override
+    public String transportId() {
+        return "cli-stdio";
+    }
+
     @Override
     public synchronized boolean submit(@NonNull TurnRequest request,
                                        @NonNull Listener listener) {

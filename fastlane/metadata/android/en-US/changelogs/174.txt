@@ -1,0 +1,1 @@
+Makes the GIR mark crisp white across launcher, splash, setup, and navigation while retaining the new full-screen desktop and floating composer.

@@ -22,6 +22,7 @@ public class MonopotEventTest {
     @Test
     public void roundTripsProviderNeutralEnvelope() throws Exception {
         MonopotEvent source = new MonopotEvent("chat", "turn", 3L, "codex",
+            "web.chatgpt",
             MonopotEvent.Draft.operation("completed", "Updated a file",
                 new JSONObject().put("path", "src/App.java")), 42L);
 
@@ -30,8 +31,24 @@ public class MonopotEventTest {
         assertNotNull(restored);
         assertEquals("monopot/1", restored.toJson().getString("protocol"));
         assertEquals("operation", restored.channel);
+        assertEquals("codex", restored.harnessId);
+        assertEquals("web.chatgpt", restored.transportId);
         assertEquals("src/App.java", restored.detail.getString("path"));
         assertEquals(3L, restored.sequence);
+    }
+
+    @Test
+    public void readsLegacyEnvelopeWithoutTransportIdentity() throws Exception {
+        MonopotEvent restored = MonopotEvent.fromJson(new JSONObject()
+            .put("protocol", MonopotEvent.PROTOCOL)
+            .put("chatId", "chat")
+            .put("turnId", "turn")
+            .put("sequence", 1L)
+            .put("harnessId", "codex")
+            .put("channel", MonopotEvent.CHANNEL_STATE));
+
+        assertNotNull(restored);
+        assertEquals("codex", restored.transportId);
     }
 
     @Test

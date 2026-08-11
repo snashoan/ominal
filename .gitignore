@@ -40,6 +40,16 @@ auth.json
 hs_err_pid*.log
 replay_pid*.log
 
+# One-off development handoffs and detached session helpers
+/OMINAL_HANDOFF.md
+/OMINAL_TASK_HANDOUT.md
+/ORINGUTAN_CHECKPOINT.md
+/continue-ominal.ps1
+/contun.cmd
+/contun.ps1
+/tools/ominal-adb-install-watcher.ps1
+/tools/ominal-bg-codex-*.ps1
+
 # Root-level screenshots, UI dumps, and print collateral
 /*.png
 /*.jpg

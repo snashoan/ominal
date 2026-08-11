@@ -74,6 +74,12 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
         return OminalHarnessTerminal.ANTIGRAVITY_ID;
     }
 
+    @NonNull
+    @Override
+    public String transportId() {
+        return "antigravity-persistent-tui";
+    }
+
     @Override
     public synchronized boolean submit(@NonNull TurnRequest request,
                                        @NonNull Listener listener) {

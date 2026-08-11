@@ -1,0 +1,1 @@
+Refines the mobile window policy so dialogs stay bottom-anchored at phone width without being maximized, while normal apps remain full screen. Includes deterministic Light/Dark appearance and contextual setup tips.

@@ -98,10 +98,11 @@ apt-get -o Acquire::Retries=5 -o Dpkg::Use-Pty=0 install -y \
     ca-certificates git xvfb x11vnc novnc websockify jwm xterm python3 xfe pcmanfm firefox \
     xfce4-settings xfce4-session xfwm4 xfce4-panel xfdesktop4 thunar xfce4-terminal \
     mousepad xfce4-appfinder xfce4-notifyd tumbler gvfs devilspie2 unclutter-xfixes \
-    dbus-x11 adwaita-icon-theme fontconfig fonts-dejavu-core fonts-noto-core \
-    libnss3 libnspr4 xdotool wmctrl scrot \
+    dbus-x11 adwaita-icon-theme desktop-file-utils file librsvg2-common shared-mime-info \
+    xdg-utils yad fontconfig fonts-dejavu-core fonts-noto-core \
+    libnss3 libnspr4 xdotool wmctrl scrot xclip \
     x11-utils x11-xserver-utils
-  for command_name in Xvfb x11vnc websockify jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes dbus-run-session xdotool wmctrl scrot xdpyinfo xrdb; do
+  for command_name in Xvfb x11vnc websockify jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes dbus-run-session xdotool wmctrl scrot xdpyinfo xrdb xclip file yad xdg-mime update-desktop-database; do
     command -v "$command_name" >/dev/null
 done
 test -d /usr/share/novnc || test -d /usr/share/noVNC
@@ -129,7 +130,10 @@ touch "$ROOTFS/var/lib/ominal/base-upgrade-noble-v1" \
     "$ROOTFS/var/lib/ominal/base-upgrade-noble-v2" \
     "$ROOTFS/var/lib/ominal/base-upgrade-noble-v3" \
     "$ROOTFS/var/lib/ominal/base-upgrade-noble-v4" \
-    "$ROOTFS/var/lib/ominal/base-upgrade-noble-v5"
+    "$ROOTFS/var/lib/ominal/base-upgrade-noble-v5" \
+    "$ROOTFS/var/lib/ominal/base-upgrade-noble-v6" \
+    "$ROOTFS/var/lib/ominal/base-upgrade-noble-v7" \
+    "$ROOTFS/var/lib/ominal/base-upgrade-noble-v8"
 
 chroot "$ROOTFS" /usr/bin/qemu-aarch64-static /bin/bash -lc '
 set -euo pipefail

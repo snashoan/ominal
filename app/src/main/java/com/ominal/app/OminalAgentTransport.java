@@ -77,6 +77,12 @@ public interface OminalAgentTransport {
     @NonNull
     String harnessId();
 
+    /** Stable runtime adapter identity; independent from the intelligence provider. */
+    @NonNull
+    default String transportId() {
+        return harnessId();
+    }
+
     boolean submit(@NonNull TurnRequest request, @NonNull Listener listener);
 
     void shutdown();

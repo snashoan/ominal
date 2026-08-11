@@ -15,18 +15,15 @@ case "$url" in
         ;;
 esac
 
-if ! command -v firefox >/dev/null 2>&1; then
-    printf '%s\n' 'Firefox is not installed in the Monolith display.' >&2
+bridge_dir="${OMINAL_BRIDGE_DIR:-/run/ominal}"
+if [ ! -d "$bridge_dir" ] || [ ! -w "$bridge_dir" ]; then
+    printf '%s\n' 'The Monolith browser bridge is unavailable.' >&2
     exit 69
 fi
 
-export DISPLAY="${OMINAL_DISPLAY:-${DISPLAY:-:20}}"
-export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/ominal-runtime-root}"
-mkdir -p "$XDG_RUNTIME_DIR"
-chmod 700 "$XDG_RUNTIME_DIR"
-
-if command -v ominal-event >/dev/null 2>&1; then
-    ominal-event request-user-input "Complete sign-in in Firefox" >/dev/null 2>&1 || true
-fi
-
-nohup firefox --new-tab "$url" </dev/null >/dev/null 2>&1 &
+request="$bridge_dir/url-$(date +%s)-$$.request"
+partial="$request.part"
+umask 077
+printf '%s\n' "$url" > "$partial"
+mv "$partial" "$request"
+printf '%s\n' 'Choose where to open the sign-in link in Monolith.'

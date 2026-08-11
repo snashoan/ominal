@@ -1,4 +1,4 @@
-The Ominal application is derived from the upstream `termux/termux-app`
+The GIR application (`com.ominal`) is derived from the upstream `termux/termux-app`
 repository and is released under the [GPLv3-only](https://www.gnu.org/licenses/gpl-3.0.html)
 license.
 

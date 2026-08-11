@@ -7,16 +7,18 @@ RUNNER="${OMINAL_PROOT_RUNNER:-$PREFIX/bin/ominal-proot-run}"
 ROOTFS="${OMINAL_RUNTIME_ROOT:-$HOME/.ominal/runtime}/linux/rootfs"
 SCREEN_HELPER="$PREFIX/bin/ominal-screen-guest"
 EVENT_HELPER="$PREFIX/bin/ominal-event-guest"
+THEME_HELPER="$PREFIX/bin/ominal-theme-guest"
 DEVICE_HELPER="$PREFIX/bin/ominal-device-guest"
 PACKAGE_HELPER="$PREFIX/bin/ominal-package-guest"
 HARNESS_HOOK_HELPER="$PREFIX/bin/ominal-harness-hook"
-UPGRADE_MARKER="$ROOTFS/var/lib/ominal/base-upgrade-noble-v6"
+EXECUTABLE_HELPER="$PREFIX/bin/ominal-open-executable-guest"
+UPGRADE_MARKER="$ROOTFS/var/lib/ominal/base-upgrade-noble-v8"
 
 if [ ! -x "$RUNNER" ]; then
     printf 'Ominal PRoot launcher is missing: %s\n' "$RUNNER" >&2
     exit 69
 fi
-if [ ! -f "$UPGRADE_MARKER" ] || ! "$RUNNER" /bin/bash -lc 'for command_name in Xvfb x11vnc websockify jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes dbus-run-session xdotool wmctrl scrot xdpyinfo xrdb; do command -v "$command_name" >/dev/null || exit 1; done; test -d /usr/share/novnc || test -d /usr/share/noVNC'; then
+if [ ! -f "$UPGRADE_MARKER" ] || ! "$RUNNER" /bin/bash -lc 'for command_name in Xvfb x11vnc websockify jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes dbus-run-session xdotool wmctrl scrot xdpyinfo xrdb xclip file yad xdg-mime update-desktop-database; do command -v "$command_name" >/dev/null || exit 1; done; test -d /usr/share/novnc || test -d /usr/share/noVNC'; then
 "$RUNNER" /bin/bash -lc '
 set -eu
 export DEBIAN_FRONTEND=noninteractive
@@ -68,15 +70,17 @@ apt-get -o Acquire::Retries=5 -o Acquire::ForceIPv4=true -o Dpkg::Use-Pty=0 \
     xfce4-settings xfce4-session xfwm4 xfce4-panel xfdesktop4 thunar xfce4-terminal \
     mousepad xfce4-appfinder xfce4-notifyd tumbler gvfs devilspie2 unclutter-xfixes \
     dbus-x11 adwaita-icon-theme librsvg2-common shared-mime-info \
+    desktop-file-utils file xdg-utils yad \
     fontconfig fonts-dejavu-core fonts-noto-core \
-    libnss3 libnspr4 xdotool wmctrl scrot \
+    libnss3 libnspr4 xdotool wmctrl scrot xclip \
     x11-utils x11-xserver-utils
-  for command_name in Xvfb x11vnc websockify jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes dbus-run-session xdotool wmctrl scrot xdpyinfo xrdb; do command -v "$command_name" >/dev/null; done
+  for command_name in Xvfb x11vnc websockify jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes dbus-run-session xdotool wmctrl scrot xdpyinfo xrdb xclip file yad xdg-mime update-desktop-database; do command -v "$command_name" >/dev/null; done
 test -d /usr/share/novnc || test -d /usr/share/noVNC
 mkdir -p /var/lib/ominal
   touch /var/lib/ominal/base-upgrade-noble-v1 /var/lib/ominal/base-upgrade-noble-v2 \
       /var/lib/ominal/base-upgrade-noble-v3 /var/lib/ominal/base-upgrade-noble-v4 \
       /var/lib/ominal/base-upgrade-noble-v5 /var/lib/ominal/base-upgrade-noble-v6 \
+      /var/lib/ominal/base-upgrade-noble-v7 /var/lib/ominal/base-upgrade-noble-v8 \
       /var/lib/ominal/apt-refreshed
 apt-get clean
 rm -rf /var/cache/apt/archives/*
@@ -91,6 +95,10 @@ if [ ! -f "$EVENT_HELPER" ]; then
     printf '%s\n' 'Ominal agent event control is missing.' >&2
     exit 69
 fi
+if [ ! -f "$THEME_HELPER" ]; then
+    printf '%s\n' 'Ominal theme controls are missing.' >&2
+    exit 69
+fi
 if [ ! -f "$DEVICE_HELPER" ]; then
     printf '%s\n' 'Ominal Android controls are missing.' >&2
     exit 69
@@ -99,15 +107,23 @@ if [ ! -f "$PACKAGE_HELPER" ]; then
     printf '%s\n' 'Ominal package controls are missing.' >&2
     exit 69
 fi
+if [ ! -f "$EXECUTABLE_HELPER" ]; then
+    printf '%s\n' 'GIR executable approval is missing.' >&2
+    exit 69
+fi
 mkdir -p "$ROOTFS/usr/local/bin"
 /system/bin/cp "$SCREEN_HELPER" "$ROOTFS/usr/local/bin/ominal-screen"
 /system/bin/cp "$EVENT_HELPER" "$ROOTFS/usr/local/bin/ominal-event"
+/system/bin/cp "$THEME_HELPER" "$ROOTFS/usr/local/bin/ominal-theme"
 /system/bin/cp "$DEVICE_HELPER" "$ROOTFS/usr/local/bin/ominal-device"
 /system/bin/cp "$PACKAGE_HELPER" "$ROOTFS/usr/local/bin/ominal-install"
 /system/bin/cp "$HARNESS_HOOK_HELPER" "$ROOTFS/usr/local/bin/ominal-harness-hook"
+/system/bin/cp "$EXECUTABLE_HELPER" "$ROOTFS/usr/local/bin/ominal-open-executable"
 /system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-screen"
 /system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-event"
+/system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-theme"
 /system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-device"
 /system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-install"
 /system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-harness-hook"
-"$RUNNER" /bin/bash -lc 'command -v ominal-screen >/dev/null; command -v ominal-event >/dev/null; command -v ominal-device >/dev/null; command -v ominal-install >/dev/null; command -v ominal-harness-hook >/dev/null; ominal-screen --help >/dev/null'
+/system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-open-executable"
+"$RUNNER" /bin/bash -lc 'command -v ominal-screen >/dev/null; command -v ominal-event >/dev/null; command -v ominal-theme >/dev/null; command -v ominal-device >/dev/null; command -v ominal-install >/dev/null; command -v ominal-harness-hook >/dev/null; command -v ominal-open-executable >/dev/null; ominal-screen --help >/dev/null'

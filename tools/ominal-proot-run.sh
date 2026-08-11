@@ -13,11 +13,13 @@ CODEX_HOME="${OMINAL_CODEX_HOME:-$HOME/.ominal/codex}"
 CLAUDE_HOME="${OMINAL_CLAUDE_HOME:-$HOME/.ominal/harnesses/claude}"
 ANTIGRAVITY_HOME="${OMINAL_ANTIGRAVITY_HOME:-$HOME/.ominal/harnesses/antigravity}"
 CAPABILITIES_HOME="${OMINAL_CAPABILITIES_HOME:-$HOME/.ominal/harness-capabilities}"
-UI_CONFIG_HOME="${OMINAL_UI_CONFIG_HOME:-$HOME/.ominal/themes/custom.properties}"
+UI_THEME_HOME="${OMINAL_UI_THEME_HOME:-$HOME/.ominal/themes}"
 PROOT_ID="${OMINAL_PROOT_ID:-0:0}"
 XDG_OPEN_BRIDGE="$PREFIX/bin/ominal-xdg-open-guest"
 HARNESS_DISCOVER_BRIDGE="$PREFIX/bin/ominal-harness-discover"
+BRAND_WALLPAPER="$PREFIX/share/gir/gir-final-wallpaper.png"
 SHM_DIR="$RUNTIME_ROOT/shm"
+BRIDGE_DIR="$HOME/.ominal/bridge"
 HOST_HOME="$HOME"
 
 if [ ! -x "$PROOT_BIN" ] || [ ! -x "$PROOT_LOADER" ] || [ ! -f "$ROOTFS_READY" ]; then
@@ -41,12 +43,14 @@ case "$WORKSPACE" in
         ;;
 esac
 
-mkdir -p "$RUNTIME_ROOT/tmp" "$SHM_DIR" "$ROOTFS/.l2s" "$WORKSPACE" \
+mkdir -p "$RUNTIME_ROOT/tmp" "$SHM_DIR" "$BRIDGE_DIR" "$ROOTFS/.l2s" "$WORKSPACE" \
     "$ROOTFS/root/workspace" "$ROOTFS/root/.codex" "$ROOTFS/root/.claude" \
     "$ROOTFS/root/.gemini" "$ROOTFS/root/.ominal/harness-capabilities" \
     "$ROOTFS/root/.ominal/themes" \
-    "$CODEX_HOME" "$CLAUDE_HOME" "$ANTIGRAVITY_HOME" "$CAPABILITIES_HOME"
+    "$CODEX_HOME" "$CLAUDE_HOME" "$ANTIGRAVITY_HOME" "$CAPABILITIES_HOME" \
+    "$UI_THEME_HOME"
 chmod 1777 "$SHM_DIR"
+chmod 700 "$BRIDGE_DIR"
 
 hosts_file="$ROOTFS/etc/hosts"
 hosts_has_localhost=false
@@ -116,11 +120,6 @@ fi
 if [ -d "$HOST_HOME/.config/git" ]; then
     set -- -b "$HOST_HOME/.config/git:/root/.config/git" "$@"
 fi
-if [ -f "$UI_CONFIG_HOME" ]; then
-    [ -e "$ROOTFS/root/.ominal/themes/custom.properties" ] \
-        || : > "$ROOTFS/root/.ominal/themes/custom.properties"
-    set -- -b "$UI_CONFIG_HOME:/root/.ominal/themes/custom.properties" "$@"
-fi
 if [ -x "$XDG_OPEN_BRIDGE" ]; then
     if [ ! -e "$ROOTFS/usr/local/bin/xdg-open" ]; then
         mkdir -p "$ROOTFS/usr/local/bin"
@@ -128,12 +127,22 @@ if [ -x "$XDG_OPEN_BRIDGE" ]; then
     fi
     set -- -b "$XDG_OPEN_BRIDGE:/usr/local/bin/xdg-open" "$@"
 fi
+if [ ! -d "$ROOTFS/run/ominal" ]; then
+    mkdir -p "$ROOTFS/run/ominal"
+fi
+set -- -b "$BRIDGE_DIR:/run/ominal" "$@"
 if [ -x "$HARNESS_DISCOVER_BRIDGE" ]; then
     if [ ! -e "$ROOTFS/usr/local/bin/ominal-harness-discover" ]; then
         mkdir -p "$ROOTFS/usr/local/bin"
         : > "$ROOTFS/usr/local/bin/ominal-harness-discover"
     fi
     set -- -b "$HARNESS_DISCOVER_BRIDGE:/usr/local/bin/ominal-harness-discover" "$@"
+fi
+if [ -f "$BRAND_WALLPAPER" ]; then
+    mkdir -p "$ROOTFS/usr/local/share/gir"
+    [ -e "$ROOTFS/usr/local/share/gir/gir-final-wallpaper.png" ] \
+        || : > "$ROOTFS/usr/local/share/gir/gir-final-wallpaper.png"
+    set -- -b "$BRAND_WALLPAPER:/usr/local/share/gir/gir-final-wallpaper.png" "$@"
 fi
 
 # The Android-side exec bridge is required to start PRoot from app storage,
@@ -145,5 +154,6 @@ exec "$PROOT_BIN" --link2symlink --sysvipc -i "$PROOT_ID" -r "$ROOTFS" \
     -b "$CODEX_HOME:/root/.codex" -b "$CLAUDE_HOME:/root/.claude" \
     -b "$ANTIGRAVITY_HOME:/root/.gemini" \
     -b "$CAPABILITIES_HOME:/root/.ominal/harness-capabilities" \
+    -b "$UI_THEME_HOME:/root/.ominal/themes" \
     -b "$WORKSPACE:/root/workspace" \
     -w /root/workspace "$@"

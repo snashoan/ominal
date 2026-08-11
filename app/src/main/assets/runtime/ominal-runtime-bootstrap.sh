@@ -4,7 +4,7 @@ set -eu
 PREFIX="${OMINAL_PREFIX:-/data/data/com.ominal/files/usr}"
 HOME="${OMINAL_HOME:-/data/data/com.ominal/files/home}"
 RUNTIME_ROOT="${OMINAL_RUNTIME_ROOT:-$HOME/.ominal/runtime}"
-RUNTIME_VERSION="ominal-ubuntu-24.04.4-node-24.18.0-codex-0.144.6-desktop-xfce-v2"
+RUNTIME_VERSION="ominal-ubuntu-24.04.4-node-24.18.0-codex-0.144.6-desktop-xfce-v4"
 READY_FILE="$RUNTIME_ROOT/.ominal-runtime-ready"
 PREPARED_ROOTFS_VERSION="ominal-ubuntu-24.04.4-arm64-prepared-v3"
 
@@ -25,10 +25,10 @@ test -z "$(dpkg --audit)"
 test "$(node --version)" = "v24.18.0"
 test "$(command -v codex)" = "/root/.ominal/npm/bin/codex"
 codex --version | grep -E "^codex-cli [0-9]+\.[0-9]+\.[0-9]+" >/dev/null
-for command_name in Xvfb x11vnc websockify jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes dbus-run-session xdotool wmctrl scrot xdpyinfo xrdb ominal-screen ominal-event ominal-device ominal-install; do command -v "$command_name" >/dev/null; done
+for command_name in Xvfb x11vnc websockify jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes dbus-run-session xdotool wmctrl scrot xdpyinfo xrdb xclip file yad xdg-mime update-desktop-database ominal-screen ominal-event ominal-theme ominal-device ominal-install ominal-open-executable; do command -v "$command_name" >/dev/null; done
 test -d /usr/share/novnc || test -d /usr/share/noVNC
-test -f /var/lib/ominal/base-upgrade-noble-v6
-for package_name in libnss3 libnspr4 librsvg2-common shared-mime-info; do
+test -f /var/lib/ominal/base-upgrade-noble-v8
+for package_name in desktop-file-utils file libnss3 libnspr4 librsvg2-common shared-mime-info xdg-utils yad; do
     test "$(dpkg-query -W -f=\${Status} "$package_name" 2>/dev/null)" = "install ok installed"
 done
 apt-get -o Debug::NoLocking=1 check >/dev/null

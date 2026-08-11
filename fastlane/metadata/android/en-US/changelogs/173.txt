@@ -1,0 +1,1 @@
+Introduces the final GIR mark and setup motion, a floating chat composer, executable approvals, and a cleaner full-screen desktop with native navigation.

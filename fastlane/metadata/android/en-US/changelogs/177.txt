@@ -1,0 +1,1 @@
+Constrains Linux dialogs to a dynamic phone-width bottom sheet, keeps normal apps inside the portrait workspace, makes Appearance a deterministic Light/Dark toggle, and adds practical setup tips.

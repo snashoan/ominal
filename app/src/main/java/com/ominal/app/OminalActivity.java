@@ -176,6 +176,8 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
 
     private float mTerminalToolbarDefaultHeight;
 
+    private OminalUrlRequestBridge mUrlRequestBridge;
+
 
     private static final int CONTEXT_MENU_SELECT_URL_ID = 0;
     private static final int CONTEXT_MENU_SHARE_TRANSCRIPT_ID = 1;
@@ -213,6 +215,8 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
         setActivityTheme();
 
         super.onCreate(savedInstanceState);
+
+        mUrlRequestBridge = new OminalUrlRequestBridge(this);
 
         setContentView(R.layout.activity_ominal);
 
@@ -309,6 +313,7 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
         Logger.logVerbose(LOG_TAG, "onResume");
 
         if (mIsInvalidState) return;
+        if (mUrlRequestBridge != null) mUrlRequestBridge.start();
 
         if (mOminalTerminalSessionActivityClient != null)
             mOminalTerminalSessionActivityClient.onResume();
@@ -321,6 +326,12 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
         OminalCrashUtils.notifyAppCrashFromCrashLogFile(this, LOG_TAG);
 
         mIsOnResumeAfterOnCreate = false;
+    }
+
+    @Override
+    protected void onPause() {
+        if (mUrlRequestBridge != null) mUrlRequestBridge.stop();
+        super.onPause();
     }
 
     @Override

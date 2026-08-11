@@ -23,6 +23,7 @@ import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.net.ConnectivityManager;
@@ -121,6 +122,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
+import java.util.regex.Pattern;
 
 /**
  * Prototype chatbot front-end for driving a coding agent inside the Ominal execution environment.
@@ -146,8 +148,12 @@ public final class OringutanActivity extends AppCompatActivity
     private static final String LAUNCHER_LIGHT_COMPONENT = "com.ominal.LauncherLightV3";
     private static final String LAUNCHER_DARK_COMPONENT = "com.ominal.LauncherDarkV3";
     private static final String CHAT_ROOT_NAME = ".ominal/chats";
+    private static final String UI_THEME_DIRECTORY_NAME = ".ominal/themes";
     private static final String UI_CONFIG_FILE_NAME = ".ominal/themes/custom.properties";
+    private static final String UI_ACTIVE_THEME_FILE_NAME = ".ominal/themes/active";
     private static final String UI_CONFIG_VERSION = "monolith-custom-v1";
+    private static final Pattern UI_THEME_ID_PATTERN =
+        Pattern.compile("[a-z0-9][a-z0-9_-]{0,31}");
     private static final String ATTACHMENTS_DIR_NAME = "attachments";
     private static final String MEDIA_DIR_NAME = "media";
     private static final String AGENT_RUNTIME_DIR_NAME = ".ominal";
@@ -163,6 +169,31 @@ public final class OringutanActivity extends AppCompatActivity
     private static final int DISPLAY_HEALTH_RETRY_DELAY_MS = 300;
     private static final int NATIVE_DISPLAY_HEALTH_RETRIES = 240;
     private static final int DISPLAY_NAVIGATION_HEIGHT_DP = 60;
+    private static final String[][] SETUP_STATE_WORDS = {
+        {"damruuing", "damruued"},
+        {"girring", "girred"},
+        {"monoing", "monoed"},
+        {"moooning", "moooned"},
+        {"axoming", "axomed"}
+    };
+    private static final String[] SETUP_PROCESS_NOTES = {
+        "Start with one clear outcome, then refine it as you test.",
+        "Keep chat as home; open extra tools only when a task needs them.",
+        "Sign in to your preferred provider before starting your first task.",
+        "Attach project files to keep each chat grounded in its workspace.",
+        "Open Screen when a task needs a browser, desktop app, or form.",
+        "Use touch for manual steps, then return to chat to continue.",
+        "Let Screen resize around the keyboard before entering text.",
+        "Each chat keeps its own terminal and working files.",
+        "Give each chat one goal so its work stays focused and resumable.",
+        "Run independent jobs in parallel when they do not share files.",
+        "Ask for a checkpoint before leaving a long build or installation.",
+        "Keep long jobs in a saved session so disconnecting will not stop them.",
+        "Check the latest checkpoint before retrying an interrupted task.",
+        "Reconnect the device before rebuilding when only installation failed.",
+        "Resume a saved session instead of starting the same job again.",
+        "Verify the build, sign-in, Screen, and chat before calling it done."
+    };
     private static final String NODE_VERSION = "24.18.0";
     private static final String CODEX_VERSION = "0.144.6";
     private static final String ROOTFS_ASSET = "runtime/archives/ubuntu-base-24.04.4-arm64-nohardlinks.tgz";
@@ -180,7 +211,7 @@ public final class OringutanActivity extends AppCompatActivity
     private static final String DISPLAY_USER_INPUT_MARKER = "OMINAL_NEEDS_USER_INPUT";
     private static final String DISPLAY_OPEN_MARKER = "OMINAL_OPEN_DISPLAY";
     private static final String OMINAL_MOTD =
-        "\u001b[1;97mΩ_\u001b[0m  \u001b[1mMONOLITH\u001b[0m\n"
+        "\u001b[1;97mGIR\u001b[0m\n"
             + "\u001b[2mThe last interface to your computer.\u001b[0m\n\n"
             + "\u001b[1mWorkspace\u001b[0m\n"
             + "  Files      ~/workspace\n"
@@ -212,7 +243,7 @@ public final class OringutanActivity extends AppCompatActivity
     private static final int COLOR_INPUT_GLASS = Color.rgb(18, 18, 18);
 
     private static final BrandSkin[] BRAND_SKINS = new BrandSkin[]{
-        new BrandSkin("ominal", "Monolith", "Ω_", "",
+        new BrandSkin("ominal", "GIR", "GIR", "",
             COLOR_CANVAS, COLOR_PANEL, Color.rgb(242, 242, 242),
             Color.rgb(148, 148, 148), COLOR_ACCENT, COLOR_ACCENT_DARK,
             COLOR_BORDER, Color.BLACK, Color.rgb(242, 242, 242))
@@ -272,20 +303,42 @@ public final class OringutanActivity extends AppCompatActivity
     private TextView mSetupStageView;
     private TextView mSetupTitleView;
     private TextView mSetupDetailView;
+    private TextView mSetupNoteView;
     private TextView mSetupPercentView;
     private RoundedSetupProgressView mSetupProgressView;
     private Button mSetupRetryButton;
     private Runnable mSetupRetryAction;
+    private int mSetupStateWordIndex = -1;
+    private int mSetupNoteIndex = -1;
+    private final Runnable mRotateSetupNote = new Runnable() {
+        @Override
+        public void run() {
+            if (mSetupOverlay == null || mSetupNoteView == null
+                || mSetupOverlay.getVisibility() != View.VISIBLE) return;
+            mSetupNoteIndex = (mSetupNoteIndex + 1) % SETUP_PROCESS_NOTES.length;
+            mSetupNoteView.animate().cancel();
+            mSetupNoteView.animate().alpha(0f).setDuration(140).withEndAction(() -> {
+                mSetupNoteView.setText(SETUP_PROCESS_NOTES[mSetupNoteIndex]);
+                mSetupNoteView.animate().alpha(1f).setDuration(220).start();
+            }).start();
+            mSetupOverlay.postDelayed(this, 7_000L);
+        }
+    };
     private AgentTurnView mActiveAgentTurnView;
     private Markwon mMarkwon;
     private boolean mChatScrollGestureActive;
 
     private SharedPreferences mPrefs;
+    private OminalUrlRequestBridge mUrlRequestBridge;
+    private Uri mPendingInternalBrowserUrl;
     private ChatSession mActiveSession;
     private OminalAgentRuntime mAgentRuntime;
     private BrandSkin mSkin = BRAND_SKINS[0];
     private UiSpec mUi = UiSpec.defaults(BRAND_SKINS[0]);
+    private Properties mUiProperties = new Properties();
+    private File mActiveUiConfigFile;
     private String mDisplayName = BRAND_SKINS[0].name;
+    private String mActiveThemeId = "default";
     private boolean mCustomThemeEnabled;
     private boolean mBootstrapReady;
     private boolean mRuntimeReady;
@@ -322,6 +375,8 @@ public final class OringutanActivity extends AppCompatActivity
     private String mObservedAgentSessionId = "";
     private int mObservedAgentEventCount;
     private boolean mLauncherSyncPending;
+    private boolean mClipboardSyncInFlight;
+    private final ArrayList<Runnable> mClipboardSyncCallbacks = new ArrayList<>();
     private float mSplitRatio = 0.52f;
     private int mMode = MODE_CHAT;
     private int mDisplayNavigationInsetLeft;
@@ -363,6 +418,8 @@ public final class OringutanActivity extends AppCompatActivity
         mUi = loadUiSpec();
         applySystemBars();
         registerRuntimeNetworkObserver();
+        mUrlRequestBridge = new OminalUrlRequestBridge(this);
+        consumeInternalBrowserIntent(getIntent());
         startWorkspace();
         maybeShowDebugPairing(getIntent());
         requestNotificationPermissionIfNeeded();
@@ -391,6 +448,7 @@ public final class OringutanActivity extends AppCompatActivity
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        consumeInternalBrowserIntent(intent);
         maybeShowDebugPairing(intent);
     }
 
@@ -467,6 +525,7 @@ public final class OringutanActivity extends AppCompatActivity
                 completeSetupProgress();
                 startDisplayActivityObserver();
                 ensureDisplayServerStarted(false);
+                openPendingInternalBrowser();
                 resumePendingTurns();
                 if (mRootFrame != null) mRootFrame.postDelayed(this::prewarmDisplaySurface, 1200);
                 if (mPendingCodexTerminalLaunch) {
@@ -484,6 +543,7 @@ public final class OringutanActivity extends AppCompatActivity
     @Override
     protected void onResume() {
         super.onResume();
+        if (mUrlRequestBridge != null) mUrlRequestBridge.start();
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         setDisplayFullscreen(mMode == MODE_DISPLAY);
         if (mMode == MODE_DISPLAY && mNativeDisplayView != null)
@@ -501,6 +561,8 @@ public final class OringutanActivity extends AppCompatActivity
 
     @Override
     protected void onPause() {
+        if (mUrlRequestBridge != null) mUrlRequestBridge.stop();
+        if (mMode == MODE_DISPLAY) synchronizeDisplayClipboard(null);
         releaseNativeDisplayInput();
         super.onPause();
     }
@@ -549,7 +611,7 @@ public final class OringutanActivity extends AppCompatActivity
         boolean codex = OminalHarnessTerminal.CODEX_ID.equals(harnessId);
         String accountState = codex && mCodexSessionExpired ? "Needs attention"
             : codex && mCodexSignedIn ? "Signed in" : "Manage";
-        String appearance = isLightAppearanceEnabled() ? "Light" : "Dark";
+        String appearance = currentAppearanceLabel();
 
         ArrayList<OminalInteractionSheet.Section> sections = new ArrayList<>();
         ArrayList<OminalInteractionSheet.Row> account = new ArrayList<>();
@@ -563,7 +625,7 @@ public final class OringutanActivity extends AppCompatActivity
 
         ArrayList<OminalInteractionSheet.Row> preferences = new ArrayList<>();
         preferences.add(new OminalInteractionSheet.Row("appearance", "Appearance",
-            "Switch the interface theme", appearance, false, true, false));
+            "Choose a built-in or custom theme", appearance, false, true, false));
         preferences.add(new OminalInteractionSheet.Row("lolo", "Lolo mode",
             "Experimental access outside the Linux workspace",
             isLoloModeEnabled() ? "On" : "Off", isLoloModeEnabled(), true, false));
@@ -587,7 +649,8 @@ public final class OringutanActivity extends AppCompatActivity
                     if (mRootFrame != null) mRootFrame.postDelayed(this::showCodexAccountDialog, 160);
                     else showCodexAccountDialog();
                 } else if ("appearance".equals(id)) {
-                    setLightAppearanceEnabled(!isLightAppearanceEnabled());
+                    if (mRootFrame != null) mRootFrame.postDelayed(this::showAppearanceChooser, 160);
+                    else showAppearanceChooser();
                 } else if ("lolo".equals(id)) {
                     if (mRootFrame != null) mRootFrame.postDelayed(this::showLoloModeDialog, 160);
                     else showLoloModeDialog();
@@ -781,13 +844,69 @@ public final class OringutanActivity extends AppCompatActivity
         }
     }
 
+    private void consumeInternalBrowserIntent(Intent intent) {
+        if (intent == null || !OminalUrlRequestBridge.ACTION_OPEN_INTERNAL_URL.equals(
+            intent.getAction())) return;
+        Uri uri = OminalUrlRequestBridge.parseUrl(
+            intent.getData() == null ? null : intent.getData().toString());
+        if (uri == null) return;
+        mPendingInternalBrowserUrl = uri;
+        intent.setAction(null);
+        intent.setData(null);
+        openPendingInternalBrowser();
+    }
+
+    private void openPendingInternalBrowser() {
+        if (!mBootstrapReady || !mRuntimeReady || mPendingInternalBrowserUrl == null) return;
+        Uri uri = mPendingInternalBrowserUrl;
+        mPendingInternalBrowserUrl = null;
+        setDisplayNeedsUser(true);
+        setStatus("Complete sign-in in the browser");
+        switchMode(MODE_DISPLAY);
+        ensureDisplayServerStarted(true);
+
+        String guestCommand = "export DISPLAY=\"${OMINAL_DISPLAY:-:20}\"; "
+            + "ominal-screen wait 20 >/dev/null; ominal-browser "
+            + shellQuote(uri.toString());
+        String hostCommand = "PREFIX=" + shellQuote(OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH)
+            + "; export PREFIX HOME=" + shellQuote(OminalConstants.OMINAL_HOME_DIR_PATH)
+            + " OMINAL_DISPLAY=:20; exec \"$PREFIX/bin/ominal-proot-run\" /bin/bash -lc "
+            + shellQuote(guestCommand);
+        executeAppShellAsync(hostCommand, "Open browser", success -> {
+            if (!success) {
+                setDisplayLifecycleState(DISPLAY_STATE_ERROR);
+                setStatus("The browser could not open");
+            }
+        });
+    }
+
+    private void executeAppShellAsync(String commandLine, String label,
+                                      java.util.function.Consumer<Boolean> completion) {
+        new Thread(() -> {
+            ExecutionCommand command = new ExecutionCommand(-1,
+                OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/sh",
+                new String[]{"-lc", commandLine}, null,
+                OminalConstants.OMINAL_HOME_DIR_PATH,
+                ExecutionCommand.Runner.APP_SHELL.getName(), false);
+            command.commandLabel = label;
+            AppShell.execute(this, command, null, new OminalShellEnvironment(), null, true);
+            Integer exitCode = command.resultData.exitCode;
+            boolean success = !command.isStateFailed() && exitCode != null && exitCode == 0;
+            if (completion != null) runOnUiThread(() -> completion.accept(success));
+        }, "ominal-" + label.toLowerCase(Locale.US).replace(' ', '-')).start();
+    }
+
     private UiSpec loadUiSpec() {
         UiSpec base = isLightAppearanceEnabled()
             ? UiSpec.light(skin()) : UiSpec.defaults(skin());
         Properties properties = new Properties();
-        loadUiProperties(properties, uiConfigFile());
+        File configFile = activeUiConfigFile();
+        loadUiProperties(properties, configFile);
+        mUiProperties = properties;
+        mActiveUiConfigFile = configFile;
         mCustomThemeEnabled = Boolean.parseBoolean(
             properties.getProperty("theme.enabled", "false").trim());
+        if (configFile == null) mCustomThemeEnabled = false;
         mDisplayName = mCustomThemeEnabled
             ? normalizeDisplayName(properties.getProperty("app.name"), skin().name)
             : skin().name;
@@ -829,8 +948,39 @@ public final class OringutanActivity extends AppCompatActivity
         return value;
     }
 
-    private File uiConfigFile() {
+    private File defaultUiConfigFile() {
         return new File(OminalConstants.OMINAL_HOME_DIR_PATH, UI_CONFIG_FILE_NAME);
+    }
+
+    private File activeUiConfigFile() {
+        String themeId = "default";
+        File active = new File(OminalConstants.OMINAL_HOME_DIR_PATH,
+            UI_ACTIVE_THEME_FILE_NAME);
+        if (active.isFile()) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(active))) {
+                String selected = reader.readLine();
+                if (selected != null && !selected.trim().isEmpty())
+                    themeId = selected.trim().toLowerCase(Locale.ROOT);
+            } catch (IOException e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Failed to read active UI theme", e);
+            }
+        }
+        if ("default".equals(themeId) || "system".equals(themeId)) {
+            mActiveThemeId = "default";
+            return null;
+        }
+        if (!UI_THEME_ID_PATTERN.matcher(themeId).matches()) {
+            mActiveThemeId = "default";
+            return null;
+        }
+        File themeFile = new File(new File(OminalConstants.OMINAL_HOME_DIR_PATH,
+            UI_THEME_DIRECTORY_NAME), themeId + ".properties");
+        if (!themeFile.isFile()) {
+            mActiveThemeId = "default";
+            return null;
+        }
+        mActiveThemeId = themeId;
+        return themeFile;
     }
 
     private UiSpec ui() {
@@ -838,7 +988,7 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void ensureDefaultUiProperties() {
-        File file = uiConfigFile();
+        File file = defaultUiConfigFile();
         if (file.isFile()) return;
         try {
             writeFile(file, defaultUiPropertiesTemplate());
@@ -877,6 +1027,8 @@ public final class OringutanActivity extends AppCompatActivity
                 new File(binDir, "ominal-harness-hook"));
             extractRuntimeTool("runtime/ominal-xdg-open-guest.sh",
                 new File(binDir, "ominal-xdg-open-guest"));
+            extractRuntimeTool("runtime/ominal-open-executable.sh",
+                new File(binDir, "ominal-open-executable-guest"));
             extractRuntimeTool("runtime/ominal-codex-setup.sh", new File(binDir, "ominal-codex-setup"));
             extractRuntimeTool("runtime/ominal-proot-codex.sh", new File(binDir, "ominal-proot-codex"));
             extractRuntimeTool("runtime/ominal-proot-install-local-codex.sh",
@@ -891,6 +1043,8 @@ public final class OringutanActivity extends AppCompatActivity
                 new File(binDir, "ominal-screen-guest"));
             extractRuntimeTool("runtime/ominal-event-guest.sh",
                 new File(binDir, "ominal-event-guest"));
+            extractRuntimeTool("runtime/ominal-theme-guest.sh",
+                new File(binDir, "ominal-theme-guest"));
             extractRuntimeTool("runtime/ominal-device-guest.sh",
                 new File(binDir, "ominal-device-guest"));
             extractRuntimeTool("runtime/ominal-package-guest.sh",
@@ -899,6 +1053,10 @@ public final class OringutanActivity extends AppCompatActivity
                 new File(binDir, "ominal-runtime-bootstrap"));
             extractRuntimeTool("runtime/ominal-display-start.sh", new File(binDir, "ominal-display-start"));
             extractRuntimeTool("runtime/ominal-xfce-session.sh", new File(binDir, "ominal-xfce-session"));
+            File brandDir = new File(binDir.getParentFile(), "share/gir");
+            ensureDirectory(brandDir.getAbsolutePath());
+            extractRuntimeAsset("runtime/gir-final-wallpaper.png",
+                new File(brandDir, "gir-final-wallpaper.png"));
             writeExecutableFile(new File(binDir, "ominal-codex"),
                 "#!/data/data/com.ominal/files/usr/bin/sh\n"
                     + "PREFIX=\"${PREFIX:-/data/data/com.ominal/files/usr}\"\n"
@@ -919,12 +1077,16 @@ public final class OringutanActivity extends AppCompatActivity
                     new File(guestBin, "ominal-screen"));
                 extractRuntimeTool("runtime/ominal-event-guest.sh",
                     new File(guestBin, "ominal-event"));
+                extractRuntimeTool("runtime/ominal-theme-guest.sh",
+                    new File(guestBin, "ominal-theme"));
                 extractRuntimeTool("runtime/ominal-device-guest.sh",
                     new File(guestBin, "ominal-device"));
                 extractRuntimeTool("runtime/ominal-package-guest.sh",
                     new File(guestBin, "ominal-install"));
                 extractRuntimeTool("runtime/ominal-harness-hook.py",
                     new File(guestBin, "ominal-harness-hook"));
+                extractRuntimeTool("runtime/ominal-open-executable.sh",
+                    new File(guestBin, "ominal-open-executable"));
             }
 
             File legacyNativeProvider = new File(binDir, "codex.real");
@@ -935,7 +1097,7 @@ public final class OringutanActivity extends AppCompatActivity
                 Logger.logWarn(LOG_TAG, "Could not remove retired arm64 Codex provider");
         } catch (IOException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to install Ominal PRoot commands", e);
-            addTransientSystemMessage("Ominal couldn't finish setup. Restart the app.");
+            addTransientSystemMessage("GIR couldn't finish setup. Restart the app.");
         }
     }
 
@@ -951,6 +1113,12 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void extractRuntimeTool(String assetPath, File target) throws IOException {
+        extractRuntimeAsset(assetPath, target);
+        if (!target.setExecutable(true, true))
+            throw new IOException("Could not make runtime tool executable: " + target.getName());
+    }
+
+    private void extractRuntimeAsset(String assetPath, File target) throws IOException {
         try (InputStream input = getAssets().open(assetPath);
              FileOutputStream output = new FileOutputStream(target)) {
             byte[] buffer = new byte[8192];
@@ -958,8 +1126,8 @@ public final class OringutanActivity extends AppCompatActivity
             while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
             output.getFD().sync();
         }
-        if (!target.setReadable(true, true) || !target.setExecutable(true, true))
-            throw new IOException("Could not make runtime tool executable: " + target.getName());
+        if (!target.setReadable(true, true))
+            throw new IOException("Could not make runtime asset readable: " + target.getName());
     }
 
     private void ensureRuntimeReady(Runnable whenReady) {
@@ -988,7 +1156,7 @@ public final class OringutanActivity extends AppCompatActivity
                 ensureDirectory(runtimeRoot.getAbsolutePath());
                 long usableBytes = runtimeRoot.getUsableSpace();
                 if (usableBytes > 0 && usableBytes < MIN_RUNTIME_FREE_BYTES)
-                    throw new IOException("Ominal needs at least 4 GB of free space to finish setup.");
+                    throw new IOException("GIR needs at least 4 GB of free space to finish setup.");
 
                 File downloads = new File(runtimeRoot, "downloads");
                 ensureDirectory(downloads.getAbsolutePath());
@@ -1059,10 +1227,10 @@ public final class OringutanActivity extends AppCompatActivity
         String detail = error == null ? null : error.getMessage();
         if (detail != null) {
             detail = detail.trim();
-            if (detail.startsWith("Ominal needs at least 4 GB")
+            if (detail.startsWith("GIR needs at least 4 GB")
                 || detail.startsWith("This phone isn't supported")) return detail;
         }
-        return "Setup couldn't finish. Check your connection and free space, then restart Ominal.";
+        return "Setup couldn't finish. Check your connection and free space, then restart GIR.";
     }
 
     private void finishRuntimeSetup(Runnable whenReady) {
@@ -1398,6 +1566,7 @@ public final class OringutanActivity extends AppCompatActivity
         builder.append("# Monolith custom appearance\n");
         builder.append("ui.version=").append(UI_CONFIG_VERSION).append('\n');
         builder.append("theme.id=custom\n");
+        builder.append("theme.name=Custom\n");
         builder.append("theme.enabled=false\n");
         builder.append("app.name=").append(skin().name).append('\n');
         builder.append("# Edit like .bashrc: one key=value per line, comments start with #.\n");
@@ -1405,6 +1574,10 @@ public final class OringutanActivity extends AppCompatActivity
         builder.append("# 'export key=value' also works, but the app reads only documented UI keys.\n");
         builder.append("# From an agent session, run: ominal-event reload-ui\n");
         builder.append("# Colors accept #RRGGBB or #AARRGGBB.\n\n");
+        builder.append("# Optional monochrome PNG/WebP role icons are relative to this theme directory.\n");
+        builder.append("# Example: icon.chat-history=icons/chat-history.png\n");
+        builder.append("# Roles include chat-history, screen, account-and-settings, new-chat, attach-file,\n");
+        builder.append("# agent-controls, send-message, chat, back, home, open-windows, keyboard.\n\n");
         appendColor(builder, "color.canvas", spec.canvas);
         appendColor(builder, "color.panel", spec.panel);
         appendColor(builder, "color.panelSoft", spec.panelSoft);
@@ -1866,66 +2039,90 @@ public final class OringutanActivity extends AppCompatActivity
         overlay.setFocusable(true);
         overlay.setElevation(dp(24));
 
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setGravity(Gravity.CENTER_HORIZONTAL);
-        content.setPadding(dp(28), dp(28), dp(28), dp(28));
+        LinearLayout focus = new LinearLayout(this);
+        focus.setOrientation(LinearLayout.VERTICAL);
+        focus.setGravity(Gravity.CENTER_HORIZONTAL);
 
         mSetupMarkView = new SetupMarkView(this);
-        content.addView(mSetupMarkView, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        focus.addView(mSetupMarkView, new LinearLayout.LayoutParams(dp(88), dp(88)));
 
         mSetupStageView = new TextView(this);
-        mSetupStageView.setTextColor(Color.rgb(144, 144, 144));
-        mSetupStageView.setTextSize(12);
+        mSetupStageView.setTextColor(Color.rgb(154, 154, 154));
+        mSetupStageView.setTextSize(13);
         mSetupStageView.setGravity(Gravity.CENTER);
-        mSetupStageView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        mSetupStageView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         mSetupStageView.setVisibility(View.GONE);
         LinearLayout.LayoutParams stageParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        stageParams.setMargins(0, dp(26), 0, 0);
-        content.addView(mSetupStageView, stageParams);
+        stageParams.setMargins(0, dp(14), 0, 0);
+        focus.addView(mSetupStageView, stageParams);
 
         mSetupTitleView = new TextView(this);
         mSetupTitleView.setTextColor(Color.WHITE);
-        mSetupTitleView.setTextSize(27);
+        mSetupTitleView.setTextSize(22);
         mSetupTitleView.setGravity(Gravity.CENTER);
-        mSetupTitleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        mSetupTitleView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         mSetupTitleView.setIncludeFontPadding(false);
+        mSetupTitleView.setSingleLine(true);
+        mSetupTitleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
         mSetupTitleView.setVisibility(View.GONE);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        titleParams.setMargins(0, dp(10), 0, 0);
-        content.addView(mSetupTitleView, titleParams);
+        titleParams.setMargins(0, dp(18), 0, 0);
+        focus.addView(mSetupTitleView, titleParams);
 
         mSetupDetailView = new TextView(this);
         mSetupDetailView.setTextColor(Color.rgb(174, 174, 174));
         mSetupDetailView.setTextSize(15);
         mSetupDetailView.setGravity(Gravity.CENTER);
         mSetupDetailView.setIncludeFontPadding(false);
-        mSetupDetailView.setMaxLines(3);
+        mSetupDetailView.setLineSpacing(dp(2), 1f);
+        mSetupDetailView.setMaxLines(4);
         mSetupDetailView.setVisibility(View.GONE);
         LinearLayout.LayoutParams detailParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        detailParams.setMargins(0, dp(12), 0, 0);
-        content.addView(mSetupDetailView, detailParams);
+        detailParams.setMargins(0, dp(7), 0, 0);
+        focus.addView(mSetupDetailView, detailParams);
 
-        mSetupProgressView = new RoundedSetupProgressView(this);
-        mSetupProgressView.setVisibility(View.GONE);
-        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(6));
-        progressParams.setMargins(0, dp(34), 0, 0);
-        content.addView(mSetupProgressView, progressParams);
+        mSetupNoteView = new TextView(this);
+        mSetupNoteView.setTextColor(Color.rgb(154, 154, 154));
+        mSetupNoteView.setTextSize(14);
+        mSetupNoteView.setGravity(Gravity.CENTER);
+        mSetupNoteView.setIncludeFontPadding(false);
+        mSetupNoteView.setLineSpacing(dp(2), 1f);
+        mSetupNoteView.setMaxLines(3);
+        mSetupNoteView.setVisibility(View.GONE);
+        LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        noteParams.setMargins(dp(12), dp(24), dp(12), 0);
+        focus.addView(mSetupNoteView, noteParams);
+
+        FrameLayout.LayoutParams focusParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER);
+        focusParams.setMargins(dp(24), 0, dp(24), dp(64));
+        overlay.addView(focus, focusParams);
+
+        LinearLayout statusDock = new LinearLayout(this);
+        statusDock.setOrientation(LinearLayout.VERTICAL);
+        statusDock.setGravity(Gravity.START);
+        statusDock.setPadding(dp(24), dp(12), dp(24), dp(28));
 
         mSetupPercentView = new TextView(this);
-        mSetupPercentView.setTextColor(Color.rgb(144, 144, 144));
+        mSetupPercentView.setTextColor(Color.rgb(154, 154, 154));
         mSetupPercentView.setTextSize(13);
         mSetupPercentView.setGravity(Gravity.END);
         mSetupPercentView.setIncludeFontPadding(false);
         mSetupPercentView.setVisibility(View.GONE);
-        LinearLayout.LayoutParams percentParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        percentParams.setMargins(0, dp(10), 0, 0);
-        content.addView(mSetupPercentView, percentParams);
+        statusDock.addView(mSetupPercentView, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        mSetupProgressView = new RoundedSetupProgressView(this);
+        mSetupProgressView.setVisibility(View.GONE);
+        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(4));
+        progressParams.setMargins(0, dp(18), 0, 0);
+        statusDock.addView(mSetupProgressView, progressParams);
 
         mSetupRetryButton = createSecondaryButton("Try again");
         mSetupRetryButton.setVisibility(View.GONE);
@@ -1937,13 +2134,13 @@ public final class OringutanActivity extends AppCompatActivity
         });
         LinearLayout.LayoutParams retryParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(50));
-        retryParams.setMargins(0, dp(24), 0, 0);
-        content.addView(mSetupRetryButton, retryParams);
+        retryParams.setMargins(0, dp(16), 0, 0);
+        statusDock.addView(mSetupRetryButton, retryParams);
 
-        FrameLayout.LayoutParams contentParams = new FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.CENTER);
-        overlay.addView(content, contentParams);
+            Gravity.BOTTOM);
+        overlay.addView(statusDock, dockParams);
         return overlay;
     }
 
@@ -1957,12 +2154,19 @@ public final class OringutanActivity extends AppCompatActivity
         mSetupOverlay.setAlpha(1f);
         mSetupOverlay.setVisibility(View.VISIBLE);
         hideKeyboardForBlockingSurface(mSetupOverlay);
-        mSetupStageView.setText(stage > 0 ? "STEP " + Math.min(stage, 4) + " OF 4" : "SETUP");
+        mSetupStageView.setText(setupStateLabel(stage, percent));
         mSetupStageView.setVisibility(View.VISIBLE);
         mSetupTitleView.setText(title == null ? "Preparing your workspace" : title);
         mSetupTitleView.setVisibility(View.VISIBLE);
         mSetupDetailView.setText(detail == null ? "Getting things ready" : detail);
         mSetupDetailView.setVisibility(View.VISIBLE);
+        if (mSetupNoteIndex < 0) {
+            mSetupNoteIndex = new java.util.Random().nextInt(SETUP_PROCESS_NOTES.length);
+            mSetupNoteView.setText(SETUP_PROCESS_NOTES[mSetupNoteIndex]);
+            mSetupNoteView.setAlpha(1f);
+            mSetupOverlay.postDelayed(mRotateSetupNote, 7_000L);
+        }
+        mSetupNoteView.setVisibility(View.VISIBLE);
         mSetupProgressView.setIndeterminate(percent < 0);
         if (percent >= 0) mSetupProgressView.setProgress(Math.max(0, Math.min(100, percent)));
         mSetupProgressView.setVisibility(View.VISIBLE);
@@ -1974,6 +2178,13 @@ public final class OringutanActivity extends AppCompatActivity
         }
         mSetupRetryAction = null;
         mSetupRetryButton.setVisibility(View.GONE);
+    }
+
+    private String setupStateLabel(int stage, int percent) {
+        if (mSetupStateWordIndex < 0) {
+            mSetupStateWordIndex = new java.util.Random().nextInt(SETUP_STATE_WORDS.length);
+        }
+        return SETUP_STATE_WORDS[mSetupStateWordIndex][percent >= 100 ? 1 : 0];
     }
 
     private void hideKeyboardForBlockingSurface(@NonNull View surface) {
@@ -2004,9 +2215,12 @@ public final class OringutanActivity extends AppCompatActivity
         mSetupStageView.setVisibility(View.VISIBLE);
         mSetupTitleView.setVisibility(View.VISIBLE);
         mSetupDetailView.setVisibility(View.VISIBLE);
+        mSetupNoteView.setVisibility(View.GONE);
+        mSetupOverlay.removeCallbacks(mRotateSetupNote);
+        mSetupNoteIndex = -1;
         mSetupProgressView.setVisibility(View.GONE);
         mSetupPercentView.setVisibility(View.GONE);
-        mSetupStageView.setText("Setup needs attention");
+        mSetupStageView.setText("paused");
         mSetupTitleView.setText("Couldn't finish setup");
         mSetupDetailView.setText(detail == null ? "Setup could not finish." : detail);
         mSetupRetryAction = retryAction;
@@ -2024,6 +2238,9 @@ public final class OringutanActivity extends AppCompatActivity
             Runnable finish = () -> {
                 mSetupOverlay.setVisibility(View.GONE);
                 mSetupOverlay.setAlpha(1f);
+                mSetupOverlay.removeCallbacks(mRotateSetupNote);
+                mSetupStateWordIndex = -1;
+                mSetupNoteIndex = -1;
             };
             if (mSetupMarkView != null) {
                 mSetupMarkView.playExit(finish);
@@ -2142,12 +2359,7 @@ public final class OringutanActivity extends AppCompatActivity
 
         mLoloButton = null;
 
-        mAccountButton = createToolbarIconButton(R.drawable.ic_account, "Account and settings");
-        mAccountButton.setOnClickListener(v -> showAppMenu());
-        LinearLayout.LayoutParams accountParams = new LinearLayout.LayoutParams(dp(40), dp(40));
-        accountParams.setMargins(dp(2), 0, 0, 0);
-        header.addView(mAccountButton, accountParams);
-        styleAccountButton();
+        mAccountButton = null;
 
         return header;
     }
@@ -2156,8 +2368,10 @@ public final class OringutanActivity extends AppCompatActivity
         UiSpec ui = ui();
         LinearLayout composer = new LinearLayout(this);
         composer.setOrientation(LinearLayout.VERTICAL);
-        composer.setPadding(dp(16), 0, dp(16), dp(10));
-        composer.setBackgroundColor(ui.composer.fill);
+        composer.setPadding(dp(16), dp(8), dp(16), dp(12));
+        composer.setBackgroundColor(Color.TRANSPARENT);
+        composer.setClipChildren(false);
+        composer.setClipToPadding(false);
 
         mCommandSuggestionsView = new LinearLayout(this);
         mCommandSuggestionsView.setOrientation(LinearLayout.VERTICAL);
@@ -2182,6 +2396,7 @@ public final class OringutanActivity extends AppCompatActivity
         writingRail.setPadding(dp(3), dp(2), dp(3), dp(3));
         writingRail.setMinimumHeight(dp(86));
         writingRail.setBackground(makeSurfaceDrawable(ui.composerInput, false));
+        writingRail.setElevation(dp(5));
         LinearLayout.LayoutParams writingRailParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
 
@@ -2456,6 +2671,13 @@ public final class OringutanActivity extends AppCompatActivity
         title.setIncludeFontPadding(false);
         topRow.addView(title, new LinearLayout.LayoutParams(0, dp(40), 1));
 
+        mAccountButton = createToolbarIconButton(R.drawable.ic_account, "Account and settings");
+        mAccountButton.setOnClickListener(v -> showAppMenu());
+        LinearLayout.LayoutParams accountParams = new LinearLayout.LayoutParams(dp(36), dp(36));
+        accountParams.setMargins(dp(10), 0, 0, 0);
+        topRow.addView(mAccountButton, accountParams);
+        styleAccountButton();
+
         ImageButton newChatButton = createToolbarIconButton(R.drawable.ic_add, "New chat");
         newChatButton.setOnClickListener(v -> {
             if (mDrawerLayout != null && mChatDrawer != null) mDrawerLayout.closeDrawer(mChatDrawer);
@@ -2663,7 +2885,10 @@ public final class OringutanActivity extends AppCompatActivity
     private void switchMode(int mode) {
         if (mMode == mode) return;
         boolean leavingDisplay = mMode == MODE_DISPLAY && mode != MODE_DISPLAY;
-        if (leavingDisplay) releaseNativeDisplayInput();
+        if (leavingDisplay) {
+            synchronizeDisplayClipboard(null);
+            releaseNativeDisplayInput();
+        }
         if (mode == MODE_DISPLAY) clearDisplayCloseRequest();
         else stopDisplayControlObserver();
         mMode = mode;
@@ -3183,7 +3408,7 @@ public final class OringutanActivity extends AppCompatActivity
     private void addDisplayNavigationButton(LinearLayout bar, int iconRes,
                                             String description, View.OnClickListener listener) {
         ImageButton button = new ImageButton(this);
-        button.setImageResource(iconRes);
+        setThemedIcon(button, iconRes, description);
         button.setImageTintList(ColorStateList.valueOf(Color.WHITE));
         button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         button.setPadding(dp(11), dp(11), dp(11), dp(11));
@@ -3583,7 +3808,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void submitPrompt() {
         if (!mBootstrapReady) {
-            addTransientSystemMessage("Ominal is still getting ready.");
+            addTransientSystemMessage("GIR is still getting ready.");
             return;
         }
         if (mActiveSession == null) return;
@@ -4215,7 +4440,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void submitPromptToTerminal() {
         if (!mBootstrapReady || !mRuntimeReady || !OminalProotTerminal.isReady()) {
-            addTransientSystemMessage("Ominal is still getting ready.");
+            addTransientSystemMessage("GIR is still getting ready.");
             return;
         }
         if (mActiveSession == null) return;
@@ -4252,7 +4477,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void pickAttachment() {
         if (!mBootstrapReady) {
-            addTransientSystemMessage("Ominal is still getting ready.");
+            addTransientSystemMessage("GIR is still getting ready.");
             return;
         }
         if (mActiveSession == null) return;
@@ -4274,7 +4499,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void startTermuxConfigImport() {
         if (!mBootstrapReady) {
-            addTransientSystemMessage("Ominal is still getting ready.");
+            addTransientSystemMessage("GIR is still getting ready.");
             return;
         }
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -4683,7 +4908,10 @@ public final class OringutanActivity extends AppCompatActivity
         environment.put("OMINAL_DISPLAY_GEOMETRY", getDisplayGeometry());
         environment.put("OMINAL_DISPLAY_DPI", Integer.toString(currentDisplayGeometry().densityDpi));
         environment.put("OMINAL_LOLO_MODE", isLoloModeEnabled() ? "1" : "0");
-        environment.put("OMINAL_UI_CONFIG", "/root/.ominal/themes/custom.properties");
+        environment.put("OMINAL_UI_THEME_DIR", "/root/.ominal/themes");
+        environment.put("OMINAL_UI_THEME_ACTIVE", mActiveThemeId);
+        environment.put("OMINAL_UI_CONFIG", "default".equals(mActiveThemeId) ? ""
+            : "/root/.ominal/themes/" + mActiveThemeId + ".properties");
         if (session != null) {
             environment.put("OMINAL_AGENT_SESSION", session.id);
             environment.put("OMINAL_EVENT_LOG",
@@ -4708,9 +4936,9 @@ public final class OringutanActivity extends AppCompatActivity
             + "autonomously for GUI work. If user input, visual confirmation, login, or manual control is truly "
             + "required, run `ominal-event request-user-input \"short reason\"`. Run `ominal-event open-display "
             + "\"short reason\"` when the user should see the display but does not need to type. "
-            + "The optional custom theme is `/root/.ominal/themes/custom.properties`; built-in themes "
-            + "are immutable. Set `theme.enabled=true`, edit documented keys, then run "
-            + "`ominal-event reload-ui` to apply it without restarting the harness. "
+            + "Appearance lists immutable Light and Dark themes plus separately stored custom themes. "
+            + "Only create or edit a custom theme through `ominal-theme` when the user explicitly asks. "
+            + "Theme reloads must not restart the harness. "
             + "Use `ominal-install` for Linux packages and downloaded .deb files; never use raw `dpkg -i`. "
             + "Put images, audio, video, or PDFs created for the user under ./"
             + MEDIA_DIR_NAME + "; Monolith surfaces new and changed media inline in the chat. "
@@ -5047,6 +5275,10 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void openTerminalForActiveChat() {
+        synchronizeDisplayClipboard(this::openTerminalForActiveChatAfterClipboard);
+    }
+
+    private void openTerminalForActiveChatAfterClipboard() {
         if (!mBootstrapReady || !mRuntimeReady || !OminalProotTerminal.isReady()) {
             addTransientSystemMessage("The Linux environment is still getting ready.");
             return;
@@ -5073,6 +5305,12 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void launchHarnessTerminal(String harnessId, boolean completePairingAtLaunch) {
+        synchronizeDisplayClipboard(() ->
+            launchHarnessTerminalAfterClipboard(harnessId, completePairingAtLaunch));
+    }
+
+    private void launchHarnessTerminalAfterClipboard(String harnessId,
+                                                     boolean completePairingAtLaunch) {
         if (!mBootstrapReady || !mRuntimeReady || mActiveSession == null) {
             setPairingBusy(false, "");
             addTransientSystemMessage("The Linux environment is still getting ready.");
@@ -5202,7 +5440,7 @@ public final class OringutanActivity extends AppCompatActivity
         bubble.setFocusable(true);
         bubble.setFocusableInTouchMode(true);
         bubble.setOnLongClickListener(v -> {
-            copyToClipboard("Ominal message", bubble.getText().toString());
+            copyToClipboard("GIR message", bubble.getText().toString());
             Toast.makeText(this, "Message copied", Toast.LENGTH_SHORT).show();
             return true;
         });
@@ -5362,7 +5600,7 @@ public final class OringutanActivity extends AppCompatActivity
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         ImageButton close = new ImageButton(this);
-        close.setImageResource(R.drawable.ic_close);
+        setThemedIcon(close, R.drawable.ic_close, "Close image");
         close.setImageTintList(ColorStateList.valueOf(Color.WHITE));
         close.setBackground(makeRoundedDrawable(Color.argb(176, 0, 0, 0),
             Color.argb(48, 255, 255, 255), dp(22)));
@@ -5406,7 +5644,7 @@ public final class OringutanActivity extends AppCompatActivity
         message.setFocusableInTouchMode(true);
         message.setVisibility(View.GONE);
         message.setOnLongClickListener(v -> {
-            copyToClipboard("Ominal message", message.getText().toString());
+            copyToClipboard("GIR message", message.getText().toString());
             Toast.makeText(this, "Message copied", Toast.LENGTH_SHORT).show();
             return true;
         });
@@ -5609,6 +5847,49 @@ public final class OringutanActivity extends AppCompatActivity
             (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         if (clipboard == null) return;
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText(label, value));
+    }
+
+    private void synchronizeDisplayClipboard(Runnable completion) {
+        if (completion != null) mClipboardSyncCallbacks.add(completion);
+        if (mClipboardSyncInFlight) return;
+        if (!mRuntimeReady || !mDisplayReady) {
+            finishDisplayClipboardSync(null);
+            return;
+        }
+        mClipboardSyncInFlight = true;
+
+        String guestCommand = "export DISPLAY=\"${OMINAL_DISPLAY:-:20}\"; "
+            + "command -v xclip >/dev/null 2>&1 || exit 69; "
+            + "timeout 2s xclip -selection clipboard -out -target UTF8_STRING";
+        String hostCommand = "PREFIX=" + shellQuote(OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH)
+            + "; export PREFIX HOME=" + shellQuote(OminalConstants.OMINAL_HOME_DIR_PATH)
+            + " OMINAL_DISPLAY=:20; exec \"$PREFIX/bin/ominal-proot-run\" /bin/bash -lc "
+            + shellQuote(guestCommand);
+
+        new Thread(() -> {
+            ExecutionCommand command = new ExecutionCommand(-1,
+                OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/sh",
+                new String[]{"-lc", hostCommand}, null,
+                OminalConstants.OMINAL_HOME_DIR_PATH,
+                ExecutionCommand.Runner.APP_SHELL.getName(), false);
+            command.commandLabel = "Synchronize display clipboard";
+            AppShell.execute(this, command, null, new OminalShellEnvironment(), null, true);
+            Integer exitCode = command.resultData.exitCode;
+            String text = exitCode != null && exitCode == 0
+                ? command.resultData.stdout.toString() : null;
+            if (text != null && (text.isEmpty() || text.length() > 1024 * 1024)) text = null;
+            String clipboardText = text;
+            runOnUiThread(() -> finishDisplayClipboardSync(clipboardText));
+        }, "ominal-clipboard-sync").start();
+    }
+
+    private void finishDisplayClipboardSync(String text) {
+        if (text != null) copyToClipboard("Linux clipboard", text);
+        mClipboardSyncInFlight = false;
+        if (mClipboardSyncCallbacks.isEmpty()) return;
+        ArrayList<Runnable> callbacks = new ArrayList<>(mClipboardSyncCallbacks);
+        mClipboardSyncCallbacks.clear();
+        for (Runnable callback : callbacks) callback.run();
     }
 
     private void appendHistory(ChatSession session, ChatMessage message) {
@@ -6075,10 +6356,58 @@ public final class OringutanActivity extends AppCompatActivity
             metrics.densityDpi);
     }
 
+    private void setThemedIcon(ImageView view, int fallbackResource,
+                               String contentDescription) {
+        Drawable custom = loadThemeIcon(iconRole(contentDescription));
+        if (custom == null) view.setImageResource(fallbackResource);
+        else view.setImageDrawable(custom);
+    }
+
+    private String iconRole(String description) {
+        if (description == null) return "";
+        return description.toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9]+", "-")
+            .replaceAll("(^-+|-+$)", "");
+    }
+
+    private Drawable loadThemeIcon(String role) {
+        if (!mCustomThemeEnabled || TextUtils.isEmpty(role)
+            || mActiveUiConfigFile == null || mUiProperties == null) {
+            return null;
+        }
+        String relativePath = mUiProperties.getProperty("icon." + role, "").trim();
+        if (relativePath.isEmpty()) return null;
+        try {
+            File themeDirectory = mActiveUiConfigFile.getParentFile();
+            if (themeDirectory == null) return null;
+            File icon = new File(themeDirectory, relativePath);
+            String basePath = themeDirectory.getCanonicalPath() + File.separator;
+            String iconPath = icon.getCanonicalPath();
+            if (!iconPath.startsWith(basePath) || !icon.isFile()
+                || icon.length() <= 0L || icon.length() > 2L * 1024L * 1024L) {
+                return null;
+            }
+            String lowerName = icon.getName().toLowerCase(Locale.ROOT);
+            if (!lowerName.endsWith(".png") && !lowerName.endsWith(".webp")) return null;
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(iconPath, bounds);
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0
+                || bounds.outWidth > 1024 || bounds.outHeight > 1024) {
+                return null;
+            }
+            Bitmap bitmap = BitmapFactory.decodeFile(iconPath);
+            return bitmap == null ? null : new BitmapDrawable(getResources(), bitmap);
+        } catch (IOException e) {
+            Logger.logWarn(LOG_TAG, "Rejected custom UI icon for " + role);
+            return null;
+        }
+    }
+
     private ImageButton createToolbarIconButton(int iconRes, String contentDescription) {
         UiSpec ui = ui();
         ImageButton button = new ImageButton(this);
-        button.setImageResource(iconRes);
+        setThemedIcon(button, iconRes, contentDescription);
         button.setImageTintList(ColorStateList.valueOf(ui.toolbarButton.text));
         button.setScaleType(ImageButton.ScaleType.CENTER);
         button.setPadding(dp(9), dp(9), dp(9), dp(9));
@@ -6107,11 +6436,116 @@ public final class OringutanActivity extends AppCompatActivity
         return mPrefs != null && mPrefs.getBoolean(PREF_LIGHT_APPEARANCE, false);
     }
 
-    private void setLightAppearanceEnabled(boolean enabled) {
-        if (mPrefs == null || enabled == isLightAppearanceEnabled()) return;
-        mPrefs.edit().putBoolean(PREF_LIGHT_APPEARANCE, enabled).commit();
+    private String currentAppearanceLabel() {
+        if (!"default".equals(mActiveThemeId) && mActiveUiConfigFile != null) {
+            String label = mUiProperties.getProperty("theme.name", "").trim();
+            if (!label.isEmpty()) return label;
+            return humanizeThemeId(mActiveThemeId);
+        }
+        return isLightAppearanceEnabled() ? "Light" : "Dark";
+    }
+
+    private void showAppearanceChooser() {
+        ArrayList<OminalInteractionSheet.Section> sections = new ArrayList<>();
+        ArrayList<OminalInteractionSheet.Row> builtIn = new ArrayList<>();
+        boolean builtInSelected = "default".equals(mActiveThemeId);
+        builtIn.add(new OminalInteractionSheet.Row("appearance:dark", "Dark", "Built in", "",
+            builtInSelected && !isLightAppearanceEnabled(), true, false));
+        builtIn.add(new OminalInteractionSheet.Row("appearance:light", "Light", "Built in", "",
+            builtInSelected && isLightAppearanceEnabled(), true, false));
+        sections.add(new OminalInteractionSheet.Section("Built-in", builtIn));
+
+        ArrayList<OminalInteractionSheet.Row> custom = new ArrayList<>();
+        File themeDirectory = new File(OminalConstants.OMINAL_HOME_DIR_PATH,
+            UI_THEME_DIRECTORY_NAME);
+        File[] files = themeDirectory.listFiles((directory, name) ->
+            name.endsWith(".properties") && !"custom.properties".equals(name));
+        if (files != null) {
+            ArrayList<File> sorted = new ArrayList<>();
+            Collections.addAll(sorted, files);
+            Collections.sort(sorted, (left, right) ->
+                left.getName().compareToIgnoreCase(right.getName()));
+            for (File file : sorted) {
+                String fileName = file.getName();
+                String themeId = fileName.substring(0,
+                    fileName.length() - ".properties".length());
+                if (!UI_THEME_ID_PATTERN.matcher(themeId).matches()) continue;
+                Properties properties = new Properties();
+                loadUiProperties(properties, file);
+                if (!Boolean.parseBoolean(properties.getProperty(
+                    "theme.enabled", "false").trim())) continue;
+                String label = properties.getProperty("theme.name", "").trim();
+                if (label.isEmpty()) label = humanizeThemeId(themeId);
+                custom.add(new OminalInteractionSheet.Row("appearance:custom:" + themeId,
+                    label, "Custom", "", themeId.equals(mActiveThemeId), true, false));
+            }
+        }
+        if (!custom.isEmpty())
+            sections.add(new OminalInteractionSheet.Section("Custom", custom));
+
+        OminalInteractionSheet.show(this, interactionSheetTheme(), "Appearance",
+            "Built-ins stay unchanged. Custom themes are stored separately.", sections,
+            this::selectAppearanceChoice);
+    }
+
+    private String humanizeThemeId(String themeId) {
+        if (TextUtils.isEmpty(themeId)) return "Custom";
+        String label = themeId.replace('-', ' ').replace('_', ' ').trim();
+        if (label.isEmpty()) return "Custom";
+        return label.substring(0, 1).toUpperCase(Locale.ROOT) + label.substring(1);
+    }
+
+    private void selectAppearanceChoice(String choice) {
+        if ("appearance:dark".equals(choice)) {
+            selectBuiltInAppearance(false);
+            return;
+        }
+        if ("appearance:light".equals(choice)) {
+            selectBuiltInAppearance(true);
+            return;
+        }
+        String prefix = "appearance:custom:";
+        if (!choice.startsWith(prefix)) return;
+        String themeId = choice.substring(prefix.length());
+        if (!UI_THEME_ID_PATTERN.matcher(themeId).matches()) return;
+        File themeFile = new File(new File(OminalConstants.OMINAL_HOME_DIR_PATH,
+            UI_THEME_DIRECTORY_NAME), themeId + ".properties");
+        if (!themeFile.isFile()) {
+            Toast.makeText(this, "That theme is no longer available.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!writeActiveTheme(themeId)) return;
         mLauncherSyncPending = true;
         recreate();
+    }
+
+    private void selectBuiltInAppearance(boolean light) {
+        if (mPrefs == null) return;
+        boolean themeChanged = !"default".equals(mActiveThemeId);
+        if (!writeActiveTheme("default")) return;
+        if (!themeChanged && light == isLightAppearanceEnabled()) return;
+        mPrefs.edit().putBoolean(PREF_LIGHT_APPEARANCE, light).commit();
+        mLauncherSyncPending = true;
+        recreate();
+    }
+
+    private boolean writeActiveTheme(String themeId) {
+        File active = new File(OminalConstants.OMINAL_HOME_DIR_PATH,
+            UI_ACTIVE_THEME_FILE_NAME);
+        try {
+            writeFile(active, themeId + "\n");
+            mActiveThemeId = themeId;
+            if ("default".equals(themeId)) {
+                mActiveUiConfigFile = null;
+                mCustomThemeEnabled = false;
+            }
+            return true;
+        } catch (IOException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG,
+                "Failed to activate UI theme " + themeId, e);
+            Toast.makeText(this, "Could not change appearance.", Toast.LENGTH_SHORT).show();
+            return false;
+        }
     }
 
     private void syncLauncherIcon(boolean lightAppearance) {
@@ -6202,23 +6636,22 @@ public final class OringutanActivity extends AppCompatActivity
         LinearLayout appearanceCopy = new LinearLayout(this);
         appearanceCopy.setOrientation(LinearLayout.VERTICAL);
         TextView appearanceTitle = new TextView(this);
-        appearanceTitle.setText("Light appearance");
+        appearanceTitle.setText("Appearance");
         appearanceTitle.setTextColor(ui().ink);
         appearanceTitle.setTextSize(15);
         appearanceTitle.setTypeface(Typeface.DEFAULT_BOLD);
         appearanceTitle.setIncludeFontPadding(false);
-        TextView appearanceStatus = dialogBody(
-            isLightAppearanceEnabled() ? "Light UI · dark launcher" : "Dark UI · silver launcher");
+        TextView appearanceStatus = dialogBody(currentAppearanceLabel());
         appearanceCopy.addView(appearanceTitle);
         appearanceCopy.addView(appearanceStatus);
         appearanceRow.addView(appearanceCopy, new LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
-        SwitchCompat appearanceSwitch = createDialogSwitch();
-        appearanceSwitch.setChecked(isLightAppearanceEnabled());
-        appearanceSwitch.setOnCheckedChangeListener((button, checked) ->
-            setLightAppearanceEnabled(checked));
-        appearanceRow.addView(appearanceSwitch, new LinearLayout.LayoutParams(dp(54), dp(48)));
+        TextView appearanceAction = dialogBody("Open");
+        appearanceAction.setTextColor(ui().ink);
+        appearanceAction.setGravity(Gravity.CENTER);
+        appearanceRow.addView(appearanceAction,
+            new LinearLayout.LayoutParams(dp(54), dp(48)));
         content.addView(appearanceRow, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(64)));
 
@@ -6296,10 +6729,22 @@ public final class OringutanActivity extends AppCompatActivity
             });
         });
 
+        ScrollView scroller = new ScrollView(this);
+        scroller.setFillViewport(false);
+        scroller.setClipToPadding(false);
+        scroller.addView(content, new ScrollView.LayoutParams(
+            ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+
         AlertDialog dialog = new AlertDialog.Builder(this)
-            .setView(content)
+            .setView(scroller)
             .setNegativeButton("Done", null)
             .create();
+        appearanceRow.setOnClickListener(view -> {
+            dialog.dismiss();
+            if (mRootFrame != null)
+                mRootFrame.postDelayed(this::showAppearanceChooser, 160);
+            else showAppearanceChooser();
+        });
         dialog.show();
         styleBlackDialog(dialog);
     }
@@ -6350,7 +6795,7 @@ public final class OringutanActivity extends AppCompatActivity
     private void showLoloEnableConfirmation(Runnable onEnabled) {
         AlertDialog dialog = new AlertDialog.Builder(this)
             .setTitle("Enable Lolo mode?")
-            .setMessage("Codex will be able to open Android apps, links, and Settings while Ominal is running. Android permissions still apply.")
+            .setMessage("Codex will be able to open Android apps, links, and Settings while GIR is running. Android permissions still apply.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Enable", (ignored, which) -> onEnabled.run())
             .create();
@@ -6406,9 +6851,19 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void styleBlackDialog(AlertDialog dialog) {
         if (dialog == null || dialog.getWindow() == null) return;
-        dialog.getWindow().setBackgroundDrawable(
-            makeRoundedDrawable(dialogSurfaceColor(), ui().border, dp(16)));
-        dialog.getWindow().setDimAmount(0.72f);
+        android.view.Window window = dialog.getWindow();
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(dialogSurfaceColor());
+        background.setStroke(dp(1), ui().border);
+        float radius = dp(18);
+        background.setCornerRadii(new float[]{radius, radius, radius, radius, 0, 0, 0, 0});
+        window.setBackgroundDrawable(background);
+        window.setGravity(Gravity.BOTTOM);
+        window.setDimAmount(0.72f);
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT);
+        window.getDecorView().setPadding(0, 0, 0, 0);
         Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
         Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
         if (positive != null) positive.setTextColor(ui().ink);
@@ -6426,7 +6881,7 @@ public final class OringutanActivity extends AppCompatActivity
     private ImageButton createComposerIconButton(int iconRes, String contentDescription) {
         UiSpec ui = ui();
         ImageButton button = new ImageButton(this);
-        button.setImageResource(iconRes);
+        setThemedIcon(button, iconRes, contentDescription);
         button.setImageTintList(ColorStateList.valueOf(ui.composerIcon.text));
         button.setScaleType(ImageButton.ScaleType.CENTER);
         button.setPadding(dp(10), dp(10), dp(10), dp(10));
@@ -6440,7 +6895,7 @@ public final class OringutanActivity extends AppCompatActivity
     private ImageButton createComposerSendButton(int iconRes, String contentDescription) {
         UiSpec ui = ui();
         ImageButton button = new ImageButton(this);
-        button.setImageResource(iconRes);
+        setThemedIcon(button, iconRes, contentDescription);
         button.setImageTintList(ColorStateList.valueOf(ui.composerSend.text));
         button.setScaleType(ImageButton.ScaleType.CENTER);
         button.setPadding(dp(10), dp(10), dp(10), dp(10));
@@ -7189,15 +7644,20 @@ public final class OringutanActivity extends AppCompatActivity
         private static final long ENTRANCE_DURATION_MS = 720L;
         private static final long MINIMUM_VISIBLE_MS = 640L;
         private static final long EXIT_DURATION_MS = 280L;
+        private static final long FLOW_DURATION_MS = 3200L;
         private static final float ENTRANCE_SCALE = 0.58f;
         private static final float EXIT_SCALE = 1.18f;
 
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
+            | Paint.DITHER_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private final Bitmap logo;
         private final Path mark = new Path();
         private long entranceStartedAt = -1L;
+        private long spinStartedAt = -1L;
         private long exitStartedAt = -1L;
         private float exitStartAlpha = 1f;
         private float exitStartScale = 1f;
+        private float motionPhase;
         private Runnable exitEndAction;
 
         private final Runnable runEntranceFrame = new Runnable() {
@@ -7213,8 +7673,25 @@ public final class OringutanActivity extends AppCompatActivity
                 if (progress < 1f) {
                     postOnAnimation(this);
                 } else {
-                    setLayerType(View.LAYER_TYPE_NONE, null);
+                    spinStartedAt = android.os.SystemClock.uptimeMillis();
+                    postOnAnimation(runSpinFrame);
                 }
+            }
+        };
+
+        private final Runnable runSpinFrame = new Runnable() {
+            @Override
+            public void run() {
+                if (!isAttachedToWindow() || spinStartedAt < 0L || exitStartedAt >= 0L) return;
+                long elapsed = android.os.SystemClock.uptimeMillis() - spinStartedAt;
+                float progress = (elapsed % FLOW_DURATION_MS) / (float) FLOW_DURATION_MS;
+                float wave = (float) Math.sin(progress * Math.PI * 2f);
+                motionPhase = progress;
+                setScaleX(1f);
+                setScaleY(1f);
+                setAlpha(0.94f + (0.06f * ((wave + 1f) / 2f)));
+                invalidate();
+                postOnAnimation(this);
             }
         };
 
@@ -7242,28 +7719,33 @@ public final class OringutanActivity extends AppCompatActivity
         private final Runnable startEntrance = () -> {
             if (!isAttachedToWindow()) return;
             removeCallbacks(runEntranceFrame);
+            removeCallbacks(runSpinFrame);
             removeCallbacks(runExitFrame);
             entranceStartedAt = android.os.SystemClock.uptimeMillis();
+            spinStartedAt = -1L;
             exitStartedAt = -1L;
             exitEndAction = null;
             setAlpha(0f);
             setScaleX(ENTRANCE_SCALE);
             setScaleY(ENTRANCE_SCALE);
+            setRotation(0f);
+            setRotationY(0f);
             setLayerType(View.LAYER_TYPE_HARDWARE, null);
             postOnAnimation(runEntranceFrame);
         };
 
         SetupMarkView(Context context) {
             super(context);
+            logo = BitmapFactory.decodeResource(context.getResources(), R.drawable.gir_final_logo);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) setForceDarkAllowed(false);
             setAlpha(0f);
             setScaleX(ENTRANCE_SCALE);
             setScaleY(ENTRANCE_SCALE);
-            paint.setColor(Color.WHITE);
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setStrokeJoin(Paint.Join.ROUND);
             paint.setDither(true);
+            paint.setFilterBitmap(true);
+            paint.setColorFilter(new android.graphics.PorterDuffColorFilter(
+                Color.WHITE, android.graphics.PorterDuff.Mode.SRC_IN));
+            setCameraDistance(8000f * getResources().getDisplayMetrics().density);
         }
 
         @Override
@@ -7276,10 +7758,13 @@ public final class OringutanActivity extends AppCompatActivity
         protected void onDetachedFromWindow() {
             removeCallbacks(startEntrance);
             removeCallbacks(runEntranceFrame);
+            removeCallbacks(runSpinFrame);
             removeCallbacks(runExitFrame);
             entranceStartedAt = -1L;
+            spinStartedAt = -1L;
             exitStartedAt = -1L;
             exitEndAction = null;
+            motionPhase = 0f;
             setLayerType(View.LAYER_TYPE_NONE, null);
             super.onDetachedFromWindow();
         }
@@ -7293,6 +7778,7 @@ public final class OringutanActivity extends AppCompatActivity
         void playExit(Runnable endAction) {
             removeCallbacks(startEntrance);
             removeCallbacks(runEntranceFrame);
+            removeCallbacks(runSpinFrame);
             removeCallbacks(runExitFrame);
             exitStartedAt = android.os.SystemClock.uptimeMillis();
             exitStartAlpha = getAlpha();
@@ -7307,35 +7793,147 @@ public final class OringutanActivity extends AppCompatActivity
             return Math.min(1f, elapsed / (float) durationMs);
         }
 
+        private void drawLogoArm(Canvas canvas, RectF bounds, float centerX, float centerY,
+                                 int horizontal, int vertical, float distance,
+                                 float foldDegrees) {
+            float overlap = Math.max(1f, bounds.width() * 0.01f);
+            float clipLeft = horizontal < 0 ? bounds.left : centerX - overlap;
+            float clipRight = horizontal < 0 ? centerX + overlap : bounds.right;
+            float clipTop = vertical < 0 ? bounds.top : centerY - overlap;
+            float clipBottom = vertical < 0 ? centerY + overlap : bounds.bottom;
+
+            canvas.save();
+            canvas.translate(horizontal * distance, vertical * distance);
+            canvas.rotate(foldDegrees, centerX, centerY);
+            canvas.clipRect(clipLeft, clipTop, clipRight, clipBottom);
+            canvas.drawBitmap(logo, null, bounds, paint);
+            canvas.restore();
+        }
+
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
+            if (logo != null) {
+                float size = Math.min(getWidth(), getHeight());
+                float left = (getWidth() - size) / 2f;
+                float top = (getHeight() - size) / 2f;
+                float inset = size * 0.02f;
+                RectF bounds = new RectF(left + inset, top + inset,
+                    left + size - inset, top + size - inset);
+                float centerX = bounds.centerX();
+                float centerY = bounds.centerY();
+                float spread = 0.5f - (0.5f * (float) Math.cos(motionPhase * Math.PI * 2f));
+                float easedSpread = spread * spread * (3f - (2f * spread));
+                float distance = size * 0.052f * easedSpread;
+                float fold = 9f * easedSpread;
+
+                canvas.save();
+                canvas.rotate(motionPhase * 360f, centerX, centerY);
+                drawLogoArm(canvas, bounds, centerX, centerY, -1, -1, distance, -fold);
+                drawLogoArm(canvas, bounds, centerX, centerY, 1, -1, distance, fold);
+                drawLogoArm(canvas, bounds, centerX, centerY, 1, 1, distance, -fold);
+                drawLogoArm(canvas, bounds, centerX, centerY, -1, 1, distance, fold);
+                canvas.restore();
+                return;
+            }
+
             float size = Math.min(getWidth(), getHeight());
             float left = (getWidth() - size) / 2f;
             float top = (getHeight() - size) / 2f;
             float unit = size / 108f;
 
             canvas.save();
-            canvas.translate(left + (8.64f * unit), top + (8.64f * unit));
-            canvas.scale(0.84f * unit, 0.84f * unit);
+            canvas.translate(left, top);
+            canvas.scale(unit, unit);
 
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(5.5f);
-
-            mark.reset();
-            mark.moveTo(34f, 69.5f);
-            mark.cubicTo(26.2f, 66.2f, 20.8f, 58.9f, 20.8f, 50.5f);
-            mark.cubicTo(20.8f, 38.5f, 30.5f, 28.8f, 42.5f, 28.8f);
-            mark.cubicTo(54.5f, 28.8f, 64.3f, 38.5f, 64.3f, 50.5f);
-            mark.cubicTo(64.3f, 58.9f, 58.9f, 66.2f, 51f, 69.5f);
-            canvas.drawPath(mark, paint);
+            float wave = (float) Math.sin(motionPhase * Math.PI * 2f);
+            float pinch = (float) Math.sin(motionPhase * Math.PI * 4f);
 
             paint.setStyle(Paint.Style.FILL);
-            canvas.drawRect(20.8f, 71.1f, 36.2f, 75.5f, paint);
-            canvas.drawRect(30.7f, 67.8f, 36.2f, 75.5f, paint);
-            canvas.drawRect(48.8f, 67.8f, 54.3f, 75.5f, paint);
-            canvas.drawRect(48.8f, 71.1f, 64.3f, 75.5f, paint);
-            canvas.drawRect(71.6f, 71.1f, 90.1f, 75.5f, paint);
+            paint.setColor(Color.argb(58, 232, 232, 235));
+            for (int index = 0; index < 16; index++) {
+                double angle = (Math.PI * 2d * index) / 16d;
+                canvas.drawCircle(54f + (31f * (float) Math.cos(angle)),
+                    54f + (31f * (float) Math.sin(angle)), 0.55f, paint);
+            }
+
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(1.05f);
+            paint.setColor(Color.argb(150, 232, 232, 235));
+            canvas.drawLine(54f, 15f, 54f, 25f, paint);
+            canvas.drawLine(54f, 83f, 54f, 93f, paint);
+            canvas.drawLine(15f, 54f, 25f, 54f, paint);
+            canvas.drawLine(83f, 54f, 93f, 54f, paint);
+
+            float fabricWarp = 9f + (0.9f * wave);
+            float fabricFold = 3f + (0.35f * pinch);
+            mark.reset();
+            mark.moveTo(15f, 54f);
+            mark.cubicTo(31f, 49f, 43f, 54f - fabricWarp, 54f, 54f - fabricWarp);
+            mark.cubicTo(65f, 54f - fabricWarp, 77f, 49f, 93f, 54f);
+            mark.moveTo(15f, 54f);
+            mark.cubicTo(31f, 59f, 43f, 54f + fabricWarp, 54f, 54f + fabricWarp);
+            mark.cubicTo(65f, 54f + fabricWarp, 77f, 59f, 93f, 54f);
+            paint.setStrokeWidth(1.25f);
+            paint.setColor(Color.argb(205, 232, 232, 235));
+            canvas.drawPath(mark, paint);
+            canvas.drawLine(15f, 54f, 93f, 54f, paint);
+            paint.setStrokeWidth(0.9f);
+            paint.setColor(Color.argb(138, 232, 232, 235));
+            mark.reset();
+            mark.moveTo(25f, 54f - fabricFold);
+            mark.cubicTo(37f, 52f, 47f, 53f, 54f, 54f);
+            mark.cubicTo(61f, 53f, 71f, 52f, 83f, 54f - fabricFold);
+            mark.moveTo(25f, 54f + fabricFold);
+            mark.cubicTo(37f, 56f, 47f, 55f, 54f, 54f);
+            mark.cubicTo(61f, 55f, 71f, 56f, 83f, 54f + fabricFold);
+            canvas.drawPath(mark, paint);
+
+            float coneHalfWidth = 23f * (1f - (0.055f * pinch));
+            canvas.save();
+            canvas.rotate(4.2f * wave, 54f, 54f);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.argb(38, 232, 232, 235));
+            mark.reset();
+            mark.moveTo(54f - coneHalfWidth, 28f);
+            mark.cubicTo(43f, 23.5f, 65f, 23.5f, 54f + coneHalfWidth, 28f);
+            mark.lineTo(54f, 54f);
+            mark.close();
+            canvas.drawPath(mark, paint);
+            mark.reset();
+            mark.moveTo(54f - coneHalfWidth, 80f);
+            mark.cubicTo(43f, 84.5f, 65f, 84.5f, 54f + coneHalfWidth, 80f);
+            mark.lineTo(54f, 54f);
+            mark.close();
+            canvas.drawPath(mark, paint);
+
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(1.55f);
+            paint.setColor(Color.rgb(232, 232, 235));
+            mark.reset();
+            mark.moveTo(54f - coneHalfWidth, 28f);
+            mark.cubicTo(43f, 23.5f, 65f, 23.5f, 54f + coneHalfWidth, 28f);
+            mark.lineTo(54f, 54f);
+            mark.close();
+            canvas.drawPath(mark, paint);
+            mark.reset();
+            mark.moveTo(54f - coneHalfWidth, 80f);
+            mark.cubicTo(43f, 84.5f, 65f, 84.5f, 54f + coneHalfWidth, 80f);
+            mark.lineTo(54f, 54f);
+            mark.close();
+            canvas.drawPath(mark, paint);
+            canvas.restore();
+
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.rgb(232, 232, 235));
+            canvas.drawCircle(54f, 11f, 1.2f, paint);
+            canvas.drawCircle(54f, 16f, 0.7f, paint);
+            canvas.drawCircle(54f, 97f, 1.2f, paint);
+            canvas.drawCircle(54f, 92f, 0.7f, paint);
+            canvas.drawCircle(13f, 54f, 1.35f, paint);
+            canvas.drawCircle(95f, 54f, 1.35f, paint);
+            canvas.drawCircle(54f, 54f, 1f, paint);
+
             canvas.restore();
         }
     }

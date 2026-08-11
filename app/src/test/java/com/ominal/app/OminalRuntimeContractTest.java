@@ -22,7 +22,7 @@ public class OminalRuntimeContractTest {
             false, true, true, "/root/workspace/.ominal/events.jsonl", "thread-1", false);
         JSONObject contract = new JSONObject(json);
 
-        assertEquals(5, contract.getInt("schemaVersion"));
+        assertEquals(6, contract.getInt("schemaVersion"));
         assertEquals("/root/workspace", contract.getJSONObject("session").getString("workspace"));
         assertEquals("native-x11-surface", contract.getJSONObject("display").getString("renderer"));
         assertEquals("absolute", contract.getJSONObject("display")
@@ -42,6 +42,20 @@ public class OminalRuntimeContractTest {
         assertEquals("thread-1", contract.getJSONObject("agent").getString("threadId"));
         assertFalse(contract.getJSONObject("android").getBoolean("enabled"));
         assertFalse(contract.getJSONObject("permissions").getBoolean("androidBridge"));
+        assertTrue(contract.getJSONObject("permissions").getBoolean("uiAppearanceControl"));
+        assertEquals("GIR", contract.getJSONObject("ui").getString("publicName"));
+        assertEquals("theme-list",
+            contract.getJSONObject("ui").getString("appearanceControl"));
+        assertEquals("dark", contract.getJSONObject("ui")
+            .getJSONArray("builtInThemes").getString(0));
+        assertEquals("light", contract.getJSONObject("ui")
+            .getJSONArray("builtInThemes").getString(1));
+        assertTrue(contract.getJSONObject("ui").getBoolean("namedThemes"));
+        assertTrue(contract.getJSONObject("ui")
+            .getBoolean("namedThemesVisibleInAppearance"));
+        assertTrue(contract.getJSONObject("ui")
+            .getBoolean("namedThemesRequireExplicitUserRequest"));
+        assertTrue(contract.getJSONObject("ui").getBoolean("semanticControlsImmutable"));
         assertEquals("attachments/spec.txt", contract.getJSONArray("attachments").getString(0));
         assertFalse(json.toLowerCase().contains("api_key"));
         assertFalse(json.toLowerCase().contains("access_token"));
@@ -63,6 +77,12 @@ public class OminalRuntimeContractTest {
         assertFalse(contract.getJSONObject("android").getJSONObject("capabilities")
             .getBoolean("globalTouch"));
         assertTrue(contract.getJSONObject("permissions").getBoolean("androidBridge"));
-        assertTrue(contract.getJSONArray("tools").getJSONObject(2).getBoolean("available"));
+        boolean deviceToolAvailable = false;
+        for (int i = 0; i < contract.getJSONArray("tools").length(); i++) {
+            JSONObject tool = contract.getJSONArray("tools").getJSONObject(i);
+            if ("ominal-device".equals(tool.getString("name")))
+                deviceToolAvailable = tool.getBoolean("available");
+        }
+        assertTrue(deviceToolAvailable);
     }
 }

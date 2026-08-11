@@ -6,6 +6,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.os.Environment;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -19,6 +20,7 @@ import android.widget.Toast;
 
 import com.ominal.R;
 import com.ominal.app.OminalActivity;
+import com.ominal.app.OminalUrlRequestBridge;
 import com.ominal.shared.file.FileUtils;
 import com.ominal.shared.interact.MessageDialogUtils;
 import com.ominal.shared.interact.ShareUtils;
@@ -193,7 +195,7 @@ public class OminalTerminalViewClient extends OminalTerminalViewClientBase {
 
             if (!urlSet.isEmpty()) {
                 String url = (String) urlSet.iterator().next();
-                ShareUtils.openUrl(mActivity, url);
+                OminalUrlRequestBridge.showDestinationChooser(mActivity, Uri.parse(url));
                 return;
             }
         }
@@ -718,7 +720,7 @@ public class OminalTerminalViewClient extends OminalTerminalViewClientBase {
             lv.setOnItemLongClickListener((parent, view, position, id) -> {
                 dialog.dismiss();
                 String url = (String) urls[position];
-                ShareUtils.openUrl(mActivity, url);
+                OminalUrlRequestBridge.showDestinationChooser(mActivity, Uri.parse(url));
                 return true;
             });
         });

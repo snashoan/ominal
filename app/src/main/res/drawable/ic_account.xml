@@ -9,6 +9,6 @@
         android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeWidth="1.7"
-        android:pathData="M12,11a3.5,3.5 0,1 0,0 -7a3.5,3.5 0,1 0,0 7M5.5,20v-1.25c0,-3.05 2.9,-5.25 6.5,-5.25s6.5,2.2 6.5,5.25V20" />
+        android:strokeWidth="1.65"
+        android:pathData="M12,21a9,9 0,1 0,0 -18a9,9 0,1 0,0 18M12,12a3,3 0,1 0,0 -6a3,3 0,1 0,0 6M6.7,18.1c0.75,-2.45 2.7,-3.85 5.3,-3.85s4.55,1.4 5.3,3.85" />
 </vector>

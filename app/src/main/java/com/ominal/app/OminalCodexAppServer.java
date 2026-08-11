@@ -90,6 +90,12 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
         return OminalHarnessTerminal.CODEX_ID;
     }
 
+    @NonNull
+    @Override
+    public String transportId() {
+        return "codex-app-server";
+    }
+
     @Override
     public synchronized boolean submit(@NonNull TurnRequest request, @NonNull Listener listener) {
         if (mActiveTurn != null) return false;

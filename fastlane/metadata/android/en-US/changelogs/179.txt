@@ -1,0 +1,1 @@
+Appearance now lists immutable Light and Dark themes alongside separate custom themes. Linux dialogs stay within phone geometry as bottom sheets, and setup rotates contextual workflow tips.

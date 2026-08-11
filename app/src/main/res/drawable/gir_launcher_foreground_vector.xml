@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:left="12dp"
+        android:top="12dp"
+        android:right="12dp"
+        android:bottom="12dp">
+        <bitmap
+            android:src="@drawable/gir_final_logo"
+            android:gravity="fill"
+            android:antialias="true"
+            android:dither="true"
+            android:filter="true"
+            android:tint="#FFFFFFFF" />
+    </item>
+</layer-list>
