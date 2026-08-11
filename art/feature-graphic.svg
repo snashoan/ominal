@@ -1,16 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500">
+  <defs>
+    <filter id="mark-white" color-interpolation-filters="sRGB">
+      <feFlood flood-color="#f5f5f7" result="color"/>
+      <feComposite in="color" in2="SourceAlpha" operator="in"/>
+    </filter>
+  </defs>
   <rect width="1024" height="500" fill="#050506"/>
   <path d="M0 70H1024M0 430H1024" stroke="#18181b"/>
-  <g transform="translate(72 48) scale(3.75)" stroke="#ff174f" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M28 28C38 24 70 24 80 28L54 54Z" fill="#ff174f" fill-opacity=".15" stroke-width="1.7"/>
-    <path d="M28 80C38 84 70 84 80 80L54 54Z" fill="#ff174f" fill-opacity=".15" stroke-width="1.7"/>
-    <ellipse cx="54" cy="28" rx="26" ry="4" stroke-width="1.5"/>
-    <ellipse cx="54" cy="80" rx="26" ry="4" stroke-width="1.5"/>
-    <path d="M31 41A28 28 0 0 0 26 51M77 41A28 28 0 0 1 82 51M26 57A28 28 0 0 0 31 67M82 57A28 28 0 0 1 77 67" stroke-width="1.2"/>
-  </g>
+  <image href="../app/src/main/res/drawable-nodpi/gir_final_logo.png"
+    x="35" y="40" width="420" height="420" filter="url(#mark-white)"/>
   <text x="500" y="220" fill="#f5f5f7" font-family="Segoe UI, Arial, sans-serif" font-size="92" font-weight="600">GIR</text>
-  <text x="506" y="267" fill="#ff315e" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="600">COMPUTER INTELLIGENCE</text>
+  <text x="506" y="267" fill="#bebec4" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="600">COMPUTER INTELLIGENCE</text>
   <text x="506" y="315" fill="#b7b7bd" font-family="Segoe UI, Arial, sans-serif" font-size="25">A complete Linux workspace,</text>
   <text x="506" y="348" fill="#b7b7bd" font-family="Segoe UI, Arial, sans-serif" font-size="25">in conversation.</text>
   <text x="506" y="405" fill="#707078" font-family="Consolas, Menlo, monospace" font-size="14">CHAT / FILES / TERMINAL / SCREEN</text>
