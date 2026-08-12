@@ -264,6 +264,7 @@ public final class OringutanActivity extends AppCompatActivity
     private View mComposerView;
     private FrameLayout mContentFrame;
     private ScrollView mScrollView;
+    private ImageButton mJumpToLatestButton;
     private EditText mPromptInput;
     private ImageButton mHarnessControlsButton;
     private TextView mHarnessContextView;
@@ -1739,7 +1740,7 @@ public final class OringutanActivity extends AppCompatActivity
         content.addView(mark, new LinearLayout.LayoutParams(dp(64), dp(64)));
 
         TextView title = new TextView(this);
-        title.setText("Choose your agent");
+        title.setText("Choose a runtime");
         title.setTextColor(Color.WHITE);
         title.setTextSize(26);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
@@ -1751,7 +1752,8 @@ public final class OringutanActivity extends AppCompatActivity
         content.addView(title, titleParams);
 
         TextView detail = new TextView(this);
-        detail.setText("Connect an installed harness. You can change it for any conversation.");
+        detail.setText("Connect an intelligence runtime, or continue without one. "
+            + "You can change it for any conversation.");
         detail.setTextColor(Color.rgb(174, 174, 174));
         detail.setTextSize(15);
         detail.setGravity(Gravity.CENTER);
@@ -1772,7 +1774,7 @@ public final class OringutanActivity extends AppCompatActivity
         }
 
         mPairingCodexButton = createPairingProviderRow(
-            R.drawable.provider_codex, "Codex", "OpenAI", dp(7));
+            R.drawable.provider_codex, "Codex", "Independent runtime", dp(7));
         mPairingCodexButton.setOnClickListener(v -> {
             setPairingBusy(true, "");
             if (mActiveSession != null)
@@ -1784,7 +1786,7 @@ public final class OringutanActivity extends AppCompatActivity
         providerGroup.addView(createPairingDivider());
 
         mPairingClaudeButton = createPairingProviderRow(
-            R.drawable.provider_claude, "Claude Code", "Anthropic", 0);
+            R.drawable.provider_claude, "Claude Code", "Independent runtime", 0);
         mPairingClaudeButton.setOnClickListener(v -> {
             setPairingBusy(true, "");
             if (mActiveSession != null)
@@ -1796,7 +1798,7 @@ public final class OringutanActivity extends AppCompatActivity
         providerGroup.addView(createPairingDivider());
 
         mPairingAntigravityButton = createPairingProviderRow(
-            R.drawable.provider_antigravity, "Antigravity", "Google", dp(5));
+            R.drawable.provider_antigravity, "Antigravity", "Independent runtime", dp(5));
         mPairingAntigravityButton.setOnClickListener(v -> {
             setPairingBusy(true, "");
             if (mActiveSession != null)
@@ -1811,7 +1813,7 @@ public final class OringutanActivity extends AppCompatActivity
         providerParams.setMargins(0, dp(32), 0, 0);
         content.addView(providerGroup, providerParams);
 
-        mPairingComputerOnlyButton = createPairingQuietButton("Continue without an agent");
+        mPairingComputerOnlyButton = createPairingQuietButton("Continue without intelligence");
         mPairingComputerOnlyButton.setOnClickListener(v -> completeRunnerPairing(false));
         LinearLayout.LayoutParams computerOnlyParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
@@ -1819,7 +1821,7 @@ public final class OringutanActivity extends AppCompatActivity
         content.addView(mPairingComputerOnlyButton, computerOnlyParams);
 
         TextView attribution = new TextView(this);
-        attribution.setText("Sign-in stays between you and the selected provider.");
+        attribution.setText("Authentication stays inside the selected runtime.");
         attribution.setTextColor(Color.rgb(100, 100, 100));
         attribution.setTextSize(12);
         attribution.setGravity(Gravity.CENTER);
@@ -3021,6 +3023,7 @@ public final class OringutanActivity extends AppCompatActivity
         mContentFrame.removeAllViews();
         mMessagesView = null;
         mScrollView = null;
+        mJumpToLatestButton = null;
         mActiveAgentTurnView = null;
         if (mMode == MODE_DISPLAY) {
             View displayPane = getOrCreateDisplayPane();
@@ -3189,8 +3192,13 @@ public final class OringutanActivity extends AppCompatActivity
         mActiveAgentTurnView = null;
         mChatScrollState.reset();
         mChatScrollGestureActive = false;
+
+        FrameLayout chatPane = new FrameLayout(this);
+        chatPane.setBackgroundColor(ui.chat.fill);
+
         mScrollView = new ScrollView(this);
         mScrollView.setFillViewport(true);
+        mScrollView.setVerticalScrollBarEnabled(false);
         mScrollView.setBackgroundColor(ui.chat.fill);
         mScrollView.setOnTouchListener((view, event) -> {
             switch (event.getActionMasked()) {
@@ -3202,6 +3210,8 @@ public final class OringutanActivity extends AppCompatActivity
                 case MotionEvent.ACTION_CANCEL:
                     updateChatScrollPreference();
                     mChatScrollGestureActive = false;
+                    mScrollView.postDelayed(this::updateChatScrollPreference, 90L);
+                    mScrollView.postDelayed(this::updateChatScrollPreference, 240L);
                     break;
                 default:
                     break;
@@ -3217,6 +3227,17 @@ public final class OringutanActivity extends AppCompatActivity
         mMessagesView.setPadding(dp(18), dp(10), dp(18), dp(22));
         mScrollView.addView(mMessagesView, new ScrollView.LayoutParams(
             ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+        chatPane.addView(mScrollView, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        mJumpToLatestButton = createToolbarIconButton(
+            R.drawable.ic_arrow_down, "Jump to latest message");
+        mJumpToLatestButton.setVisibility(View.GONE);
+        mJumpToLatestButton.setOnClickListener(view -> scrollToBottom(true));
+        FrameLayout.LayoutParams jumpParams = new FrameLayout.LayoutParams(dp(42), dp(42));
+        jumpParams.gravity = Gravity.END | Gravity.BOTTOM;
+        jumpParams.setMargins(dp(16), dp(12), dp(16), dp(12));
+        chatPane.addView(mJumpToLatestButton, jumpParams);
 
         if (mActiveSession != null) {
             for (ChatMessage message : mActiveSession.messages) {
@@ -3228,7 +3249,7 @@ public final class OringutanActivity extends AppCompatActivity
             bindAgentSnapshotToChat(mAgentRuntime.snapshot(mActiveSession.id));
 
         scrollToBottom(true);
-        return mScrollView;
+        return chatPane;
     }
 
     private View createTerminalPane() {
@@ -3527,7 +3548,7 @@ public final class OringutanActivity extends AppCompatActivity
         mDisplayAgentPulse = new WorkPulseView(this,
             Color.rgb(148, 148, 148), Color.rgb(242, 242, 242));
         mDisplayAgentStatusView.addView(mDisplayAgentPulse,
-            new LinearLayout.LayoutParams(dp(22), dp(18)));
+            new LinearLayout.LayoutParams(dp(22), dp(22)));
 
         mDisplayAgentStatusText = new TextView(this);
         mDisplayAgentStatusText.setTextColor(Color.rgb(242, 242, 242));
@@ -5682,7 +5703,7 @@ public final class OringutanActivity extends AppCompatActivity
         statusRow.setPadding(0, dp(3), 0, 0);
 
         WorkPulseView pulse = new WorkPulseView(this, ui.muted, ui.ink);
-        statusRow.addView(pulse, new LinearLayout.LayoutParams(dp(14), dp(18)));
+        statusRow.addView(pulse, new LinearLayout.LayoutParams(dp(22), dp(22)));
 
         TextView detail = new TextView(this);
         detail.setText(status);
@@ -5751,7 +5772,8 @@ public final class OringutanActivity extends AppCompatActivity
         else view.detail.setText(view.status + "  /  " + total);
         view.detail.setVisibility(view.detail.getText().length() == 0 ? View.GONE : View.VISIBLE);
         view.pulse.setRunning(view.running);
-        view.pulse.setVisibility(view.detail.getVisibility());
+        view.pulse.setVisibility(view.running
+            && view.detail.getVisibility() == View.VISIBLE ? View.VISIBLE : View.GONE);
         view.meter.setUsage(view.usage);
         view.meter.setVisibility(view.expanded && view.usage != null ? View.VISIBLE : View.GONE);
         view.breakdown.setText(tokenUsageLabel(view.usage));
@@ -6090,10 +6112,13 @@ public final class OringutanActivity extends AppCompatActivity
     private void scrollToBottom(boolean force) {
         if (mScrollView == null) return;
         if (force) mChatScrollState.followLatest();
+        updateJumpToLatestButton();
         if (!mChatScrollState.shouldFollowLatest()) return;
         mScrollView.post(() -> {
-            if (mScrollView != null && mChatScrollState.shouldFollowLatest())
+            if (mScrollView != null && mChatScrollState.shouldFollowLatest()) {
                 mScrollView.fullScroll(View.FOCUS_DOWN);
+                updateJumpToLatestButton();
+            }
         });
     }
 
@@ -6101,6 +6126,40 @@ public final class OringutanActivity extends AppCompatActivity
         if (mScrollView == null || mMessagesView == null) return;
         mChatScrollState.onUserScroll(mScrollView.getScrollY(), mScrollView.getHeight(),
             mMessagesView.getHeight(), dp(56));
+        updateJumpToLatestButton();
+    }
+
+    private void updateJumpToLatestButton() {
+        if (mJumpToLatestButton == null) return;
+        ImageButton button = mJumpToLatestButton;
+        boolean visible = !mChatScrollState.shouldFollowLatest();
+        if (visible && button.getVisibility() != View.VISIBLE) {
+            button.animate().cancel();
+            button.setAlpha(0f);
+            button.setTranslationY(dp(6));
+            button.setVisibility(View.VISIBLE);
+            button.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(160L)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .start();
+        } else if (!visible && button.getVisibility() == View.VISIBLE) {
+            button.animate().cancel();
+            button.animate()
+                .alpha(0f)
+                .translationY(dp(4))
+                .setDuration(120L)
+                .withEndAction(() -> {
+                    if (mJumpToLatestButton == button
+                        && mChatScrollState.shouldFollowLatest()) {
+                        button.setVisibility(View.GONE);
+                        button.setAlpha(1f);
+                        button.setTranslationY(0f);
+                    }
+                })
+                .start();
+        }
     }
 
     private void animateModeView(View view) {
@@ -8015,47 +8074,100 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private static final class WorkPulseView extends View {
+        private static Bitmap sLogo;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final float density;
-        private final int idleColor;
-        private final int activeColor;
-        private int phase;
+        private final Bitmap logo;
+        private final android.graphics.ColorFilter idleFilter;
+        private final android.graphics.ColorFilter activeFilter;
         private boolean running;
+        private long rotationStartedAt;
         private final Runnable tick = new Runnable() {
             @Override
             public void run() {
                 if (!running) return;
-                phase = (phase + 1) % 2;
                 invalidate();
-                postDelayed(this, 520);
+                postOnAnimation(this);
             }
         };
 
         WorkPulseView(Context context, int idleColor, int activeColor) {
             super(context);
-            density = context.getResources().getDisplayMetrics().density;
-            this.idleColor = idleColor;
-            this.activeColor = activeColor;
+            logo = sharedLogo(context);
+            idleFilter = new android.graphics.PorterDuffColorFilter(
+                idleColor, android.graphics.PorterDuff.Mode.SRC_IN);
+            activeFilter = new android.graphics.PorterDuffColorFilter(
+                activeColor, android.graphics.PorterDuff.Mode.SRC_IN);
+            paint.setDither(true);
+            paint.setFilterBitmap(true);
+        }
+
+        private static synchronized Bitmap sharedLogo(Context context) {
+            if (sLogo == null)
+                sLogo = BitmapFactory.decodeResource(
+                    context.getApplicationContext().getResources(), R.drawable.gir_final_logo);
+            return sLogo;
         }
 
         void setRunning(boolean value) {
             if (running == value) return;
             running = value;
             removeCallbacks(tick);
-            if (running) post(tick);
+            rotationStartedAt = SystemClock.uptimeMillis();
+            if (running) postOnAnimation(tick);
             invalidate();
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            paint.setStrokeWidth(1.5f * density);
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setColor(running ? activeColor : idleColor);
-            paint.setAlpha(running ? (phase == 0 ? 255 : 96) : 132);
-            float half = 4f * density;
-            canvas.drawLine(getWidth() / 2f - half, getHeight() / 2f,
-                getWidth() / 2f + half, getHeight() / 2f, paint);
+            if (logo == null || getWidth() <= 0 || getHeight() <= 0) return;
+            float size = Math.min(getWidth(), getHeight());
+            float inset = Math.max(1f, size * 0.08f);
+            RectF bounds = new RectF(
+                (getWidth() - size) / 2f + inset,
+                (getHeight() - size) / 2f + inset,
+                (getWidth() + size) / 2f - inset,
+                (getHeight() + size) / 2f - inset);
+            paint.setColorFilter(running ? activeFilter : idleFilter);
+            paint.setAlpha(running ? 255 : 150);
+            if (!running) {
+                canvas.drawBitmap(logo, null, bounds, paint);
+                return;
+            }
+
+            float phase = ((SystemClock.uptimeMillis() - rotationStartedAt) % 1200L) / 1200f;
+            float centerX = bounds.centerX();
+            float centerY = bounds.centerY();
+            float wave = 0.5f - 0.5f * (float) Math.cos(phase * Math.PI * 4f);
+
+            canvas.save();
+            canvas.rotate(phase * 360f, centerX, centerY);
+            float scale = 0.97f + 0.03f * wave;
+            canvas.scale(scale, scale, centerX, centerY);
+            drawLogoQuadrant(canvas, bounds, bounds.left, bounds.top, centerX, centerY, 255);
+            drawLogoQuadrant(canvas, bounds, centerX, bounds.top, bounds.right, centerY, 170);
+            drawLogoQuadrant(canvas, bounds, centerX, centerY, bounds.right, bounds.bottom, 100);
+            drawLogoQuadrant(canvas, bounds, bounds.left, centerY, centerX, bounds.bottom, 55);
+            canvas.restore();
+            paint.setAlpha(255);
+        }
+
+        private void drawLogoQuadrant(Canvas canvas, RectF bounds, float left, float top,
+                                      float right, float bottom, int alpha) {
+            canvas.save();
+            canvas.clipRect(left, top, right, bottom);
+            paint.setAlpha(alpha);
+            canvas.drawBitmap(logo, null, bounds, paint);
+            canvas.restore();
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (running) {
+                removeCallbacks(tick);
+                postOnAnimation(tick);
+            }
         }
 
         @Override

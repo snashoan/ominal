@@ -1,0 +1,3 @@
+Targets Android 16 and includes compatibility validation for system navigation, edge-to-edge layouts, and the ARM64 runtime.
+
+Active work now uses the animated GIR mark. Chat scrolling stays under the reader's control and offers a jump-to-latest action when new output arrives off-screen.
