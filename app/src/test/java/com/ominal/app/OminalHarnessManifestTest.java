@@ -15,6 +15,9 @@ public class OminalHarnessManifestTest {
     @Test
     public void parsesValidatedHarnessCapabilities() throws Exception {
         JSONObject manifest = validManifest()
+            .put("identity", new JSONObject()
+                .put("name", "Antigravity")
+                .put("publisher", "Google"))
             .put("models", new JSONArray().put(new JSONObject()
                 .put("id", "agy-pro")
                 .put("label", "Pro")
@@ -26,6 +29,8 @@ public class OminalHarnessManifestTest {
         OminalHarnessManifest parsed = OminalHarnessManifest.fromJson(manifest);
 
         assertEquals("antigravity", parsed.harnessId);
+        assertEquals("Antigravity", parsed.displayName);
+        assertEquals("Google", parsed.publisher);
         assertEquals("stream-json", parsed.outputFormat);
         assertEquals("--conversation", parsed.resumeFlag);
         assertEquals("--model", parsed.modelFlag);
@@ -54,6 +59,14 @@ public class OminalHarnessManifestTest {
     public void rejectsAutonomyWithoutVerifiedFlag() throws Exception {
         JSONObject manifest = validManifest();
         manifest.getJSONObject("autonomy").put("flag", "");
+        OminalHarnessManifest.fromJson(manifest);
+    }
+
+    @Test(expected = JSONException.class)
+    public void rejectsUnsafeRuntimeIdentity() throws Exception {
+        JSONObject manifest = validManifest().put("identity", new JSONObject()
+            .put("name", "Broken\nRuntime")
+            .put("publisher", "Publisher"));
         OminalHarnessManifest.fromJson(manifest);
     }
 

@@ -81,8 +81,9 @@ public final class OminalRuntimeContract {
 
         JSONObject agent = new JSONObject();
         agent.put("provider", harness.getProviderId());
+        agent.put("publisher", OminalHarnessRegistry.resolvedPublisherName(harness));
         agent.put("harness", harness.getId());
-        agent.put("displayName", harness.getDisplayName());
+        agent.put("displayName", OminalHarnessRegistry.resolvedDisplayName(harness));
         agent.put("transport", harness.getTransport());
         agent.put("threadId", threadId == null ? "" : threadId);
         agent.put("authenticated", signedIn);

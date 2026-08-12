@@ -64,6 +64,8 @@ public final class OminalHarnessManifest {
 
     @NonNull public final String harnessId;
     @NonNull public final String binaryVersion;
+    @NonNull public final String displayName;
+    @NonNull public final String publisher;
     @NonNull public final String outputFormat;
     @NonNull public final String resumeFlag;
     @NonNull public final String modelFlag;
@@ -75,6 +77,8 @@ public final class OminalHarnessManifest {
 
     private OminalHarnessManifest(@NonNull String harnessId,
                                   @NonNull String binaryVersion,
+                                  @NonNull String displayName,
+                                  @NonNull String publisher,
                                   @NonNull String outputFormat,
                                   @NonNull String resumeFlag,
                                   @NonNull String modelFlag,
@@ -85,6 +89,8 @@ public final class OminalHarnessManifest {
                                   @NonNull List<Command> commands) {
         this.harnessId = harnessId;
         this.binaryVersion = binaryVersion;
+        this.displayName = displayName;
+        this.publisher = publisher;
         this.outputFormat = outputFormat;
         this.resumeFlag = resumeFlag;
         this.modelFlag = modelFlag;
@@ -104,6 +110,12 @@ public final class OminalHarnessManifest {
             "harness", HARNESS_ID);
         String binaryVersion = requireText(object.getString("binaryVersion"),
             "binaryVersion", 128);
+
+        JSONObject identity = object.optJSONObject("identity");
+        String displayName = identity == null ? ""
+            : optionalSafeText(identity, "name", 80);
+        String publisher = identity == null ? ""
+            : optionalSafeText(identity, "publisher", 120);
 
         JSONObject transport = object.getJSONObject("transport");
         String outputFormat = transport.optString("outputFormat", "text")
@@ -126,7 +138,8 @@ public final class OminalHarnessManifest {
 
         List<Model> models = parseModels(object.optJSONArray("models"));
         List<Command> commands = parseCommands(object.optJSONArray("commands"));
-        return new OminalHarnessManifest(harnessId, binaryVersion, outputFormat,
+        return new OminalHarnessManifest(harnessId, binaryVersion, displayName, publisher,
+            outputFormat,
             resumeFlag, modelFlag, effortFlag, autonomyFlag, autonomyEnabled,
             models, commands);
     }
@@ -215,6 +228,15 @@ public final class OminalHarnessManifest {
         String flag = value == null ? "" : value.trim();
         if (flag.isEmpty()) return "";
         return requirePattern(flag, field, FLAG);
+    }
+
+    private static String optionalSafeText(JSONObject object, String field, int maxLength)
+        throws JSONException {
+        if (!object.has(field) || object.isNull(field)) return "";
+        String text = object.optString(field, "").trim();
+        if (text.isEmpty() || text.length() > maxLength || !isSafeText(text))
+            throw new JSONException("Invalid identity " + field);
+        return text;
     }
 
     private static String requirePattern(String value, String field, Pattern pattern)

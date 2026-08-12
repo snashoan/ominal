@@ -296,9 +296,7 @@ public final class OringutanActivity extends AppCompatActivity
     private View mSetupOverlay;
     private View mPairingOverlay;
     private LinearLayout mPairingContent;
-    private View mPairingCodexButton;
-    private View mPairingClaudeButton;
-    private View mPairingAntigravityButton;
+    private final ArrayList<View> mPairingHarnessButtons = new ArrayList<>();
     private View mPairingComputerOnlyButton;
     private SetupMarkView mSetupMarkView;
     private TextView mSetupStageView;
@@ -617,10 +615,11 @@ public final class OringutanActivity extends AppCompatActivity
         ArrayList<OminalInteractionSheet.Section> sections = new ArrayList<>();
         ArrayList<OminalInteractionSheet.Row> account = new ArrayList<>();
         account.add(new OminalInteractionSheet.Row(
-            "agent", "Agent", "Choose the harness for this conversation",
-            harness.getDisplayName(), false, true, false));
+            "agent", "Runtime", "Choose for this conversation",
+            OminalHarnessRegistry.resolvedDisplayName(harness), false, true, false));
         account.add(new OminalInteractionSheet.Row(
-            "account", harness.getDisplayName(), "Sign-in and provider settings",
+            "account", OminalHarnessRegistry.resolvedDisplayName(harness),
+            "Sign-in and runtime settings",
             accountState, codex && mCodexSignedIn, true, false));
         sections.add(new OminalInteractionSheet.Section("Account", account));
 
@@ -670,7 +669,7 @@ public final class OringutanActivity extends AppCompatActivity
         String harnessId = mActiveSession == null
             ? OminalHarnessRegistry.DEFAULT_HARNESS_ID : mActiveSession.harnessId;
         OminalAgentHarness harness = OminalHarnessRegistry.activeOrDefault(harnessId);
-        String harnessName = harness.getDisplayName();
+        String harnessName = OminalHarnessRegistry.resolvedDisplayName(harness);
         boolean codex = OminalHarnessTerminal.CODEX_ID.equals(harnessId);
         boolean sessionExpired = codex && mCodexSessionExpired;
         boolean signedIn = codex && mCodexSignedIn;
@@ -1752,8 +1751,8 @@ public final class OringutanActivity extends AppCompatActivity
         content.addView(title, titleParams);
 
         TextView detail = new TextView(this);
-        detail.setText("Connect an intelligence runtime, or continue without one. "
-            + "You can change it for any conversation.");
+        detail.setText("Choose an installed runtime to open its sign-in. "
+            + "You can switch for each conversation.");
         detail.setTextColor(Color.rgb(174, 174, 174));
         detail.setTextSize(15);
         detail.setGravity(Gravity.CENTER);
@@ -1765,53 +1764,33 @@ public final class OringutanActivity extends AppCompatActivity
         detailParams.setMargins(dp(10), dp(14), dp(10), 0);
         content.addView(detail, detailParams);
 
-        LinearLayout providerGroup = new LinearLayout(this);
-        providerGroup.setOrientation(LinearLayout.VERTICAL);
-        providerGroup.setBackground(makeRoundedDrawable(
+        LinearLayout runtimeGroup = new LinearLayout(this);
+        runtimeGroup.setOrientation(LinearLayout.VERTICAL);
+        runtimeGroup.setBackground(makeRoundedDrawable(
             Color.rgb(16, 16, 16), Color.rgb(48, 48, 48), dp(18)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            providerGroup.setClipToOutline(true);
+            runtimeGroup.setClipToOutline(true);
         }
 
-        mPairingCodexButton = createPairingProviderRow(
-            R.drawable.provider_codex, "Codex", "Independent runtime", dp(7));
-        mPairingCodexButton.setOnClickListener(v -> {
-            setPairingBusy(true, "");
-            if (mActiveSession != null)
-                selectHarness(mActiveSession, OminalHarnessTerminal.CODEX_ID);
-            startCodexTerminal();
-        });
-        providerGroup.addView(mPairingCodexButton, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(70)));
-        providerGroup.addView(createPairingDivider());
+        mPairingHarnessButtons.clear();
+        List<OminalAgentHarness> runtimes = OminalHarnessRegistry.all();
+        for (OminalAgentHarness runtime : runtimes) {
+            if (!runtime.isAvailable()) continue;
+            if (!mPairingHarnessButtons.isEmpty()) runtimeGroup.addView(createPairingDivider());
+            String name = OminalHarnessRegistry.resolvedDisplayName(runtime);
+            String publisher = OminalHarnessRegistry.resolvedPublisherName(runtime);
+            View row = createPairingRuntimeRow(
+                name, publisher + "  ·  Sign in through " + name);
+            row.setOnClickListener(v -> beginRuntimePairing(runtime));
+            mPairingHarnessButtons.add(row);
+            runtimeGroup.addView(row, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(70)));
+        }
 
-        mPairingClaudeButton = createPairingProviderRow(
-            R.drawable.provider_claude, "Claude Code", "Independent runtime", 0);
-        mPairingClaudeButton.setOnClickListener(v -> {
-            setPairingBusy(true, "");
-            if (mActiveSession != null)
-                selectHarness(mActiveSession, OminalHarnessTerminal.CLAUDE_CODE_ID);
-            launchHarnessTerminal(OminalHarnessTerminal.CLAUDE_CODE_ID, true);
-        });
-        providerGroup.addView(mPairingClaudeButton, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(70)));
-        providerGroup.addView(createPairingDivider());
-
-        mPairingAntigravityButton = createPairingProviderRow(
-            R.drawable.provider_antigravity, "Antigravity", "Independent runtime", dp(5));
-        mPairingAntigravityButton.setOnClickListener(v -> {
-            setPairingBusy(true, "");
-            if (mActiveSession != null)
-                selectHarness(mActiveSession, OminalHarnessTerminal.ANTIGRAVITY_ID);
-            launchHarnessTerminal(OminalHarnessTerminal.ANTIGRAVITY_ID, true);
-        });
-        providerGroup.addView(mPairingAntigravityButton, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(70)));
-
-        LinearLayout.LayoutParams providerParams = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams runtimeParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        providerParams.setMargins(0, dp(32), 0, 0);
-        content.addView(providerGroup, providerParams);
+        runtimeParams.setMargins(0, dp(32), 0, 0);
+        content.addView(runtimeGroup, runtimeParams);
 
         mPairingComputerOnlyButton = createPairingQuietButton("Continue without intelligence");
         mPairingComputerOnlyButton.setOnClickListener(v -> completeRunnerPairing(false));
@@ -1821,7 +1800,7 @@ public final class OringutanActivity extends AppCompatActivity
         content.addView(mPairingComputerOnlyButton, computerOnlyParams);
 
         TextView attribution = new TextView(this);
-        attribution.setText("Authentication stays inside the selected runtime.");
+        attribution.setText("Authentication is handled by the selected runtime.");
         attribution.setTextColor(Color.rgb(100, 100, 100));
         attribution.setTextSize(12);
         attribution.setGravity(Gravity.CENTER);
@@ -1838,8 +1817,17 @@ public final class OringutanActivity extends AppCompatActivity
         return overlay;
     }
 
-    private View createPairingProviderRow(int iconResource, String title,
-                                          String detail, int iconInset) {
+    private void beginRuntimePairing(OminalAgentHarness runtime) {
+        setPairingBusy(true, "");
+        if (mActiveSession != null) selectHarness(mActiveSession, runtime.getId());
+        if (OminalHarnessTerminal.CODEX_ID.equals(runtime.getId())) {
+            startCodexTerminal();
+        } else {
+            launchHarnessTerminal(runtime.getId(), true);
+        }
+    }
+
+    private View createPairingRuntimeRow(String title, String detail) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -1856,9 +1844,10 @@ public final class OringutanActivity extends AppCompatActivity
             Color.rgb(27, 27, 27), Color.rgb(53, 53, 53), dp(12)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) iconWell.setClipToOutline(true);
         ImageView icon = new ImageView(this);
-        icon.setImageResource(iconResource);
+        icon.setImageResource(R.drawable.ic_runtime);
+        icon.setImageTintList(ColorStateList.valueOf(Color.WHITE));
         icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        icon.setPadding(iconInset, iconInset, iconInset, iconInset);
+        icon.setPadding(dp(9), dp(9), dp(9), dp(9));
         iconWell.addView(icon, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         row.addView(iconWell, new LinearLayout.LayoutParams(dp(44), dp(44)));
@@ -1997,9 +1986,8 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void setPairingBusy(boolean busy, String status) {
-        setPairingButtonEnabled(mPairingCodexButton, !busy);
-        setPairingButtonEnabled(mPairingClaudeButton, !busy);
-        setPairingButtonEnabled(mPairingAntigravityButton, !busy);
+        for (View button : mPairingHarnessButtons)
+            setPairingButtonEnabled(button, !busy);
         setPairingButtonEnabled(mPairingComputerOnlyButton, !busy);
     }
 
@@ -4087,7 +4075,8 @@ public final class OringutanActivity extends AppCompatActivity
             OminalHarnessRegistry.activeOrDefault(mActiveSession.harnessId);
         OminalHarnessManifest manifest =
             OminalHarnessManifest.load(mActiveSession.harnessId);
-        StringBuilder label = new StringBuilder(harness.getDisplayName());
+        String harnessName = OminalHarnessRegistry.resolvedDisplayName(harness);
+        StringBuilder label = new StringBuilder(harnessName);
         String modelLabel = "Auto";
         if (manifest == null) {
             if (!OminalHarnessTerminal.CODEX_ID.equals(mActiveSession.harnessId)) {
@@ -4111,7 +4100,7 @@ public final class OringutanActivity extends AppCompatActivity
             mHarnessControlsButton.setTooltipText("Agent controls");
         mHarnessControlsButton.setVisibility(View.VISIBLE);
         if (mHarnessContextView != null) {
-            mHarnessContextView.setText(harness.getDisplayName() + "  ·  " + modelLabel);
+            mHarnessContextView.setText(harnessName + "  ·  " + modelLabel);
             mHarnessContextView.setContentDescription(label.toString().replace("  ·  ", ", "));
             mHarnessContextView.setVisibility(View.VISIBLE);
         }
@@ -4128,10 +4117,11 @@ public final class OringutanActivity extends AppCompatActivity
             if (!harness.isAvailable()) continue;
             boolean selected = harness.getId().equals(mActiveSession.harnessId);
             harnessRows.add(new OminalInteractionSheet.Row("harness:" + harness.getId(),
-                harness.getDisplayName(), selected ? "Active for this conversation" : "Switch agent",
+                OminalHarnessRegistry.resolvedDisplayName(harness),
+                selected ? "Active for this conversation" : "Switch runtime",
                 selected ? "Current" : "", selected, true, false));
         }
-        sections.add(new OminalInteractionSheet.Section("Agent", harnessRows));
+        sections.add(new OminalInteractionSheet.Section("Runtime", harnessRows));
 
         ArrayList<OminalInteractionSheet.Row> configurationRows = new ArrayList<>();
         if (manifest == null) {
@@ -4171,8 +4161,8 @@ public final class OringutanActivity extends AppCompatActivity
         }
         sections.add(new OminalInteractionSheet.Section("Controls", configurationRows));
 
-        String agentName = OminalHarnessRegistry.activeOrDefault(
-            mActiveSession.harnessId).getDisplayName();
+        String agentName = OminalHarnessRegistry.resolvedDisplayName(
+            OminalHarnessRegistry.activeOrDefault(mActiveSession.harnessId));
         OminalInteractionSheet.show(this, interactionSheetTheme(), "Agent",
             agentName + " is active for this conversation.", sections, id -> {
                 if (id.startsWith("harness:")) {
@@ -4343,7 +4333,7 @@ public final class OringutanActivity extends AppCompatActivity
             String query = lower.substring("/harness ".length()).trim();
             for (OminalAgentHarness harness : OminalHarnessRegistry.all()) {
                 if (!harness.isAvailable() || !harness.getId().startsWith(query)) continue;
-                addCommandSuggestion(harness.getDisplayName(), "Agent",
+                addCommandSuggestion(OminalHarnessRegistry.resolvedDisplayName(harness), "Agent",
                     "/harness " + harness.getId());
             }
         } else if (lower.startsWith("/model ") && manifest != null
@@ -5351,7 +5341,8 @@ public final class OringutanActivity extends AppCompatActivity
         }
 
         OminalAgentHarness harness = OminalHarnessRegistry.find(harnessId);
-        String displayName = harness == null ? harnessId : harness.getDisplayName();
+        String displayName = harness == null ? harnessId
+            : OminalHarnessRegistry.resolvedDisplayName(harness);
         ensureDirectory(mActiveSession.workspacePath);
 
         Intent executeIntent = new Intent(OMINAL_SERVICE.ACTION_SERVICE_EXECUTE);
@@ -6484,7 +6475,8 @@ public final class OringutanActivity extends AppCompatActivity
         OminalAgentHarness harness = OminalHarnessRegistry.activeOrDefault(harnessId);
         boolean signedIn = OminalHarnessTerminal.CODEX_ID.equals(harnessId) && mCodexSignedIn;
         styleHeaderButton(mAccountButton, signedIn);
-        mAccountButton.setContentDescription(harness.getDisplayName());
+        mAccountButton.setContentDescription(
+            OminalHarnessRegistry.resolvedDisplayName(harness));
     }
 
     private boolean isLoloModeEnabled() {

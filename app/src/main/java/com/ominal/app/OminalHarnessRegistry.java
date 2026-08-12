@@ -18,6 +18,7 @@ public final class OminalHarnessRegistry {
         register(harnesses, new OminalAgentHarness(
             "codex",
             "openai",
+            "OpenAI",
             "Codex",
             "app-server",
             OminalAgentHarness.Availability.AVAILABLE,
@@ -28,6 +29,7 @@ public final class OminalHarnessRegistry {
         register(harnesses, new OminalAgentHarness(
             "claude-code",
             "anthropic",
+            "Anthropic",
             "Claude Code",
             "harness-native",
             OminalAgentHarness.Availability.AVAILABLE,
@@ -37,6 +39,7 @@ public final class OminalHarnessRegistry {
         register(harnesses, new OminalAgentHarness(
             "antigravity",
             "google",
+            "Google",
             "Antigravity",
             "harness-native",
             OminalAgentHarness.Availability.AVAILABLE,
@@ -66,6 +69,18 @@ public final class OminalHarnessRegistry {
 
     public static OminalAgentHarness activeOrDefault(String requestedId) {
         return HARNESSES.get(normalizeSelectedId(requestedId));
+    }
+
+    public static String resolvedDisplayName(OminalAgentHarness harness) {
+        OminalHarnessManifest manifest = OminalHarnessManifest.load(harness.getId());
+        return manifest == null || manifest.displayName.isEmpty()
+            ? harness.getDisplayName() : manifest.displayName;
+    }
+
+    public static String resolvedPublisherName(OminalAgentHarness harness) {
+        OminalHarnessManifest manifest = OminalHarnessManifest.load(harness.getId());
+        return manifest == null || manifest.publisher.isEmpty()
+            ? harness.getPublisherName() : manifest.publisher;
     }
 
     private static void register(Map<String, OminalAgentHarness> harnesses,

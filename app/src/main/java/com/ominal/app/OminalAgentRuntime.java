@@ -736,6 +736,7 @@ public final class OminalAgentRuntime {
 
     private static String harnessName(String harnessId) {
         OminalAgentHarness harness = OminalHarnessRegistry.find(harnessId);
-        return harness == null ? harnessId : harness.getDisplayName();
+        return harness == null ? harnessId
+            : OminalHarnessRegistry.resolvedDisplayName(harness);
     }
 }

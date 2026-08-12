@@ -33,6 +33,7 @@ public class OminalHarnessRegistryTest {
         assertNotNull(harness);
         assertEquals("codex", harness.getId());
         assertEquals("openai", harness.getProviderId());
+        assertEquals("OpenAI", harness.getPublisherName());
         assertEquals("app-server", harness.getTransport());
         assertTrue(harness.getAuthModes().contains(OminalAgentHarness.AuthMode.BROWSER));
     }

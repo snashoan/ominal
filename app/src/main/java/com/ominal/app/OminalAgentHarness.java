@@ -19,16 +19,19 @@ public final class OminalAgentHarness {
 
     private final String mId;
     private final String mProviderId;
+    private final String mPublisherName;
     private final String mDisplayName;
     private final String mTransport;
     private final Availability mAvailability;
     private final List<AuthMode> mAuthModes;
 
-    public OminalAgentHarness(String id, String providerId, String displayName,
+    public OminalAgentHarness(String id, String providerId, String publisherName,
+                              String displayName,
                               String transport, Availability availability,
                               List<AuthMode> authModes) {
         mId = requireValue(id, "id");
         mProviderId = requireValue(providerId, "providerId");
+        mPublisherName = requireValue(publisherName, "publisherName");
         mDisplayName = requireValue(displayName, "displayName");
         mTransport = requireValue(transport, "transport");
         if (availability == null) throw new IllegalArgumentException("availability is required");
@@ -45,6 +48,10 @@ public final class OminalAgentHarness {
 
     public String getProviderId() {
         return mProviderId;
+    }
+
+    public String getPublisherName() {
+        return mPublisherName;
     }
 
     public String getDisplayName() {

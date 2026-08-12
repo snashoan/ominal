@@ -1,0 +1,3 @@
+Runtime selection now uses a neutral command list with clear text attribution instead of provider artwork.
+
+Runtime identity, models, and commands can be supplied by each installed command through its validated capability manifest.

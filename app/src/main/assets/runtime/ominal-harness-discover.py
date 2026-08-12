@@ -2,13 +2,14 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 
 
 SCHEMA_VERSION = 1
-DISCOVERY_REVISION = 3
+DISCOVERY_REVISION = 4
 MAX_EVIDENCE_CHARS = 65536
 SAFE_COMMAND = re.compile(r"^/[a-z][a-z0-9._-]{0,63}$")
 SAFE_FLAG = re.compile(r"^--[A-Za-z0-9][A-Za-z0-9-]{0,63}$")
@@ -71,6 +72,41 @@ def safe_text(value, limit):
 
 def verified_flag(help_text, flag):
     return flag if SAFE_FLAG.fullmatch(flag) and flag in help_text else ""
+
+
+def runtime_identity(binary, harness):
+    fallback_names = {
+        "claude-code": "Claude Code",
+        "antigravity": "Antigravity",
+    }
+    identity = {"name": fallback_names.get(harness, harness)}
+    executable = shutil.which(binary)
+    if not executable:
+        return identity
+
+    directory = os.path.dirname(os.path.realpath(executable))
+    for _ in range(8):
+        package_path = os.path.join(directory, "package.json")
+        try:
+            with open(package_path, encoding="utf-8") as source:
+                package = json.load(source)
+        except (OSError, ValueError, TypeError):
+            package = None
+        if isinstance(package, dict):
+            display_name = package.get("displayName") or package.get("productName")
+            if safe_text(display_name, 80):
+                identity["name"] = display_name.strip()
+            author = package.get("author")
+            if isinstance(author, dict):
+                author = author.get("name", "")
+            if safe_text(author, 120):
+                identity["publisher"] = author.strip()
+            break
+        parent = os.path.dirname(directory)
+        if parent == directory:
+            break
+        directory = parent
+    return identity
 
 
 def discover_efforts(help_text):
@@ -320,6 +356,7 @@ def main():
             except (ValueError, TypeError, json.JSONDecodeError):
                 candidate = {}
     manifest = validate_candidate(candidate, harness, version, help_text, models)
+    manifest["identity"] = runtime_identity(binary, harness)
     directory = os.path.dirname(manifest_path)
     os.makedirs(directory, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=".manifest-", dir=directory)
