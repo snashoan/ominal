@@ -32,6 +32,7 @@ stop_xfce() {
     pkill -x devilspie2 2>/dev/null || true
     pkill -f "[u]nclutter-xfixes" 2>/dev/null || true
     pkill -f "[o]minal-geometry-keeper" 2>/dev/null || true
+    pkill -f "[o]minal-wallpaper-keeper" 2>/dev/null || true
 }
 
 write_desktop_entry() {
@@ -61,8 +62,9 @@ configure_xfce() {
     desktop_root=/root/Desktop
     autostart_root=/root/.config/autostart
     rules_root=/root/.config/devilspie2
-    desktop_icon_size=64
+    desktop_icon_size=68
     wallpaper_root=/root/.local/share/backgrounds
+    wallpaper_state="$wallpaper_root/current-wallpaper.path"
     bundled_wallpaper=/usr/local/share/gir/gir-final-wallpaper.png
     default_wallpaper="$wallpaper_root/gir-final-wallpaper.png"
     legacy_wallpaper="$wallpaper_root/gir-fabric.svg"
@@ -84,11 +86,13 @@ EOF
     fi
     chmod 644 "$default_wallpaper"
 
-    desktop_layout_version=bottom-up-v1
+    desktop_layout_version=balanced-home-v3
     desktop_layout_marker="$display_dir/desktop-layout-version"
+    desktop_layout_changed=false
     if [ "$(cat "$desktop_layout_marker" 2>/dev/null || true)" != "$desktop_layout_version" ]; then
         rm -f "$config_root/desktop"/icons.screen*.rc
         printf '%s' "$desktop_layout_version" >"$desktop_layout_marker"
+        desktop_layout_changed=true
     fi
 
     cat >"$channel_root/xsettings.xml" <<EOF
@@ -177,7 +181,7 @@ PY
     <property name="icon-size" type="uint" value="$desktop_icon_size"/>
     <property name="gravity" type="int" value="5"/>
     <property name="use-custom-font-size" type="bool" value="true"/>
-    <property name="font-size" type="double" value="15"/>
+    <property name="font-size" type="double" value="16"/>
     <property name="center-text" type="bool" value="true"/>
     <property name="single-click" type="bool" value="true"/>
     <property name="show-tooltips" type="bool" value="false"/>
@@ -193,8 +197,8 @@ PY
       <property name="monitor0" type="empty">
         <property name="workspace0" type="empty">
           <property name="color-style" type="int" value="0"/>
-          <property name="image-style" type="int" value="5"/>
-          <property name="last-image" type="string" value="$default_wallpaper"/>
+          <property name="image-style" type="int" value="0"/>
+          <property name="last-image" type="string" value=""/>
           <property name="rgba1" type="array">
             <value type="double" value="0"/>
             <value type="double" value="0"/>
@@ -206,8 +210,8 @@ PY
       <property name="monitorbuiltin" type="empty">
         <property name="workspace0" type="empty">
           <property name="color-style" type="int" value="0"/>
-          <property name="image-style" type="int" value="5"/>
-          <property name="last-image" type="string" value="$default_wallpaper"/>
+          <property name="image-style" type="int" value="0"/>
+          <property name="last-image" type="string" value=""/>
           <property name="rgba1" type="array">
             <value type="double" value="0"/>
             <value type="double" value="0"/>
@@ -222,14 +226,14 @@ PY
 EOF
     fi
 
-    # Preserve valid user backdrops while enforcing a touch-sized, bottom-up app home.
+    # Preserve user-selected backdrops while retiring the oversized bundled home mark.
     python3 - "$channel_root/xfce4-desktop.xml" "$desktop_icon_size" \
-        "$default_wallpaper" "$legacy_wallpaper" <<'PY'
+        "$default_wallpaper" "$legacy_wallpaper" "$wallpaper_state" <<'PY'
 import os
 import sys
 import xml.etree.ElementTree as ET
 
-path, icon_size, default_wallpaper, legacy_wallpaper = sys.argv[1:5]
+path, icon_size, default_wallpaper, legacy_wallpaper, wallpaper_state = sys.argv[1:6]
 tree = ET.parse(path)
 root = tree.getroot()
 
@@ -250,7 +254,7 @@ child(icons, "style", "int", 2)
 child(icons, "icon-size", "uint", icon_size)
 child(icons, "gravity", "int", 5)
 child(icons, "use-custom-font-size", "bool", "true")
-child(icons, "font-size", "double", 15)
+child(icons, "font-size", "double", 16)
 child(icons, "center-text", "bool", "true")
 child(icons, "single-click", "bool", "true")
 child(icons, "show-tooltips", "bool", "false")
@@ -264,6 +268,14 @@ retired_wallpapers = {
     legacy_wallpaper,
     "/usr/share/backgrounds/xfce/xfce-shapes.svg",
 }
+persisted_wallpaper = ""
+try:
+    with open(wallpaper_state, encoding="utf-8") as state:
+        candidate = state.read().strip()
+    if os.path.isfile(candidate):
+        persisted_wallpaper = candidate
+except OSError:
+    pass
 for monitor in screen.findall("property"):
     if not monitor.get("name", "").startswith("monitor"):
         continue
@@ -274,10 +286,15 @@ for monitor in screen.findall("property"):
     for workspace in workspaces:
         image = child(workspace, "last-image", "string", "")
         current_image = image.get("value", "")
-        if (not current_image or current_image in retired_wallpapers
-                or not os.path.isfile(current_image)):
-            image.set("value", default_wallpaper)
+        if current_image and current_image not in retired_wallpapers \
+                and os.path.isfile(current_image):
+            continue
+        if persisted_wallpaper:
+            image.set("value", persisted_wallpaper)
             child(workspace, "image-style", "int", 5)
+        else:
+            image.set("value", "")
+            child(workspace, "image-style", "int", 0)
 tree.write(path, encoding="UTF-8", xml_declaration=True)
 PY
 
@@ -322,6 +339,113 @@ EOF
         /root/.local/bin/ominal-settings "$settings_icon" Settings
     write_desktop_entry "$desktop_root/Editor.desktop" "Editor" \
         /root/.local/bin/ominal-editor "$editor_icon" Utility
+
+    cat >/root/.local/bin/ominal-wallpaper-keeper <<'EOF'
+#!/bin/sh
+wallpaper_root=/root/.local/share/backgrounds
+state_file="$wallpaper_root/current-wallpaper.path"
+mkdir -p "$wallpaper_root"
+while sleep 0.8; do
+    properties="$(xfconf-query -c xfce4-desktop -l 2>/dev/null \
+        | grep '/last-image$' || true)"
+    [ -n "$properties" ] || continue
+    saved="$(cat "$state_file" 2>/dev/null || true)"
+    selected=
+    while IFS= read -r property; do
+        [ -n "$property" ] || continue
+        candidate="$(xfconf-query -c xfce4-desktop -p "$property" 2>/dev/null || true)"
+        [ -f "$candidate" ] || continue
+        [ "$candidate" != "$saved" ] || continue
+        case "$candidate" in
+          "$wallpaper_root"/current-wallpaper.*)
+            selected="$candidate"
+            break
+            ;;
+          /usr/local/share/gir/gir-final-wallpaper.png)
+            selected="$wallpaper_root/gir-final-wallpaper.png"
+            break
+            ;;
+          "$wallpaper_root"/*)
+            selected="$candidate"
+            break
+            ;;
+          *)
+            extension="${candidate##*.}"
+            case "$extension" in
+              png|PNG|jpg|JPG|jpeg|JPEG|webp|WEBP|svg|SVG) ;;
+              *) extension=img ;;
+            esac
+            target="$wallpaper_root/current-wallpaper.$extension"
+            if cp -f "$candidate" "$target.tmp" 2>/dev/null; then
+                mv -f "$target.tmp" "$target"
+                selected="$target"
+            fi
+            break
+            ;;
+        esac
+    done <<PROPERTIES
+$properties
+PROPERTIES
+    if [ -z "$selected" ] && [ -f "$saved" ]; then
+        selected="$saved"
+    fi
+    [ -n "$selected" ] || continue
+    if [ "$saved" != "$selected" ]; then
+        printf '%s' "$selected" >"$state_file"
+    fi
+    changed=false
+    while IFS= read -r property; do
+        [ -n "$property" ] || continue
+        current="$(xfconf-query -c xfce4-desktop -p "$property" 2>/dev/null || true)"
+        if [ "$current" != "$selected" ]; then
+            xfconf-query -c xfce4-desktop -p "$property" -s "$selected" 2>/dev/null || true
+            style_property="${property%/last-image}/image-style"
+            xfconf-query -c xfce4-desktop -p "$style_property" -s 5 2>/dev/null || true
+            changed=true
+        fi
+    done <<PROPERTIES
+$properties
+PROPERTIES
+    if [ "$changed" = true ]; then
+        xfdesktop --reload >/dev/null 2>&1 || true
+    fi
+done
+EOF
+    chmod 755 /root/.local/bin/ominal-wallpaper-keeper
+
+    if [ "$desktop_layout_changed" = true ]; then
+        icon_cell=$((desktop_icon_size + 70))
+        desktop_columns=$((geometry_width / icon_cell))
+        [ "$desktop_columns" -ge 3 ] || desktop_columns=3
+        desktop_column_offset=$(((desktop_columns - 3) / 2))
+        desktop_bottom_row=$((geometry_height / icon_cell - 1))
+        [ "$desktop_bottom_row" -ge 1 ] || desktop_bottom_row=1
+        desktop_top_row=$((desktop_bottom_row - 1))
+        cat >"$config_root/desktop/icons.screen0-${geometry_width}x${geometry_height}.rc" <<EOF
+[xfdesktop-version-4.10.3+-rcfile_format]
+4.10.3+=true
+
+[$desktop_root/Files.desktop]
+row=$desktop_top_row
+col=$desktop_column_offset
+
+[$desktop_root/Settings.desktop]
+row=$desktop_top_row
+col=$((desktop_column_offset + 2))
+
+[$desktop_root/Editor.desktop]
+row=$desktop_bottom_row
+col=$desktop_column_offset
+
+[$desktop_root/Terminal.desktop]
+row=$desktop_bottom_row
+col=$((desktop_column_offset + 1))
+
+[$desktop_root/Firefox.desktop]
+row=$desktop_bottom_row
+col=$((desktop_column_offset + 2))
+EOF
+    fi
 
     cat >"$rules_root/ominal-mobile.lua" <<'EOF'
 -- Window placement is owned by ominal-geometry-keeper so dialogs are
@@ -422,45 +546,76 @@ place_dialog() {
     current_y="$2"
     current_width="$3"
     current_height="$4"
-    current_right=$((current_x + current_width))
-    current_bottom=$((current_y + current_height))
-    work_right=$((work_x + work_width))
-    work_bottom=$((work_y + work_height))
     tolerance=$((16 * ${OMINAL_UI_SCALE:-1}))
+    margin=$((12 * ${OMINAL_UI_SCALE:-1}))
+    available_width=$((work_width - margin * 2))
+    available_height=$((work_height - margin * 2))
+    [ "$available_width" -gt 0 ] || available_width="$work_width"
+    [ "$available_height" -gt 0 ] || available_height="$work_height"
+    target_outer_width="$current_width"
+    target_outer_height="$current_height"
+    [ "$target_outer_width" -le "$available_width" ] || target_outer_width="$available_width"
+    [ "$target_outer_height" -le "$available_height" ] || target_outer_height="$available_height"
 
-    if [ "$current_x" -ge $((work_x - tolerance)) ] \
-        && [ "$current_x" -le $((work_x + tolerance)) ] \
-        && [ "$current_y" -ge $((work_y - tolerance)) ] \
-        && [ "$current_right" -ge $((work_right - tolerance)) ] \
-        && [ "$current_right" -le $((work_right + tolerance)) ] \
-        && [ "$current_bottom" -ge $((work_bottom - tolerance)) ] \
-        && [ "$current_bottom" -le $((work_bottom + tolerance)) ]; then
+    center_x=$((work_x + work_width / 2))
+    center_y=$((work_y + work_height / 2))
+    parent_id="$(xprop -id "$window_id" WM_TRANSIENT_FOR 2>/dev/null \
+        | sed -n 's/.*window id #[[:space:]]*\(0x[0-9a-fA-F]*\).*/\1/p')"
+    if [ -n "$parent_id" ]; then
+        parent_bounds="$(read_window_bounds "$parent_id")"
+        set -- $parent_bounds
+        if [ "$#" -eq 4 ] && is_integer "$1" && is_integer "$2" \
+            && is_integer "$3" && is_integer "$4"; then
+            center_x=$(($1 + $3 / 2))
+            center_y=$(($2 + $4 / 2))
+        fi
+    fi
+    target_x=$((center_x - target_outer_width / 2))
+    target_y=$((center_y - target_outer_height / 2))
+    min_x=$((work_x + margin))
+    min_y=$((work_y + margin))
+    max_x=$((work_x + work_width - margin - target_outer_width))
+    max_y=$((work_y + work_height - margin - target_outer_height))
+    [ "$target_x" -ge "$min_x" ] || target_x="$min_x"
+    [ "$target_y" -ge "$min_y" ] || target_y="$min_y"
+    [ "$target_x" -le "$max_x" ] || target_x="$max_x"
+    [ "$target_y" -le "$max_y" ] || target_y="$max_y"
+
+    if [ "$current_x" -ge $((target_x - tolerance)) ] \
+        && [ "$current_x" -le $((target_x + tolerance)) ] \
+        && [ "$current_y" -ge $((target_y - tolerance)) ] \
+        && [ "$current_y" -le $((target_y + tolerance)) ] \
+        && [ "$current_width" -ge $((target_outer_width - tolerance)) ] \
+        && [ "$current_width" -le $((target_outer_width + tolerance)) ] \
+        && [ "$current_height" -ge $((target_outer_height - tolerance)) ] \
+        && [ "$current_height" -le $((target_outer_height + tolerance)) ]; then
         return
     fi
 
-    target_outer_height="$current_height"
-    [ "$target_outer_height" -le "$work_height" ] || target_outer_height="$work_height"
-    target_y=$((work_bottom - target_outer_height))
+    target_client_width="$target_outer_width"
     target_client_height="$target_outer_height"
     frame_extents="$(xprop -id "$window_id" _NET_FRAME_EXTENTS 2>/dev/null \
         | sed -n 's/^[^=]*=[[:space:]]*//p' | tr ',' ' ')"
     set -- $frame_extents
-    if [ "$#" -ge 4 ] && is_integer "$3" && is_integer "$4"; then
+    if [ "$#" -ge 4 ] && is_integer "$1" && is_integer "$2" \
+        && is_integer "$3" && is_integer "$4"; then
+        frame_horizontal=$(($1 + $2))
         frame_vertical=$(($3 + $4))
+        if [ "$frame_horizontal" -lt "$target_client_width" ]; then
+            target_client_width=$((target_client_width - frame_horizontal))
+        fi
         if [ "$frame_vertical" -lt "$target_client_height" ]; then
             target_client_height=$((target_client_height - frame_vertical))
         fi
     fi
+    [ "$target_client_width" -gt 0 ] || target_client_width=1
     [ "$target_client_height" -gt 0 ] || target_client_height=1
 
     wmctrl -i -r "$window_id" -b remove,fullscreen,maximized_vert,maximized_horz \
         2>/dev/null || true
-    wmctrl -i -r "$window_id" -e "0,$work_x,$target_y,$work_width,$target_client_height" \
+    wmctrl -i -r "$window_id" -e "0,$target_x,$target_y,$target_client_width,$target_client_height" \
         2>/dev/null || true
-    wmctrl -i -r "$window_id" -b add,maximized_horz,above 2>/dev/null || true
-    if [ "$target_outer_height" -ge $((work_height - tolerance)) ]; then
-        wmctrl -i -r "$window_id" -b add,maximized_vert 2>/dev/null || true
-    fi
+    wmctrl -i -r "$window_id" -b add,above 2>/dev/null || true
 }
 raise_docks() {
     for dock_id in $(wmctrl -l 2>/dev/null | awk '{print $1}'); do
@@ -575,6 +730,15 @@ EOF
 Type=Application
 Name=Touch pointer policy
 Exec=unclutter-xfixes --timeout 0.1 --jitter 1 --hide-on-touch
+OnlyShowIn=XFCE;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+EOF
+    cat >"$autostart_root/ominal-wallpaper.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Wallpaper persistence
+Exec=/root/.local/bin/ominal-wallpaper-keeper
 OnlyShowIn=XFCE;
 NoDisplay=true
 X-GNOME-Autostart-enabled=true

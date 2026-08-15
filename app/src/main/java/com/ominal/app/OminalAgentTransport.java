@@ -85,5 +85,8 @@ public interface OminalAgentTransport {
 
     boolean submit(@NonNull TurnRequest request, @NonNull Listener listener);
 
+    /** Stops only the active turn while preserving any reusable harness session state. */
+    boolean cancel();
+
     void shutdown();
 }

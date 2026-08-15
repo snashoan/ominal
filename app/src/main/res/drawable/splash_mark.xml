@@ -6,11 +6,10 @@
         android:right="5dp"
         android:bottom="5dp">
         <bitmap
-            android:src="@drawable/gir_final_logo"
+            android:src="@drawable/gir_final_logo_white"
             android:gravity="fill"
             android:antialias="true"
             android:dither="true"
-            android:filter="true"
-            android:tint="#FFFFFFFF" />
+            android:filter="true" />
     </item>
 </layer-list>

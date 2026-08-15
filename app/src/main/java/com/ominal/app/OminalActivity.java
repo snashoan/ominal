@@ -1,6 +1,5 @@
 package com.ominal.app;
 
-import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
@@ -61,8 +60,10 @@ import com.ominal.view.TerminalViewClient;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.GravityCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.ViewPager;
 
@@ -219,6 +220,18 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
         mUrlRequestBridge = new OminalUrlRequestBridge(this);
 
         setContentView(R.layout.activity_ominal);
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                DrawerLayout drawer = getDrawer();
+                if (drawer != null && drawer.isDrawerOpen(GravityCompat.START)) {
+                    drawer.closeDrawers();
+                    return;
+                }
+                setEnabled(false);
+                getOnBackPressedDispatcher().onBackPressed();
+            }
+        });
 
         // Load ominal shared preferences
         // This will also fail if OminalConstants.OMINAL_PACKAGE_NAME does not equal applicationId
@@ -609,16 +622,6 @@ public final class OminalActivity extends AppCompatActivity implements ServiceCo
 
 
 
-
-    @SuppressLint("RtlHardcoded")
-    @Override
-    public void onBackPressed() {
-        if (getDrawer().isDrawerOpen(Gravity.LEFT)) {
-            getDrawer().closeDrawers();
-        } else {
-            super.onBackPressed();
-        }
-    }
 
     public void finishActivityIfNotFinishing() {
         // prevent duplicate calls to finish() if called from multiple places

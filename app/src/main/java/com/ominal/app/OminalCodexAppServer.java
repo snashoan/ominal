@@ -110,6 +110,31 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
         return true;
     }
 
+    @Override
+    public synchronized boolean cancel() {
+        ActiveTurn active = mActiveTurn;
+        if (active == null) return false;
+        if (!active.threadId.isEmpty() && !active.turnId.isEmpty()) {
+            try {
+                writeLine(new JSONObject()
+                    .put("method", "turn/interrupt")
+                    .put("id", mNextRequestId++)
+                    .put("params", new JSONObject()
+                        .put("threadId", active.threadId)
+                        .put("turnId", active.turnId)));
+            } catch (JSONException ignored) {
+            }
+        }
+        mActiveTurn = null;
+        mInitialized = false;
+        mPendingRequests.clear();
+        mGeneration++;
+        AppShell shell = mShell;
+        mShell = null;
+        if (shell != null) shell.kill();
+        return true;
+    }
+
     public synchronized boolean refreshCapabilities(
         @NonNull HashMap<String, String> environment,
         @NonNull CapabilityListener listener) {

@@ -24,7 +24,7 @@ case "$DESKTOP_SESSION" in
     ;;
 esac
 
-host_session_version="ominal-display-host-v46-$DISPLAY_BACKEND-$DESKTOP_SESSION-$DISPLAY_GEOMETRY-$DISPLAY_DPI"
+host_session_version="ominal-display-host-v47-$DISPLAY_BACKEND-$DESKTOP_SESSION-$DISPLAY_GEOMETRY-$DISPLAY_DPI"
 host_session_marker="$DISPLAY_DIR/session-version"
 reset_host_session=0
 if [ "$(cat "$host_session_marker" 2>/dev/null || true)" != "$host_session_version" ]; then
@@ -40,6 +40,10 @@ elif [ "$DESKTOP_SESSION" = xfce ]; then
   done
   if [ "$reset_host_session" -eq 0 ] \
       && ! "$PREFIX/bin/pgrep" -f "[o]minal-geometry-keeper" >/dev/null 2>&1; then
+    reset_host_session=1
+  fi
+  if [ "$reset_host_session" -eq 0 ] \
+      && ! "$PREFIX/bin/pgrep" -f "[o]minal-wallpaper-keeper" >/dev/null 2>&1; then
     reset_host_session=1
   fi
 elif [ "$DESKTOP_SESSION" = jwm ] && ! "$PREFIX/bin/pgrep" -x jwm >/dev/null 2>&1; then
@@ -79,6 +83,8 @@ if [ "$reset_host_session" -eq 1 ]; then
   "$PREFIX/bin/pkill" -x xfconfd 2>/dev/null || true
   "$PREFIX/bin/pkill" -x devilspie2 2>/dev/null || true
   "$PREFIX/bin/pkill" -f "[u]nclutter-xfixes" 2>/dev/null || true
+  "$PREFIX/bin/pkill" -f "[o]minal-geometry-keeper" 2>/dev/null || true
+  "$PREFIX/bin/pkill" -f "[o]minal-wallpaper-keeper" 2>/dev/null || true
   "$PREFIX/bin/pkill" -x xterm 2>/dev/null || true
   "$PREFIX/bin/pkill" -x xfe 2>/dev/null || true
   "$PREFIX/bin/pkill" -x xfwrite 2>/dev/null || true
@@ -129,7 +135,7 @@ desktop_version="ominal-mobile-v47-$OMINAL_DISPLAY_BACKEND-$OMINAL_DESKTOP_SESSI
 mkdir -p "$display_dir" /root/.local/bin
 export OMINAL_WORKDIR=/root/workspace
 
-required_commands="jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xdotool wmctrl scrot xrdb file yad xdg-mime update-desktop-database ominal-screen ominal-open-executable"
+required_commands="jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfconf-query xdotool wmctrl scrot xrdb file yad xdg-mime update-desktop-database ominal-screen ominal-open-executable"
 if [ "$OMINAL_DESKTOP_SESSION" = xfce ]; then
   required_commands="xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes $required_commands"
 fi
@@ -804,6 +810,10 @@ nohup "$PREFIX/bin/ominal-proot-run" /usr/bin/env \
           && ! "$PREFIX/bin/pgrep" -f "[o]minal-geometry-keeper" >/dev/null 2>&1; then
         desktop_ready=0
       fi
+      if [ "$desktop_ready" -eq 1 ] \
+          && ! "$PREFIX/bin/pgrep" -f "[o]minal-wallpaper-keeper" >/dev/null 2>&1; then
+        desktop_ready=0
+      fi
     elif ! "$PREFIX/bin/pgrep" -x jwm >/dev/null 2>&1; then
       desktop_ready=0
     fi
@@ -821,6 +831,10 @@ nohup "$PREFIX/bin/ominal-proot-run" /usr/bin/env \
           done
           if [ "$desktop_ready" -eq 1 ] \
               && ! "$PREFIX/bin/pgrep" -f "[o]minal-geometry-keeper" >/dev/null 2>&1; then
+            desktop_ready=0
+          fi
+          if [ "$desktop_ready" -eq 1 ] \
+              && ! "$PREFIX/bin/pgrep" -f "[o]minal-wallpaper-keeper" >/dev/null 2>&1; then
             desktop_ready=0
           fi
         elif ! "$PREFIX/bin/pgrep" -x jwm >/dev/null 2>&1; then

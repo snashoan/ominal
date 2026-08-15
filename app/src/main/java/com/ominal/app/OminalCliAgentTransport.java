@@ -470,6 +470,17 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
     }
 
     @Override
+    public synchronized boolean cancel() {
+        if (mActiveTurn == null) return false;
+        mGeneration++;
+        AppShell shell = mShell;
+        mShell = null;
+        if (shell != null) shell.kill();
+        clearTurn();
+        return true;
+    }
+
+    @Override
     public synchronized void shutdown() {
         mGeneration++;
         AppShell shell = mShell;

@@ -73,4 +73,19 @@ public class MonopotEventTest {
         assertEquals(1L, events.get(0).sequence);
         assertEquals("Running tests", events.get(1).summary);
     }
+
+    @Test
+    public void representsCancellationAsProviderNeutralOperation() throws Exception {
+        MonopotEvent.Draft cancellation = MonopotEvent.Draft.operation(
+            "started", "Stopping", new JSONObject().put("operation", "cancel"));
+
+        MonopotEvent event = new MonopotEvent(
+            "chat", "turn", 1L, "codex", "codex-app-server", cancellation, 42L);
+        MonopotEvent restored = MonopotEvent.fromJson(event.toJson());
+
+        assertNotNull(restored);
+        assertEquals(MonopotEvent.CHANNEL_OPERATION, restored.channel);
+        assertEquals("cancel", restored.detail.getString("operation"));
+        assertEquals("codex-app-server", restored.transportId);
+    }
 }

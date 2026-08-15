@@ -68,7 +68,8 @@
             android:noHistory="true"
             android:screenOrientation="portrait"
             android:taskAffinity="${OMINAL_PACKAGE_NAME}.launcher"
-            android:theme="@android:style/Theme.NoDisplay" />
+            android:theme="@style/Theme.OminalApp.Launch"
+            android:windowSoftInputMode="adjustNothing|stateAlwaysHidden" />
 
         <activity-alias
             android:name=".LauncherLightV3"

@@ -1,0 +1,3 @@
+Stop an active response directly from the composer across supported intelligence runtimes.
+
+Browse generated images in a compact swipe gallery, with cleaner computer navigation and working-state motion.

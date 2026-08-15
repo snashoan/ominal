@@ -20,6 +20,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Point;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
@@ -77,6 +78,8 @@ import androidx.core.view.GravityCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.viewpager.widget.PagerAdapter;
+import androidx.viewpager.widget.ViewPager;
 
 import com.ominal.BuildConfig;
 import com.ominal.R;
@@ -168,7 +171,7 @@ public final class OringutanActivity extends AppCompatActivity
     private static final int DISPLAY_HEALTH_RETRIES = 30;
     private static final int DISPLAY_HEALTH_RETRY_DELAY_MS = 300;
     private static final int NATIVE_DISPLAY_HEALTH_RETRIES = 240;
-    private static final int DISPLAY_NAVIGATION_HEIGHT_DP = 60;
+    private static final int DISPLAY_NAVIGATION_HEIGHT_DP = 56;
     private static final String[][] SETUP_STATE_WORDS = {
         {"damruuing", "damruued"},
         {"girring", "girred"},
@@ -345,6 +348,7 @@ public final class OringutanActivity extends AppCompatActivity
     private boolean mHarnessUpdateInFlight;
     private String mRuntimeSetupDetail = "";
     private boolean mPromptRunning;
+    private boolean mSendButtonShowsStop;
     private boolean mDisplayStartInFlight;
     private boolean mReloadDisplayWhenReady;
     private boolean mDisplayReady;
@@ -2034,7 +2038,7 @@ public final class OringutanActivity extends AppCompatActivity
         focus.setGravity(Gravity.CENTER_HORIZONTAL);
 
         mSetupMarkView = new SetupMarkView(this);
-        focus.addView(mSetupMarkView, new LinearLayout.LayoutParams(dp(88), dp(88)));
+        focus.addView(mSetupMarkView, new LinearLayout.LayoutParams(dp(104), dp(104)));
 
         mSetupStageView = new TextView(this);
         mSetupStageView.setTextColor(Color.rgb(154, 154, 154));
@@ -2478,7 +2482,10 @@ public final class OringutanActivity extends AppCompatActivity
         mSendButton = createComposerSendButton(R.drawable.ic_send,
             getString(R.string.oringutan_send));
         mSendButton.setContentDescription(getString(R.string.oringutan_send));
-        mSendButton.setOnClickListener(v -> submitPrompt());
+        mSendButton.setOnClickListener(v -> {
+            if (mPromptRunning) stopActiveTurn();
+            else submitPrompt();
+        });
         mSendButton.setOnLongClickListener(v -> {
             v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
             openAgentTerminalForActiveChat();
@@ -3395,40 +3402,53 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private View createDisplayNavigationBar() {
+        LinearLayout shell = new LinearLayout(this);
+        shell.setOrientation(LinearLayout.VERTICAL);
+        shell.setBackgroundColor(Color.rgb(11, 11, 12));
+
+        View divider = new View(this);
+        divider.setBackgroundColor(Color.rgb(37, 37, 40));
+        shell.addView(divider, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
+
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER);
-        bar.setPadding(dp(10), dp(5), dp(10), dp(5));
-        bar.setBackgroundColor(Color.rgb(8, 8, 9));
+        bar.setPadding(dp(12), dp(5), dp(12), dp(5));
 
         addDisplayNavigationButton(bar, R.drawable.splash_mark, "Chat",
-            view -> switchMode(MODE_CHAT));
+            false, view -> switchMode(MODE_CHAT));
         addDisplayNavigationButton(bar, R.drawable.ic_dui_back, "Back",
-            view -> navigateDisplayBack());
+            false, view -> navigateDisplayBack());
         addDisplayNavigationButton(bar, R.drawable.ic_dui_home, "Home",
-            view -> showDisplayHome());
+            true, view -> showDisplayHome());
         addDisplayNavigationButton(bar, R.drawable.ic_dui_recents, "Open windows",
-            view -> showDisplayRecents());
+            false, view -> showDisplayRecents());
         addDisplayNavigationButton(bar, R.drawable.ic_dui_keyboard, "Keyboard",
-            view -> showDisplayKeyboard());
-        return bar;
+            false, view -> showDisplayKeyboard());
+        shell.addView(bar, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        return shell;
     }
 
     private void addDisplayNavigationButton(LinearLayout bar, int iconRes,
-                                            String description, View.OnClickListener listener) {
+                                            String description, boolean selected,
+                                            View.OnClickListener listener) {
         ImageButton button = new ImageButton(this);
         setThemedIcon(button, iconRes, description);
         button.setImageTintList(ColorStateList.valueOf(Color.WHITE));
+        button.setImageAlpha(selected ? 255 : 210);
         button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         button.setPadding(dp(11), dp(11), dp(11), dp(11));
         button.setContentDescription(description);
         button.setBackground(makeRoundedDrawable(
-            Color.TRANSPARENT, Color.TRANSPARENT, dp(14)));
+            selected ? Color.rgb(31, 31, 34) : Color.TRANSPARENT,
+            selected ? Color.rgb(49, 49, 53) : Color.TRANSPARENT, dp(18)));
         button.setOnClickListener(listener);
         attachNativeRipple(button);
         attachPressFeedback(button);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(50), 1);
-        params.setMargins(dp(2), 0, dp(2), 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(44), 1);
+        params.setMargins(dp(3), 0, dp(3), 0);
         bar.addView(button, params);
     }
 
@@ -4669,6 +4689,16 @@ public final class OringutanActivity extends AppCompatActivity
         }).start();
     }
 
+    private void stopActiveTurn() {
+        ChatSession session = mActiveSession;
+        OminalAgentRuntime runtime = mAgentRuntime;
+        if (session == null || runtime == null || !mPromptRunning) return;
+        session.pendingTurns.clear();
+        saveMeta(session);
+        setStatus("Stopping");
+        if (!runtime.cancel(session.id)) setStatus("Working");
+    }
+
     @SuppressWarnings("deprecation")
     private void startAgentEventObserver(ChatSession session, File eventLog) {
         stopAgentEventObserver();
@@ -4800,7 +4830,7 @@ public final class OringutanActivity extends AppCompatActivity
             failAgentTurn(session, responseView, snapshot.message, snapshot.trace,
                 snapshot.harnessId,
                 session.activeTurn == null ? -1 : session.activeTurn.userMessageIndex,
-                snapshot.revision);
+                snapshot.revision, snapshot.isCancelled());
     }
 
     private void bindAgentSnapshotToChat(OminalAgentRuntime.Snapshot snapshot) {
@@ -5028,21 +5058,29 @@ public final class OringutanActivity extends AppCompatActivity
     private void failAgentTurn(ChatSession session, AgentTurnView responseView, String error,
                                OminalAgentTrace.Snapshot trace, String harnessId,
                                int userMessageIndex, long runtimeRevision) {
+        failAgentTurn(session, responseView, error, trace, harnessId, userMessageIndex,
+            runtimeRevision, false);
+    }
+
+    private void failAgentTurn(ChatSession session, AgentTurnView responseView, String error,
+                               OminalAgentTrace.Snapshot trace, String harnessId,
+                               int userMessageIndex, long runtimeRevision, boolean cancelled) {
         runOnUiThread(() -> {
             boolean authenticationRequired =
-                OminalHarnessTerminal.CODEX_ID.equals(harnessId)
+                !cancelled && OminalHarnessTerminal.CODEX_ID.equals(harnessId)
                     && requiresCodexLogin(error);
             String visibleError = authenticationRequired
-                ? OminalCodexAppServer.AUTHENTICATION_REQUIRED_MESSAGE : error;
+                ? OminalCodexAppServer.AUTHENTICATION_REQUIRED_MESSAGE
+                : cancelled && TextUtils.isEmpty(error) ? "" : error;
             if (responseView != null) {
                 responseView.setMessage(visibleError);
-                responseView.status = "";
+                responseView.status = cancelled ? "Stopped" : "";
                 responseView.trace = trace;
                 responseView.running = false;
                 renderAgentTurnStatus(responseView);
             }
             ChatMessage assistantMessage = new ChatMessage("assistant", visibleError, nowLabel(),
-                "", trace);
+                cancelled ? "Stopped" : "", trace);
             session.messages.add(assistantMessage);
             appendHistory(session, assistantMessage);
             session.markContextCurrent(harnessId, userMessageIndex + 1);
@@ -5070,7 +5108,7 @@ public final class OringutanActivity extends AppCompatActivity
                 setStatus("Ready");
             }
             if (activeSession) scrollToBottom();
-            if (!authenticationRequired) startNextPendingTurn(session);
+            if (!authenticationRequired && !cancelled) startNextPendingTurn(session);
         });
     }
 
@@ -5483,10 +5521,10 @@ public final class OringutanActivity extends AppCompatActivity
         mediaView.setGravity(fromUser ? Gravity.END : Gravity.START);
         renderMediaItems(mediaView, session, media);
         container.addView(mediaView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.gravity = fromUser ? Gravity.END : Gravity.START;
         params.setMargins(dp(2), dp(4), dp(2), dp(8));
         if (mMessagesView != null) mMessagesView.addView(container, params);
@@ -5503,14 +5541,28 @@ public final class OringutanActivity extends AppCompatActivity
         }
 
         File workspace = new File(session.workspacePath);
+        ArrayList<OminalChatMedia.Item> images = new ArrayList<>();
+        ArrayList<OminalChatMedia.Item> files = new ArrayList<>();
         for (OminalChatMedia.Item item : media) {
             File file = OminalChatMedia.resolve(workspace, item.path);
             if (file == null || !file.isFile()) continue;
-            View mediaItem = item.isImage() ? createImageMediaView(file, item)
-                : createFileMediaView(file, item);
+            if (item.isImage()) images.add(item);
+            else files.add(item);
+        }
+        if (!images.isEmpty()) {
+            View gallery = createMediaGalleryView(workspace, images);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                mediaContentWidth(), LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.setMargins(0, 0, 0, dp(6));
+            container.addView(gallery, params);
+        }
+        for (OminalChatMedia.Item item : files) {
+            File file = OminalChatMedia.resolve(workspace, item.path);
+            if (file == null || !file.isFile()) continue;
+            View mediaItem = createFileMediaView(file, item);
             ViewGroup.LayoutParams currentParams = mediaItem.getLayoutParams();
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                currentParams == null ? LinearLayout.LayoutParams.WRAP_CONTENT : currentParams.width,
+                currentParams == null ? mediaContentWidth() : currentParams.width,
                 currentParams == null ? LinearLayout.LayoutParams.WRAP_CONTENT : currentParams.height);
             params.setMargins(0, 0, 0, dp(6));
             container.addView(mediaItem, params);
@@ -5518,38 +5570,96 @@ public final class OringutanActivity extends AppCompatActivity
         container.setVisibility(container.getChildCount() == 0 ? View.GONE : View.VISIBLE);
     }
 
-    private View createImageMediaView(File file, OminalChatMedia.Item item) {
-        int maxWidth = Math.min(getResources().getDisplayMetrics().widthPixels - dp(48), dp(440));
-        int maxHeight = dp(440);
+    private int mediaContentWidth() {
+        return Math.min(getResources().getDisplayMetrics().widthPixels - dp(36), dp(720));
+    }
+
+    private View createMediaGalleryView(File workspace, List<OminalChatMedia.Item> images) {
+        UiSpec ui = ui();
+        int width = mediaContentWidth();
+        int layers = Math.min(2, images.size() - 1);
+        int layerOffset = dp(5);
+        int deckInset = layers * layerOffset;
+        Point mediaSize = mediaDeckSize(workspace, images.get(0), width - deckInset);
+        int deckWidth = mediaSize.x + deckInset;
+        int deckHeight = mediaSize.y + deckInset;
+        int deckLeft = Math.max(0, (width - deckWidth) / 2);
+
+        FrameLayout gallery = new FrameLayout(this);
+        for (int layer = layers; layer >= 0; layer--) {
+            int imageIndex = Math.min(layer, images.size() - 1);
+            FrameLayout card = createMediaDeckCard(
+                workspace, images.get(imageIndex), layer == 0);
+            FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
+                mediaSize.x, mediaSize.y);
+            cardParams.leftMargin = deckLeft + layer * layerOffset;
+            cardParams.topMargin = layer * layerOffset;
+            gallery.addView(card, cardParams);
+            if (layer == 0 && images.size() > 1) {
+                TextView count = new TextView(this);
+                count.setText("1 / " + images.size());
+                count.setTextColor(Color.WHITE);
+                count.setTextSize(12f);
+                count.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+                count.setGravity(Gravity.CENTER);
+                count.setPadding(dp(9), 0, dp(9), 0);
+                count.setBackground(makeRoundedDrawable(Color.argb(176, 0, 0, 0),
+                    Color.argb(42, 255, 255, 255), dp(14)));
+                FrameLayout.LayoutParams countParams = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT, dp(28));
+                countParams.gravity = Gravity.BOTTOM | Gravity.END;
+                countParams.setMargins(0, 0,
+                    width - deckLeft - mediaSize.x + dp(10), deckInset + dp(10));
+                gallery.addView(count, countParams);
+            }
+        }
+        gallery.setClickable(true);
+        gallery.setFocusable(true);
+        gallery.setOnClickListener(ignored -> showMediaPreview(workspace, images, 0));
+        gallery.setContentDescription(images.size() == 1
+            ? "Open image attachment" : "Open gallery with " + images.size() + " images");
+        gallery.setLayoutParams(new LinearLayout.LayoutParams(width, deckHeight));
+        return gallery;
+    }
+
+    private Point mediaDeckSize(File workspace, OminalChatMedia.Item item, int maximumWidth) {
+        File file = OminalChatMedia.resolve(workspace, item.path);
         BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0)
-            return createFileMediaView(file, item);
-
-        int width = maxWidth;
-        int height = Math.max(dp(72), Math.round(width * bounds.outHeight / (float) bounds.outWidth));
-        if (height > maxHeight) {
-            height = maxHeight;
-            width = Math.max(dp(72), Math.round(height * bounds.outWidth / (float) bounds.outHeight));
+        if (file != null) BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return new Point(maximumWidth, Math.round(maximumWidth * 0.62f));
         }
+        int maximumHeight = Math.round(
+            getResources().getDisplayMetrics().heightPixels * 0.58f);
+        int width = maximumWidth;
+        int height = Math.max(1,
+            Math.round(width * (bounds.outHeight / (float) bounds.outWidth)));
+        if (height > maximumHeight) {
+            height = maximumHeight;
+            width = Math.max(1,
+                Math.round(height * (bounds.outWidth / (float) bounds.outHeight)));
+        }
+        return new Point(width, height);
+    }
 
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inSampleSize = imageSampleSize(bounds.outWidth, bounds.outHeight, width, height);
-        Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
-        if (bitmap == null) return createFileMediaView(file, item);
-
-        ImageView image = new ImageView(this);
-        image.setImageBitmap(bitmap);
-        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        image.setBackground(makeRoundedDrawable(ui().panel, ui().border, dp(8)));
-        image.setClipToOutline(true);
-        image.setContentDescription(item.name);
-        image.setOnClickListener(ignored -> showMediaPreview(file, item.name));
-        image.setFocusable(true);
-        image.setClickable(true);
-        image.setLayoutParams(new LinearLayout.LayoutParams(width, height));
-        return image;
+    private FrameLayout createMediaDeckCard(File workspace, OminalChatMedia.Item item,
+                                            boolean leadingCard) {
+        File file = OminalChatMedia.resolve(workspace, item.path);
+        FrameLayout card = new FrameLayout(this);
+        card.setBackground(makeRoundedDrawable(ui().panel, ui().border, dp(8)));
+        card.setClipToOutline(true);
+        Bitmap bitmap = file == null ? null : decodeMediaBitmap(file, dp(420), dp(420));
+        if (bitmap != null) {
+            ImageView image = new ImageView(this);
+            image.setImageBitmap(bitmap);
+            image.setScaleType(leadingCard
+                ? ImageView.ScaleType.FIT_CENTER : ImageView.ScaleType.CENTER_CROP);
+            image.setContentDescription(item.name);
+            card.addView(image, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        }
+        return card;
     }
 
     private int imageSampleSize(int sourceWidth, int sourceHeight, int targetWidth, int targetHeight) {
@@ -5587,29 +5697,47 @@ public final class OringutanActivity extends AppCompatActivity
         row.setContentDescription("File " + item.name);
         row.setOnClickListener(ignored ->
             Toast.makeText(this, file.getName(), Toast.LENGTH_SHORT).show());
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+            mediaContentWidth(), LinearLayout.LayoutParams.WRAP_CONTENT));
         return row;
     }
 
-    private void showMediaPreview(File file, String name) {
+    private void showMediaPreview(File workspace, List<OminalChatMedia.Item> images,
+                                  int startPosition) {
         int targetWidth = Math.max(dp(320), getResources().getDisplayMetrics().widthPixels);
         int targetHeight = Math.max(dp(480), getResources().getDisplayMetrics().heightPixels);
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inSampleSize = imageSampleSize(bounds.outWidth, bounds.outHeight,
-            targetWidth, targetHeight);
-        Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
-        if (bitmap == null) return;
-
         FrameLayout preview = new FrameLayout(this);
         preview.setBackgroundColor(Color.BLACK);
-        ImageView image = new ImageView(this);
-        image.setImageBitmap(bitmap);
-        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        image.setContentDescription(name);
-        preview.addView(image, new FrameLayout.LayoutParams(
+
+        ViewPager pager = new ViewPager(this);
+        MediaPreviewPagerAdapter adapter = new MediaPreviewPagerAdapter(
+            workspace, images, targetWidth, targetHeight);
+        pager.setAdapter(adapter);
+        pager.setOffscreenPageLimit(1);
+        pager.setCurrentItem(Math.max(0, Math.min(startPosition, images.size() - 1)), false);
+        preview.addView(pager, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        TextView count = new TextView(this);
+        count.setText((pager.getCurrentItem() + 1) + " / " + images.size());
+        count.setTextColor(Color.WHITE);
+        count.setTextSize(13f);
+        count.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        count.setGravity(Gravity.CENTER);
+        count.setPadding(dp(10), 0, dp(10), 0);
+        count.setBackground(makeRoundedDrawable(Color.argb(160, 0, 0, 0),
+            Color.argb(40, 255, 255, 255), dp(15)));
+        FrameLayout.LayoutParams countParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT, dp(30));
+        countParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        countParams.topMargin = dp(16);
+        preview.addView(count, countParams);
+        pager.addOnPageChangeListener(new ViewPager.SimpleOnPageChangeListener() {
+            @Override
+            public void onPageSelected(int position) {
+                count.setText((position + 1) + " / " + images.size());
+            }
+        });
 
         ImageButton close = new ImageButton(this);
         setThemedIcon(close, R.drawable.ic_close, "Close image");
@@ -5626,7 +5754,6 @@ public final class OringutanActivity extends AppCompatActivity
             .setView(preview)
             .create();
         close.setOnClickListener(ignored -> dialog.dismiss());
-        preview.setOnClickListener(ignored -> dialog.dismiss());
         dialog.setOnShowListener(ignored -> {
             if (dialog.getWindow() != null) {
                 dialog.getWindow().setLayout(WindowManager.LayoutParams.MATCH_PARENT,
@@ -5671,7 +5798,7 @@ public final class OringutanActivity extends AppCompatActivity
         media.setGravity(Gravity.START);
         media.setVisibility(View.GONE);
         LinearLayout.LayoutParams mediaParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         mediaParams.setMargins(0, dp(6), 0, 0);
         container.addView(media, mediaParams);
 
@@ -6071,13 +6198,33 @@ public final class OringutanActivity extends AppCompatActivity
         boolean available = enabled && mBootstrapReady && mRuntimeReady;
         if (mPromptInput != null) mPromptInput.setEnabled(available);
         if (mAttachButton != null) mAttachButton.setEnabled(available);
-        if (mSendButton != null) mSendButton.setEnabled(available);
+        if (mSendButton != null) {
+            mSendButton.setEnabled(available);
+            updateSendButtonState();
+        }
         boolean toolsAvailable = mBootstrapReady && mActiveSession != null;
         if (mTerminalToolButton != null) mTerminalToolButton.setEnabled(toolsAvailable);
         if (mDisplayToolButton != null) mDisplayToolButton.setEnabled(toolsAvailable);
         if (mHeaderDisplayButton != null) mHeaderDisplayButton.setEnabled(toolsAvailable);
         if (mLoloButton != null) mLoloButton.setEnabled(!mPromptRunning);
         updateComposerTools();
+    }
+
+    private void updateSendButtonState() {
+        if (mSendButton == null || mSendButtonShowsStop == mPromptRunning) return;
+        mSendButtonShowsStop = mPromptRunning;
+        int icon = mPromptRunning ? R.drawable.ic_stop : R.drawable.ic_send;
+        String description = mPromptRunning ? "Stop response" : getString(R.string.oringutan_send);
+        mSendButton.animate().cancel();
+        mSendButton.animate().alpha(0.25f).scaleX(0.82f).scaleY(0.82f).setDuration(70)
+            .withEndAction(() -> {
+                setThemedIcon(mSendButton, icon, description);
+                mSendButton.setImageTintList(ColorStateList.valueOf(ui().composerSend.text));
+                mSendButton.setContentDescription(description);
+                mSendButton.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(110)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.8f))
+                    .start();
+            }).start();
     }
 
     private void updateComposerTools() {
@@ -7692,12 +7839,12 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private static final class SetupMarkView extends View {
-        private static final long ENTRANCE_DURATION_MS = 720L;
-        private static final long MINIMUM_VISIBLE_MS = 640L;
-        private static final long EXIT_DURATION_MS = 280L;
-        private static final long FLOW_DURATION_MS = 3200L;
-        private static final float ENTRANCE_SCALE = 0.58f;
-        private static final float EXIT_SCALE = 1.18f;
+        private static final long ENTRANCE_DURATION_MS = 620L;
+        private static final long MINIMUM_VISIBLE_MS = 560L;
+        private static final long EXIT_DURATION_MS = 220L;
+        private static final long FLOW_DURATION_MS = 5200L;
+        private static final float ENTRANCE_SCALE = 0.72f;
+        private static final float EXIT_SCALE = 1.08f;
 
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
             | Paint.DITHER_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -7717,13 +7864,21 @@ public final class OringutanActivity extends AppCompatActivity
                 if (!isAttachedToWindow() || entranceStartedAt < 0L || exitStartedAt >= 0L) return;
                 float progress = elapsedFraction(entranceStartedAt, ENTRANCE_DURATION_MS);
                 float eased = 1f - (float) Math.pow(1f - progress, 4);
-                setAlpha(Math.min(1f, progress / 0.68f));
-                float scale = ENTRANCE_SCALE + ((1f - ENTRANCE_SCALE) * eased);
+                float settle = (float) Math.sin(progress * Math.PI) * 0.035f;
+                setAlpha(Math.min(1f, progress / 0.52f));
+                float scale = ENTRANCE_SCALE + ((1f - ENTRANCE_SCALE) * eased)
+                    + (settle * eased);
                 setScaleX(scale);
                 setScaleY(scale);
+                setRotation(-8f * (1f - eased));
+                motionPhase = progress * 0.16f;
+                invalidate();
                 if (progress < 1f) {
                     postOnAnimation(this);
                 } else {
+                    setScaleX(1f);
+                    setScaleY(1f);
+                    setRotation(0f);
                     spinStartedAt = android.os.SystemClock.uptimeMillis();
                     postOnAnimation(runSpinFrame);
                 }
@@ -7736,11 +7891,10 @@ public final class OringutanActivity extends AppCompatActivity
                 if (!isAttachedToWindow() || spinStartedAt < 0L || exitStartedAt >= 0L) return;
                 long elapsed = android.os.SystemClock.uptimeMillis() - spinStartedAt;
                 float progress = (elapsed % FLOW_DURATION_MS) / (float) FLOW_DURATION_MS;
-                float wave = (float) Math.sin(progress * Math.PI * 2f);
-                motionPhase = progress;
+                motionPhase = (0.16f + progress) % 1f;
                 setScaleX(1f);
                 setScaleY(1f);
-                setAlpha(0.94f + (0.06f * ((wave + 1f) / 2f)));
+                setAlpha(1f);
                 invalidate();
                 postOnAnimation(this);
             }
@@ -7787,7 +7941,8 @@ public final class OringutanActivity extends AppCompatActivity
 
         SetupMarkView(Context context) {
             super(context);
-            logo = BitmapFactory.decodeResource(context.getResources(), R.drawable.gir_final_logo);
+            logo = BitmapFactory.decodeResource(
+                context.getResources(), R.drawable.gir_final_logo_white);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) setForceDarkAllowed(false);
             setAlpha(0f);
             setScaleX(ENTRANCE_SCALE);
@@ -7873,10 +8028,11 @@ public final class OringutanActivity extends AppCompatActivity
                     left + size - inset, top + size - inset);
                 float centerX = bounds.centerX();
                 float centerY = bounds.centerY();
-                float spread = 0.5f - (0.5f * (float) Math.cos(motionPhase * Math.PI * 2f));
+                float spread = 0.5f
+                    - (0.5f * (float) Math.cos(motionPhase * Math.PI * 2f));
                 float easedSpread = spread * spread * (3f - (2f * spread));
-                float distance = size * 0.052f * easedSpread;
-                float fold = 9f * easedSpread;
+                float distance = size * 0.042f * easedSpread;
+                float fold = 7.2f * easedSpread;
 
                 canvas.save();
                 canvas.rotate(motionPhase * 360f, centerX, centerY);
@@ -7986,6 +8142,73 @@ public final class OringutanActivity extends AppCompatActivity
             canvas.drawCircle(54f, 54f, 1f, paint);
 
             canvas.restore();
+        }
+    }
+
+    private Bitmap decodeMediaBitmap(File file, int targetWidth, int targetHeight) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = imageSampleSize(
+            bounds.outWidth, bounds.outHeight, targetWidth, targetHeight);
+        return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+    }
+
+    private final class MediaPreviewPagerAdapter extends PagerAdapter {
+        private final File workspace;
+        private final List<OminalChatMedia.Item> items;
+        private final int targetWidth;
+        private final int targetHeight;
+
+        MediaPreviewPagerAdapter(File workspace, List<OminalChatMedia.Item> items,
+                                 int targetWidth, int targetHeight) {
+            this.workspace = workspace;
+            this.items = new ArrayList<>(items);
+            this.targetWidth = targetWidth;
+            this.targetHeight = targetHeight;
+        }
+
+        @Override
+        public int getCount() {
+            return items.size();
+        }
+
+        @Override
+        public boolean isViewFromObject(@NonNull View view, @NonNull Object object) {
+            return view == object;
+        }
+
+        @NonNull
+        @Override
+        public Object instantiateItem(@NonNull ViewGroup container, int position) {
+            OminalChatMedia.Item item = items.get(position);
+            File file = OminalChatMedia.resolve(workspace, item.path);
+            ImageView image = new ImageView(OringutanActivity.this);
+            image.setBackgroundColor(Color.BLACK);
+            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            image.setContentDescription(item.name + ", image " + (position + 1)
+                + " of " + items.size());
+            Bitmap bitmap = file == null ? null
+                : decodeMediaBitmap(file, targetWidth, targetHeight);
+            if (bitmap != null) image.setImageBitmap(bitmap);
+            container.addView(image, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            return image;
+        }
+
+        @Override
+        public void destroyItem(@NonNull ViewGroup container, int position,
+                                @NonNull Object object) {
+            ImageView image = (ImageView) object;
+            Drawable drawable = image.getDrawable();
+            image.setImageDrawable(null);
+            if (drawable instanceof BitmapDrawable) {
+                Bitmap bitmap = ((BitmapDrawable) drawable).getBitmap();
+                if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+            }
+            container.removeView(image);
         }
     }
 
@@ -8127,28 +8350,13 @@ public final class OringutanActivity extends AppCompatActivity
                 return;
             }
 
-            float phase = ((SystemClock.uptimeMillis() - rotationStartedAt) % 1200L) / 1200f;
+            float phase = ((SystemClock.uptimeMillis() - rotationStartedAt) % 1800L) / 1800f;
             float centerX = bounds.centerX();
             float centerY = bounds.centerY();
-            float wave = 0.5f - 0.5f * (float) Math.cos(phase * Math.PI * 4f);
 
             canvas.save();
             canvas.rotate(phase * 360f, centerX, centerY);
-            float scale = 0.97f + 0.03f * wave;
-            canvas.scale(scale, scale, centerX, centerY);
-            drawLogoQuadrant(canvas, bounds, bounds.left, bounds.top, centerX, centerY, 255);
-            drawLogoQuadrant(canvas, bounds, centerX, bounds.top, bounds.right, centerY, 170);
-            drawLogoQuadrant(canvas, bounds, centerX, centerY, bounds.right, bounds.bottom, 100);
-            drawLogoQuadrant(canvas, bounds, bounds.left, centerY, centerX, bounds.bottom, 55);
-            canvas.restore();
             paint.setAlpha(255);
-        }
-
-        private void drawLogoQuadrant(Canvas canvas, RectF bounds, float left, float top,
-                                      float right, float bottom, int alpha) {
-            canvas.save();
-            canvas.clipRect(left, top, right, bottom);
-            paint.setAlpha(alpha);
             canvas.drawBitmap(logo, null, bounds, paint);
             canvas.restore();
         }

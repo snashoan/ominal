@@ -96,6 +96,16 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
     }
 
     @Override
+    public synchronized boolean cancel() {
+        if (mActiveTurn == null) return false;
+        mGeneration++;
+        mActiveTurn = null;
+        TerminalSession terminal = mTerminalSession;
+        if (terminal != null && terminal.isRunning()) terminal.write("\u0003");
+        return true;
+    }
+
+    @Override
     public synchronized void shutdown() {
         mGeneration++;
         mActiveTurn = null;

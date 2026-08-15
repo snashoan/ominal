@@ -38,6 +38,7 @@ public final class OminalAgentRuntime {
     private static final String PHASE_IDLE = "idle";
     private static final String PHASE_RUNNING = "running";
     private static final String PHASE_COMPLETE = "complete";
+    private static final String PHASE_CANCELLED = "cancelled";
     private static final String PHASE_ERROR = "error";
     private static final String STATE_DIRECTORY_NAME = ".agent-state";
 
@@ -89,8 +90,12 @@ public final class OminalAgentRuntime {
             return PHASE_ERROR.equals(phase);
         }
 
+        public boolean isCancelled() {
+            return PHASE_CANCELLED.equals(phase);
+        }
+
         public boolean isTerminal() {
-            return isComplete() || isError();
+            return isComplete() || isCancelled() || isError();
         }
     }
 
@@ -269,6 +274,24 @@ public final class OminalAgentRuntime {
                 + " is already working on another request.");
             return false;
         }
+        return true;
+    }
+
+    public boolean cancel(@NonNull String sessionId) {
+        OminalAgentTransport transport;
+        Snapshot active;
+        synchronized (this) {
+            active = mSnapshots.get(sessionId);
+            transport = mActiveTransports.get(sessionId);
+            if (active == null || !active.isRunning() || transport == null) return false;
+        }
+        try {
+            recordEvent(sessionId, MonopotEvent.Draft.operation(
+                "started", "Stopping", new JSONObject().put("operation", "cancel")));
+        } catch (JSONException ignored) {
+        }
+        if (!transport.cancel()) return false;
+        publishResult(sessionId, PHASE_CANCELLED, active.message);
         return true;
     }
 
@@ -511,7 +534,8 @@ public final class OminalAgentRuntime {
             if (current == null || !current.isRunning()) return;
             finished = new Snapshot(nextRevision(), phase, current.sessionId,
                 current.harnessId, current.threadId,
-                PHASE_COMPLETE.equals(phase) ? "Complete" : "",
+                PHASE_COMPLETE.equals(phase) ? "Complete"
+                    : PHASE_CANCELLED.equals(phase) ? "Stopped" : "",
                 message, current.trace, usage == null ? current.usage : usage);
             mSnapshots.put(sessionId, finished);
             mActiveTransports.remove(sessionId);
@@ -625,7 +649,8 @@ public final class OminalAgentRuntime {
                 object.put("message",
                     "The harness was interrupted while the app process was unavailable.");
             }
-            if (!PHASE_COMPLETE.equals(phase) && !PHASE_ERROR.equals(phase))
+            if (!PHASE_COMPLETE.equals(phase) && !PHASE_CANCELLED.equals(phase)
+                && !PHASE_ERROR.equals(phase))
                 return null;
             return new Snapshot(object.optLong("revision", System.currentTimeMillis()), phase,
                 object.optString("sessionId", ""),
