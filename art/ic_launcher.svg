@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
-    <rect width="108" height="108" rx="16" fill="#000"/>
-    <g transform="translate(8.64 8.64) scale(.84)">
-        <path fill="none" stroke="#fff" stroke-width="5.5" stroke-linejoin="round"
-              d="M34 69.5C26.2 66.2 20.8 58.9 20.8 50.5C20.8 38.5 30.5 28.8 42.5 28.8C54.5 28.8 64.3 38.5 64.3 50.5C64.3 58.9 58.9 66.2 51 69.5"/>
-        <path fill="#fff"
-              d="M20.8 71.1H36.2V75.5H20.8ZM30.7 67.8H36.2V75.5H30.7ZM48.8 67.8H54.3V75.5H48.8ZM48.8 71.1H64.3V75.5H48.8ZM71.6 71.1H90.1V75.5H71.6Z"/>
-    </g>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     viewBox="0 0 108 108">
+  <image x="10" y="10" width="88" height="88"
+         xlink:href="../app/src/main/res/drawable-nodpi/gir_final_logo.png" />
+  <image x="12" y="12" width="84" height="84"
+         xlink:href="../app/src/main/res/drawable-nodpi/gir_final_logo_white.png" />
 </svg>

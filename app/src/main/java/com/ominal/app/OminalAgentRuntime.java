@@ -367,6 +367,22 @@ public final class OminalAgentRuntime {
         for (OminalAgentTransport transport : transports.keySet()) transport.shutdown();
     }
 
+    public void forgetSession(@NonNull String sessionId) {
+        cancel(sessionId);
+        releaseSessionTransport(sessionId);
+        Snapshot latest;
+        synchronized (this) {
+            mSnapshots.remove(sessionId);
+            mTurnStreams.remove(sessionId);
+            File stateFile = stateFile(sessionId);
+            if (stateFile.exists() && !stateFile.delete())
+                Logger.logWarn(LOG_TAG, "Could not remove agent state for " + sessionId);
+            mSnapshot = latestSnapshot();
+            latest = mSnapshot;
+        }
+        notifyObservers(latest);
+    }
+
     @NonNull
     private File chatDirectory(@NonNull String sessionId) {
         return new File(mHostChatRoot, sessionId);

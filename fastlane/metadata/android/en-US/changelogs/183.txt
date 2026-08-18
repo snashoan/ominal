@@ -1,0 +1,1 @@
+Chats now stay ordered by recent activity, with pin, rename, delete, ranked search, and temporary incognito sessions. New conversations open with practical starters, message formatting is cleaner, and the composer follows the keyboard without covering chat. Launcher icons retain transparency and the app now targets Android 16.

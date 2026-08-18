@@ -143,6 +143,7 @@ public final class OringutanActivity extends AppCompatActivity
     private static final String PREF_CODEX_REAUTH_REQUIRED = "codex_reauth_required";
     private static final String PREF_ACTIVE_CHAT_ID = "active_chat_id";
     private static final String PREF_COMPOSER_DRAFT = "composer_draft";
+    private static final String PREF_WELCOME_SEEN = "welcome_seen";
     private static final String PREF_LOLO_MODE_ENABLED = "lolo_mode_enabled";
     private static final String PREF_LIGHT_APPEARANCE = "light_appearance";
     private static final String STATE_MODE = "mode";
@@ -151,6 +152,7 @@ public final class OringutanActivity extends AppCompatActivity
     private static final String LAUNCHER_LIGHT_COMPONENT = "com.ominal.LauncherLightV3";
     private static final String LAUNCHER_DARK_COMPONENT = "com.ominal.LauncherDarkV3";
     private static final String CHAT_ROOT_NAME = ".ominal/chats";
+    private static final String INCOGNITO_ROOT_NAME = ".ominal/incognito";
     private static final String UI_THEME_DIRECTORY_NAME = ".ominal/themes";
     private static final String UI_CONFIG_FILE_NAME = ".ominal/themes/custom.properties";
     private static final String UI_ACTIVE_THEME_FILE_NAME = ".ominal/themes/active";
@@ -196,6 +198,14 @@ public final class OringutanActivity extends AppCompatActivity
         "Reconnect the device before rebuilding when only installation failed.",
         "Resume a saved session instead of starting the same job again.",
         "Verify the build, sign-in, Screen, and chat before calling it done."
+    };
+    private static final String[][] CHAT_STARTER_PROMPTS = {
+        {"Build an Android app",
+            "Build me a simple Android habit tracker with local storage, then test it."},
+        {"Fix this project",
+            "Inspect this workspace, run its tests, and fix the highest-impact issue."},
+        {"Handle a task on screen",
+            "Open the browser and help me complete a task, pausing when you need my input."}
     };
     private static final String NODE_VERSION = "24.18.0";
     private static final String CODEX_VERSION = "0.144.6";
@@ -261,8 +271,10 @@ public final class OringutanActivity extends AppCompatActivity
     private View mChatDrawer;
     private EditText mChatSearchInput;
     private LinearLayout mMessagesView;
+    private View mChatEmptyState;
     private LinearLayout mModeBar;
     private FrameLayout mRootFrame;
+    private FrameLayout mMainStage;
     private View mHeaderView;
     private View mComposerView;
     private FrameLayout mContentFrame;
@@ -329,6 +341,8 @@ public final class OringutanActivity extends AppCompatActivity
     private AgentTurnView mActiveAgentTurnView;
     private Markwon mMarkwon;
     private boolean mChatScrollGestureActive;
+    private boolean mShowAbsoluteWelcome;
+    private boolean mChatImeVisible;
 
     private SharedPreferences mPrefs;
     private OminalUrlRequestBridge mUrlRequestBridge;
@@ -1677,13 +1691,24 @@ public final class OringutanActivity extends AppCompatActivity
         mActiveAgentTurnView = null;
         mDisplayUrlLoaded = false;
 
-        mContentFrame = new FrameLayout(this);
-        root.addView(mContentFrame, new LinearLayout.LayoutParams(
+        mMainStage = new FrameLayout(this);
+        mMainStage.setClipChildren(false);
+        mMainStage.setClipToPadding(false);
+        root.addView(mMainStage, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
+        mContentFrame = new FrameLayout(this);
+        mMainStage.addView(mContentFrame, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
         mComposerView = createComposer();
-        root.addView(mComposerView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        FrameLayout.LayoutParams composerParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM);
+        mMainStage.addView(mComposerView, composerParams);
+        mComposerView.addOnLayoutChangeListener((view, left, top, right, bottom,
+                                                  oldLeft, oldTop, oldRight, oldBottom) ->
+            updateChatComposerInset());
 
         mDrawerLayout.addView(root, new DrawerLayout.LayoutParams(
             DrawerLayout.LayoutParams.MATCH_PARENT, DrawerLayout.LayoutParams.MATCH_PARENT));
@@ -2443,6 +2468,11 @@ public final class OringutanActivity extends AppCompatActivity
                 requestComposerKeyboard();
             return false;
         });
+        mPromptInput.setOnFocusChangeListener((view, hasFocus) -> {
+            if (!hasFocus || mMode != MODE_CHAT) return;
+            mChatScrollState.followLatest();
+            view.postDelayed(() -> scrollToBottom(true), 100L);
+        });
         writingRail.addView(mPromptInput, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -2502,12 +2532,15 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void loadOrCreateSessions() {
         ensureChatRoot();
+        clearOrphanedIncognitoChats();
         loadSessions();
+        boolean absoluteWelcome = mSessions.isEmpty()
+            && !mPrefs.getBoolean(PREF_WELCOME_SEEN, false);
         if (mSessions.isEmpty()) {
             ChatSession session = createSession("New chat");
             mSessions.add(session);
-            appendMessage(session, new ChatMessage("system", "Ready.", nowLabel()), true);
         }
+        mShowAbsoluteWelcome = absoluteWelcome;
 
         String activeId = mPrefs.getString(PREF_ACTIVE_CHAT_ID, null);
         ChatSession selected = findSession(activeId);
@@ -2531,7 +2564,7 @@ public final class OringutanActivity extends AppCompatActivity
             ChatSession session = loadSession(dir);
             if (session != null) mSessions.add(session);
         }
-        mSessions.sort((a, b) -> Long.compare(b.createdAt, a.createdAt));
+        sortSessions();
     }
 
     private ChatSession loadSession(File dir) {
@@ -2544,6 +2577,11 @@ public final class OringutanActivity extends AppCompatActivity
             String title = object.optString("title", "Chat " + id);
             long createdAt = object.optLong("createdAt", dir.lastModified());
             ChatSession session = new ChatSession(id, title, createdAt, dir.getAbsolutePath());
+            File history = new File(dir, HISTORY_FILE_NAME);
+            long legacyUpdatedAt = Math.max(createdAt,
+                Math.max(meta.lastModified(), history.lastModified()));
+            session.updatedAt = object.optLong("updatedAt", legacyUpdatedAt);
+            session.pinned = object.optBoolean("pinned", false);
             session.harnessId = OminalHarnessRegistry.normalizeSelectedId(
                 object.optString("harnessId", OminalHarnessRegistry.DEFAULT_HARNESS_ID));
             copyStringMap(object.optJSONObject("threadIds"), session.threadIds);
@@ -2613,13 +2651,18 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private ChatSession createSession(String title) {
+        return createSession(title, false);
+    }
+
+    private ChatSession createSession(String title, boolean incognito) {
         String id = Long.toString(System.currentTimeMillis(), 36);
-        File root = new File(getChatRootPath(), id);
+        File root = new File(incognito ? getIncognitoRootPath() : getChatRootPath(), id);
         File workspace = new File(root, "workspace");
         if (!workspace.isDirectory() && !workspace.mkdirs())
             Logger.logError(LOG_TAG, "Failed to create workspace: " + workspace.getAbsolutePath());
 
         ChatSession session = new ChatSession(id, title, System.currentTimeMillis(), root.getAbsolutePath());
+        session.incognito = incognito;
         if (mPrefs != null) {
             session.harnessId = OminalHarnessRegistry.normalizeSelectedId(
                 mPrefs.getString(OminalHarnessRegistry.PREFERENCE_KEY,
@@ -2630,10 +2673,13 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void createAndSelectSession() {
+        createAndSelectSession(false);
+    }
+
+    private void createAndSelectSession(boolean incognito) {
         if (!mBootstrapReady) return;
-        ChatSession session = createSession("New chat");
+        ChatSession session = createSession(incognito ? "Incognito chat" : "New chat", incognito);
         mSessions.add(0, session);
-        appendMessage(session, new ChatMessage("system", "Ready.", nowLabel()), true);
         setActiveSession(session);
     }
 
@@ -2675,6 +2721,18 @@ public final class OringutanActivity extends AppCompatActivity
         topRow.addView(mAccountButton, accountParams);
         styleAccountButton();
 
+        ImageButton incognitoButton = createToolbarIconButton(
+            R.drawable.ic_incognito, "New incognito chat");
+        incognitoButton.setOnClickListener(v -> {
+            if (mDrawerLayout != null && mChatDrawer != null)
+                mDrawerLayout.closeDrawer(mChatDrawer);
+            createAndSelectSession(true);
+        });
+        LinearLayout.LayoutParams incognitoParams =
+            new LinearLayout.LayoutParams(dp(36), dp(36));
+        incognitoParams.setMargins(dp(6), 0, 0, 0);
+        topRow.addView(incognitoButton, incognitoParams);
+
         ImageButton newChatButton = createToolbarIconButton(R.drawable.ic_add, "New chat");
         newChatButton.setOnClickListener(v -> {
             if (mDrawerLayout != null && mChatDrawer != null) mDrawerLayout.closeDrawer(mChatDrawer);
@@ -2697,6 +2755,11 @@ public final class OringutanActivity extends AppCompatActivity
         mChatSearchInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         mChatSearchInput.setPadding(dp(12), 0, dp(12), 0);
         mChatSearchInput.setBackground(makeSurfaceDrawable(ui.drawerSearch, true));
+        mChatSearchInput.setCompoundDrawablesWithIntrinsicBounds(
+            R.drawable.ic_search, 0, 0, 0);
+        mChatSearchInput.setCompoundDrawablePadding(dp(8));
+        mChatSearchInput.setCompoundDrawableTintList(
+            ColorStateList.valueOf(ui.onDarkMuted));
         mChatSearchInput.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -2733,7 +2796,12 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void setActiveSession(ChatSession session) {
+        ChatSession previous = mActiveSession;
         mActiveSession = session;
+        if (previous != null && previous != session && previous.incognito) {
+            mSessions.remove(previous);
+            destroySessionData(previous);
+        }
         OminalAgentRuntime.Snapshot agentSnapshot = mAgentRuntime == null
             ? null : mAgentRuntime.snapshot(session.id);
         mPromptRunning = agentSnapshot != null && agentSnapshot.isRunning();
@@ -2753,18 +2821,16 @@ public final class OringutanActivity extends AppCompatActivity
         UiSpec ui = ui();
         mChatDrawerList.removeAllViews();
 
-        int visibleCount = 0;
-        for (ChatSession session : mSessions) {
-            if (!matchesChatSearch(session)) continue;
+        ArrayList<ChatSession> visibleSessions = rankedVisibleSessions();
+        for (ChatSession session : visibleSessions) {
             View row = createChatDrawerRow(session, session == mActiveSession);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             params.setMargins(0, 0, 0, dp(4));
             mChatDrawerList.addView(row, params);
-            visibleCount++;
         }
 
-        if (visibleCount == 0) {
+        if (visibleSessions.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText("No matching chats");
             empty.setTextColor(ui.onDarkMuted);
@@ -2776,12 +2842,27 @@ public final class OringutanActivity extends AppCompatActivity
         }
     }
 
-    private boolean matchesChatSearch(ChatSession session) {
-        String query = mChatSearchQuery == null ? "" : mChatSearchQuery.trim().toLowerCase(Locale.US);
-        if (query.isEmpty()) return true;
-        String title = session.title == null ? "" : session.title.toLowerCase(Locale.US);
-        String last = latestUserVisibleMessage(session).toLowerCase(Locale.US);
-        return title.contains(query) || last.contains(query);
+    private ArrayList<ChatSession> rankedVisibleSessions() {
+        ArrayList<ChatSession> sessions = new ArrayList<>(mSessions);
+        String query = mChatSearchQuery == null ? "" : mChatSearchQuery.trim();
+        if (query.isEmpty()) {
+            sessions.sort(this::compareSessions);
+            return sessions;
+        }
+        HashMap<String, Integer> scores = new HashMap<>();
+        Iterator<ChatSession> iterator = sessions.iterator();
+        while (iterator.hasNext()) {
+            ChatSession session = iterator.next();
+            int score = OminalChatSearch.score(query, session.title,
+                searchableMessages(session));
+            if (score <= 0) iterator.remove();
+            else scores.put(session.id, score);
+        }
+        sessions.sort((first, second) -> {
+            int scoreOrder = Integer.compare(scores.get(second.id), scores.get(first.id));
+            return scoreOrder != 0 ? scoreOrder : compareSessions(first, second);
+        });
+        return sessions;
     }
 
     private View createChatDrawerRow(ChatSession session, boolean active) {
@@ -2800,6 +2881,11 @@ public final class OringutanActivity extends AppCompatActivity
         row.setOnClickListener(v -> {
             if (mDrawerLayout != null && mChatDrawer != null) mDrawerLayout.closeDrawer(mChatDrawer);
             setActiveSession(session);
+        });
+        row.setOnLongClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            showChatActions(session);
+            return true;
         });
 
         View selectionRule = new View(this);
@@ -2840,6 +2926,17 @@ public final class OringutanActivity extends AppCompatActivity
         row.addView(labels, new LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
+        if (session.pinned) {
+            ImageView pin = new ImageView(this);
+            pin.setImageResource(R.drawable.ic_pin);
+            pin.setImageTintList(ColorStateList.valueOf(surface.text));
+            pin.setContentDescription("Pinned");
+            pin.setPadding(dp(6), dp(6), dp(6), dp(6));
+            LinearLayout.LayoutParams pinParams = new LinearLayout.LayoutParams(dp(30), dp(30));
+            pinParams.setMargins(0, 0, dp(8), 0);
+            row.addView(pin, pinParams);
+        }
+
         return row;
     }
 
@@ -2847,9 +2944,10 @@ public final class OringutanActivity extends AppCompatActivity
         int messageCount = visibleMessageCount(session);
         String latest = latestUserVisibleMessage(session);
         String count = messageCount + (messageCount == 1 ? " message" : " messages");
-        if (messageCount == 0) return "No messages yet";
+        String prefix = session.incognito ? "Temporary · " : "";
+        if (messageCount == 0) return prefix + "No messages yet";
         if (latest.isEmpty()) return count;
-        return count + " · " + latest;
+        return prefix + count + " · " + latest;
     }
 
     private int visibleMessageCount(ChatSession session) {
@@ -2873,6 +2971,161 @@ public final class OringutanActivity extends AppCompatActivity
             }
         }
         return "";
+    }
+
+    private ArrayList<String> searchableMessages(ChatSession session) {
+        ArrayList<String> messages = new ArrayList<>();
+        for (ChatMessage message : session.messages) {
+            if ("system".equals(message.role)) continue;
+            String text = visibleMessageText(message).trim();
+            if (!message.detail.isEmpty()) text = text + " " + message.detail;
+            if (!text.isEmpty()) messages.add(text);
+        }
+        return messages;
+    }
+
+    private int compareSessions(ChatSession first, ChatSession second) {
+        if (first.pinned != second.pinned) return first.pinned ? -1 : 1;
+        int activityOrder = Long.compare(second.updatedAt, first.updatedAt);
+        if (activityOrder != 0) return activityOrder;
+        return Long.compare(second.createdAt, first.createdAt);
+    }
+
+    private void sortSessions() {
+        mSessions.sort(this::compareSessions);
+    }
+
+    private void showChatActions(ChatSession session) {
+        ArrayList<OminalInteractionSheet.Row> rows = new ArrayList<>();
+        rows.add(new OminalInteractionSheet.Row("rename", "Rename",
+            "Choose a shorter name for this chat", "", false, true, false));
+        if (!session.incognito) {
+            rows.add(new OminalInteractionSheet.Row("pin", session.pinned ? "Unpin" : "Pin",
+                session.pinned ? "Return this chat to recent ordering"
+                    : "Keep this chat above recent conversations",
+                "", session.pinned, true, false));
+        }
+        rows.add(new OminalInteractionSheet.Row("delete",
+            session.incognito ? "Discard" : "Delete",
+            session.incognito ? "Remove this temporary chat now"
+                : "Remove this chat and its workspace from the device",
+            "", false, true, true));
+
+        OminalInteractionSheet.show(this, interactionSheetTheme(), session.title,
+            session.incognito ? "Temporary chat" : "Chat options",
+            Collections.singletonList(new OminalInteractionSheet.Section("", rows)), id -> {
+                Runnable action = () -> {
+                    if ("rename".equals(id)) showRenameChatDialog(session);
+                    else if ("pin".equals(id)) togglePinned(session);
+                    else if ("delete".equals(id)) showDeleteChatConfirmation(session);
+                };
+                if (mRootFrame != null) mRootFrame.postDelayed(action, 160L);
+                else action.run();
+            });
+    }
+
+    private void showRenameChatDialog(ChatSession session) {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setText(session.title);
+        input.setSelection(input.length());
+        input.setSelectAllOnFocus(true);
+        input.setTextColor(ui().ink);
+        input.setHintTextColor(ui().muted);
+        input.setBackground(makeSurfaceDrawable(ui().composerInput, true));
+        input.setPadding(dp(14), 0, dp(14), 0);
+
+        FrameLayout inputContainer = new FrameLayout(this);
+        inputContainer.setPadding(dp(22), dp(4), dp(22), 0);
+        inputContainer.addView(input, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, dp(50)));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("Rename chat")
+            .setView(inputContainer)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Rename", null)
+            .create();
+        dialog.setOnShowListener(ignored -> {
+            styleBlackDialog(dialog);
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+                String title = input.getText().toString().replace('\n', ' ').trim();
+                if (title.isEmpty()) {
+                    input.setError("Enter a name");
+                    return;
+                }
+                if (title.length() > 80) title = title.substring(0, 80).trim();
+                session.title = title;
+                touchSession(session, true);
+                renderChatDrawer();
+                renderHeader();
+                dialog.dismiss();
+            });
+            input.requestFocus();
+            dialog.getWindow().setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        });
+        dialog.show();
+    }
+
+    private void togglePinned(ChatSession session) {
+        if (session.incognito) return;
+        session.pinned = !session.pinned;
+        saveMeta(session);
+        sortSessions();
+        renderChatDrawer();
+    }
+
+    private void showDeleteChatConfirmation(ChatSession session) {
+        boolean temporary = session.incognito;
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle(temporary ? "Discard this chat?" : "Delete this chat?")
+            .setMessage(temporary
+                ? "This temporary chat and its workspace will be removed."
+                : "Its messages, agent state, attachments, and workspace files will be removed from this device.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton(temporary ? "Discard" : "Delete",
+                (ignored, which) -> deleteSession(session))
+            .create();
+        dialog.show();
+        styleBlackDialog(dialog);
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(255, 69, 58));
+    }
+
+    private void deleteSession(ChatSession session) {
+        boolean active = session == mActiveSession;
+        if (active) {
+            stopAgentEventObserver();
+            mActiveSession = null;
+        }
+        mSessions.remove(session);
+        destroySessionData(session);
+        if (!active) {
+            renderChatDrawer();
+            return;
+        }
+        if (mSessions.isEmpty()) mSessions.add(createSession("New chat"));
+        sortSessions();
+        setActiveSession(mSessions.get(0));
+    }
+
+    private void destroySessionData(ChatSession session) {
+        if (mAgentRuntime != null) mAgentRuntime.forgetSession(session.id);
+        deleteRecursively(new File(session.rootPath));
+        if (session.incognito)
+            deleteRecursively(new File(getChatRootPath(), session.id));
+    }
+
+    private void deleteRecursively(File target) {
+        if (target == null || !target.exists()) return;
+        if (target.isDirectory()) {
+            File[] children = target.listFiles();
+            if (children != null) {
+                for (File child : children) deleteRecursively(child);
+            }
+        }
+        if (!target.delete())
+            Logger.logWarn(LOG_TAG, "Could not remove chat data: " + target.getAbsolutePath());
     }
 
     private void renderHeader() {
@@ -3017,6 +3270,7 @@ public final class OringutanActivity extends AppCompatActivity
         if (mMode != MODE_DISPLAY) parkDisplayPane();
         mContentFrame.removeAllViews();
         mMessagesView = null;
+        mChatEmptyState = null;
         mScrollView = null;
         mJumpToLatestButton = null;
         mActiveAgentTurnView = null;
@@ -3219,7 +3473,7 @@ public final class OringutanActivity extends AppCompatActivity
 
         mMessagesView = new LinearLayout(this);
         mMessagesView.setOrientation(LinearLayout.VERTICAL);
-        mMessagesView.setPadding(dp(18), dp(10), dp(18), dp(22));
+        mMessagesView.setPadding(dp(18), dp(10), dp(18), dp(142));
         mScrollView.addView(mMessagesView, new ScrollView.LayoutParams(
             ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
         chatPane.addView(mScrollView, new FrameLayout.LayoutParams(
@@ -3231,7 +3485,7 @@ public final class OringutanActivity extends AppCompatActivity
         mJumpToLatestButton.setOnClickListener(view -> scrollToBottom(true));
         FrameLayout.LayoutParams jumpParams = new FrameLayout.LayoutParams(dp(42), dp(42));
         jumpParams.gravity = Gravity.END | Gravity.BOTTOM;
-        jumpParams.setMargins(dp(16), dp(12), dp(16), dp(12));
+        jumpParams.setMargins(dp(16), dp(12), dp(16), dp(132));
         chatPane.addView(mJumpToLatestButton, jumpParams);
 
         if (mActiveSession != null) {
@@ -3239,12 +3493,139 @@ public final class OringutanActivity extends AppCompatActivity
                 if (shouldHideSystemReadyMessage(message)) continue;
                 renderChatMessage(mActiveSession, message, false);
             }
+            if (visibleMessageCount(mActiveSession) == 0) {
+                boolean absoluteWelcome = mShowAbsoluteWelcome && !mActiveSession.incognito;
+                mChatEmptyState = createChatEmptyState(mActiveSession, absoluteWelcome);
+                mMessagesView.addView(mChatEmptyState, 0,
+                    new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                if (absoluteWelcome) {
+                    mShowAbsoluteWelcome = false;
+                    mPrefs.edit().putBoolean(PREF_WELCOME_SEEN, true).apply();
+                }
+            }
         }
         if (mAgentRuntime != null && mActiveSession != null)
             bindAgentSnapshotToChat(mAgentRuntime.snapshot(mActiveSession.id));
 
+        chatPane.post(this::updateChatComposerInset);
         scrollToBottom(true);
         return chatPane;
+    }
+
+    private View createChatEmptyState(ChatSession session, boolean absoluteWelcome) {
+        UiSpec ui = ui();
+        LinearLayout empty = new LinearLayout(this);
+        empty.setOrientation(LinearLayout.VERTICAL);
+        empty.setGravity(Gravity.CENTER_HORIZONTAL);
+        empty.setPadding(dp(8), dp(48), dp(8), dp(30));
+        empty.setMinimumHeight(dp(470));
+
+        if (absoluteWelcome) {
+            ImageView mark = new ImageView(this);
+            mark.setImageResource(isLightAppearanceEnabled()
+                ? R.drawable.gir_final_logo : R.drawable.gir_final_logo_white);
+            mark.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            mark.setContentDescription("GIR");
+            empty.addView(mark, new LinearLayout.LayoutParams(dp(86), dp(86)));
+        } else if (session.incognito) {
+            ImageView incognito = new ImageView(this);
+            incognito.setImageResource(R.drawable.ic_incognito);
+            incognito.setImageTintList(ColorStateList.valueOf(ui.ink));
+            incognito.setPadding(dp(11), dp(11), dp(11), dp(11));
+            incognito.setBackground(makeRoundedDrawable(ui.panel, ui.border, dp(24)));
+            incognito.setContentDescription("Incognito chat");
+            empty.addView(incognito, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        }
+
+        TextView title = new TextView(this);
+        title.setText(session.incognito ? "Temporary chat"
+            : absoluteWelcome ? "Welcome" : "Start with an outcome");
+        title.setTextColor(ui.ink);
+        title.setTextSize(absoluteWelcome ? 25f : 22f);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        title.setGravity(Gravity.CENTER);
+        title.setIncludeFontPadding(false);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleParams.setMargins(0, absoluteWelcome ? dp(18) : session.incognito ? dp(16) : 0, 0, 0);
+        empty.addView(title, titleParams);
+
+        TextView detail = new TextView(this);
+        detail.setText(session.incognito
+            ? "Messages, files, terminal state, and workspace are deleted when you leave."
+            : "Choose an example or describe what you want done.");
+        detail.setTextColor(ui.muted);
+        detail.setTextSize(14f);
+        detail.setGravity(Gravity.CENTER);
+        detail.setLineSpacing(dp(1), 1.08f);
+        detail.setIncludeFontPadding(false);
+        LinearLayout.LayoutParams detailParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        detailParams.setMargins(dp(20), dp(10), dp(20), dp(24));
+        empty.addView(detail, detailParams);
+
+        for (String[] starterPrompt : CHAT_STARTER_PROMPTS) {
+            String label = starterPrompt[0];
+            String prompt = starterPrompt[1];
+            LinearLayout starter = new LinearLayout(this);
+            starter.setOrientation(LinearLayout.HORIZONTAL);
+            starter.setGravity(Gravity.CENTER_VERTICAL);
+            starter.setPadding(dp(16), dp(12), dp(12), dp(12));
+            starter.setBackground(makeRoundedDrawable(ui.panel, ui.border, dp(16)));
+            starter.setClickable(true);
+            starter.setFocusable(true);
+            attachNativeRipple(starter);
+            starter.setOnClickListener(view -> useStarterPrompt(prompt));
+
+            LinearLayout copy = new LinearLayout(this);
+            copy.setOrientation(LinearLayout.VERTICAL);
+
+            TextView promptTitle = new TextView(this);
+            promptTitle.setText(label);
+            promptTitle.setTextColor(ui.ink);
+            promptTitle.setTextSize(15f);
+            promptTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            promptTitle.setIncludeFontPadding(false);
+            copy.addView(promptTitle, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            TextView promptDetail = new TextView(this);
+            promptDetail.setText(prompt);
+            promptDetail.setTextColor(ui.muted);
+            promptDetail.setTextSize(13.5f);
+            promptDetail.setLineSpacing(dp(1), 1.06f);
+            promptDetail.setIncludeFontPadding(false);
+            promptDetail.setMaxLines(2);
+            promptDetail.setEllipsize(TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams promptDetailParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            promptDetailParams.setMargins(0, dp(5), 0, 0);
+            copy.addView(promptDetail, promptDetailParams);
+            starter.addView(copy, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+            ImageView arrow = new ImageView(this);
+            arrow.setImageResource(R.drawable.ic_chevron_right);
+            arrow.setImageTintList(ColorStateList.valueOf(ui.muted));
+            arrow.setContentDescription(null);
+            LinearLayout.LayoutParams arrowParams = new LinearLayout.LayoutParams(dp(24), dp(24));
+            arrowParams.setMargins(dp(12), 0, 0, 0);
+            starter.addView(arrow, arrowParams);
+
+            LinearLayout.LayoutParams starterParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            starterParams.setMargins(0, 0, 0, dp(9));
+            empty.addView(starter, starterParams);
+        }
+        return empty;
+    }
+
+    private void useStarterPrompt(String prompt) {
+        if (mPromptInput == null) return;
+        mPromptInput.setText(prompt);
+        mPromptInput.setSelection(mPromptInput.length());
+        requestComposerKeyboard();
     }
 
     private View createTerminalPane() {
@@ -3255,7 +3636,7 @@ public final class OringutanActivity extends AppCompatActivity
 
         LinearLayout pane = new LinearLayout(this);
         pane.setOrientation(LinearLayout.VERTICAL);
-        pane.setPadding(dp(16), dp(16), dp(16), dp(16));
+        pane.setPadding(dp(16), dp(16), dp(16), dp(148));
         scrollView.addView(pane, new ScrollView.LayoutParams(
             ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
 
@@ -5414,8 +5795,15 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void appendMessage(ChatSession session, ChatMessage message, boolean persist) {
         session.messages.add(message);
-        if (persist) appendHistory(session, message);
+        if (persist) {
+            appendHistory(session, message);
+            touchSession(session, true);
+        }
         if (session == mActiveSession && mMode == MODE_CHAT && !shouldHideSystemReadyMessage(message)) {
+            if (mChatEmptyState != null && mChatEmptyState.getParent() == mMessagesView) {
+                mMessagesView.removeView(mChatEmptyState);
+                mChatEmptyState = null;
+            }
             if ("user".equals(message.role)) mChatScrollState.followLatest();
             renderChatMessage(session, message, true);
         }
@@ -5465,7 +5853,7 @@ public final class OringutanActivity extends AppCompatActivity
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.gravity = fromUser ? Gravity.END : Gravity.START;
-        params.setMargins(0, dp(5), 0, dp(12));
+        params.setMargins(0, dp(6), 0, dp(14));
         if (mMessagesView != null) mMessagesView.addView(bubble, params);
         if (scrollNow) animateMessageIn(bubble, fromUser);
         if (scrollNow) scrollToBottom();
@@ -5479,10 +5867,13 @@ public final class OringutanActivity extends AppCompatActivity
         if (fromUser) bubble.setText(message);
         else renderMarkdown(bubble, message);
         bubble.setTextSize(16f);
-        bubble.setLineSpacing(dp(3), 1.12f);
+        bubble.setLetterSpacing(0f);
+        bubble.setLineSpacing(dp(4), 1.1f);
         bubble.setTextColor(surface.text);
-        if (fromUser) bubble.setPadding(dp(14), dp(11), dp(14), dp(11));
-        else bubble.setPadding(0, dp(8), 0, dp(8));
+        bubble.setIncludeFontPadding(false);
+        bubble.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+        if (fromUser) bubble.setPadding(dp(15), dp(12), dp(15), dp(12));
+        else bubble.setPadding(dp(1), dp(10), dp(1), dp(10));
         bubble.setBackground(makeSurfaceDrawable(surface, false));
         bubble.setTextIsSelectable(true);
         bubble.setMovementMethod(fromUser
@@ -5772,10 +6163,13 @@ public final class OringutanActivity extends AppCompatActivity
         container.setGravity(Gravity.START);
 
         TextView message = new TextView(this);
-        message.setTextSize(16);
-        message.setLineSpacing(dp(2), 1.1f);
+        message.setTextSize(16f);
+        message.setLetterSpacing(0f);
+        message.setLineSpacing(dp(4), 1.1f);
         message.setTextColor(ui.bubbleAgent.text);
-        message.setPadding(0, dp(7), 0, dp(7));
+        message.setIncludeFontPadding(false);
+        message.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+        message.setPadding(dp(1), dp(10), dp(1), dp(10));
         message.setBackground(makeSurfaceDrawable(ui.bubbleAgent, false));
         message.setTextIsSelectable(true);
         message.setMovementMethod(LinkMovementMethod.getInstance());
@@ -5863,7 +6257,7 @@ public final class OringutanActivity extends AppCompatActivity
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.gravity = Gravity.START;
-        params.setMargins(0, dp(5), 0, dp(12));
+        params.setMargins(0, dp(6), 0, dp(14));
         if (mMessagesView != null) mMessagesView.addView(container, params);
         if (scrollNow) animateMessageIn(container, false);
         if (scrollNow) scrollToBottom();
@@ -6033,6 +6427,7 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void appendHistory(ChatSession session, ChatMessage message) {
+        if (session.incognito) return;
         ensureDirectory(session.rootPath);
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(session.historyPath, true))) {
             JSONObject object = new JSONObject();
@@ -6051,12 +6446,15 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void saveMeta(ChatSession session) {
+        if (session.incognito) return;
         ensureDirectory(session.rootPath);
         try {
             JSONObject object = new JSONObject();
             object.put("id", session.id);
             object.put("title", session.title);
             object.put("createdAt", session.createdAt);
+            object.put("updatedAt", session.updatedAt);
+            object.put("pinned", session.pinned);
             object.put("harnessId", session.harnessId);
             if (!session.threadIds.isEmpty())
                 object.put("threadIds", new JSONObject(session.threadIds));
@@ -6085,9 +6483,16 @@ public final class OringutanActivity extends AppCompatActivity
         if (cleaned.length() > 36) cleaned = cleaned.substring(0, 36).trim();
         if (cleaned.isEmpty()) return;
         session.title = cleaned;
-        saveMeta(session);
+        touchSession(session, true);
         renderChatDrawer();
         renderHeader();
+    }
+
+    private void touchSession(ChatSession session, boolean persist) {
+        session.updatedAt = System.currentTimeMillis();
+        if (persist) saveMeta(session);
+        sortSessions();
+        if (mChatDrawerList != null) renderChatDrawer();
     }
 
     private ChatSession findSession(String id) {
@@ -6099,6 +6504,22 @@ public final class OringutanActivity extends AppCompatActivity
 
     private String getChatRootPath() {
         return OminalConstants.OMINAL_HOME_DIR_PATH + "/" + CHAT_ROOT_NAME;
+    }
+
+    private String getIncognitoRootPath() {
+        return OminalConstants.OMINAL_HOME_DIR_PATH + "/" + INCOGNITO_ROOT_NAME;
+    }
+
+    private void clearOrphanedIncognitoChats() {
+        File root = new File(getIncognitoRootPath());
+        File[] sessions = root.listFiles(File::isDirectory);
+        if (sessions != null) {
+            for (File session : sessions) {
+                deleteRecursively(new File(getChatRootPath(), session.getName()));
+                deleteRecursively(session);
+            }
+        }
+        if (root.isDirectory()) deleteRecursively(root);
     }
 
     private String copyAttachmentToWorkspace(ChatSession session, Uri uri) throws IOException {
@@ -6300,6 +6721,25 @@ public final class OringutanActivity extends AppCompatActivity
         }
     }
 
+    private void updateChatComposerInset() {
+        int composerHeight = mComposerView == null || mComposerView.getVisibility() != View.VISIBLE
+            ? 0 : mComposerView.getHeight();
+        int bottomInset = Math.max(dp(22), composerHeight + dp(8));
+        if (mMessagesView != null && mMessagesView.getPaddingBottom() != bottomInset) {
+            mMessagesView.setPadding(dp(18), dp(10), dp(18), bottomInset);
+        }
+        if (mJumpToLatestButton != null
+            && mJumpToLatestButton.getLayoutParams() instanceof FrameLayout.LayoutParams) {
+            FrameLayout.LayoutParams params =
+                (FrameLayout.LayoutParams) mJumpToLatestButton.getLayoutParams();
+            int margin = composerHeight + dp(8);
+            if (params.bottomMargin != margin) {
+                params.bottomMargin = margin;
+                mJumpToLatestButton.setLayoutParams(params);
+            }
+        }
+    }
+
     private void animateModeView(View view) {
         view.setAlpha(0f);
         view.setTranslationY(mMode == MODE_DISPLAY ? dp(18) : dp(10));
@@ -6378,6 +6818,7 @@ public final class OringutanActivity extends AppCompatActivity
             Insets ime = insets.isVisible(WindowInsetsCompat.Type.ime())
                 ? insets.getInsets(WindowInsetsCompat.Type.ime())
                 : Insets.NONE;
+            boolean chatImeVisible = ime.bottom > 0 && mMode == MODE_CHAT;
             mChatInsetLeft = Math.max(systemBars.left,
                 Math.max(mandatoryGestures.left, cutout.left));
             mChatInsetTop = Math.max(systemBars.top,
@@ -6386,7 +6827,21 @@ public final class OringutanActivity extends AppCompatActivity
                 Math.max(mandatoryGestures.right, cutout.right));
             mChatInsetBottom = Math.max(ime.bottom, Math.max(systemBars.bottom,
                 Math.max(mandatoryGestures.bottom, cutout.bottom)));
-            if (mDrawerLayout != null) mDrawerLayout.post(this::applyChatViewportInsets);
+            if (mDrawerLayout != null) {
+                mDrawerLayout.post(() -> {
+                    applyChatViewportInsets();
+                    updateChatComposerInset();
+                    if (chatImeVisible && !mChatImeVisible && mPromptInput != null
+                        && mPromptInput.hasFocus()) {
+                        scrollToBottom(true);
+                        if (mScrollView != null)
+                            mScrollView.postDelayed(() -> scrollToBottom(true), 120L);
+                    }
+                    mChatImeVisible = chatImeVisible;
+                });
+            } else {
+                mChatImeVisible = chatImeVisible;
+            }
 
             int reportedSystemBottom = Math.max(navigation.bottom, mandatoryGestures.bottom);
             int stableSystemBottom = reportedSystemBottom > 0
@@ -7724,11 +8179,15 @@ public final class OringutanActivity extends AppCompatActivity
         PendingTurn activeTurn;
         String title;
         String harnessId = OminalHarnessRegistry.DEFAULT_HARNESS_ID;
+        long updatedAt;
+        boolean pinned;
+        boolean incognito;
 
         ChatSession(String id, String title, long createdAt, String rootPath) {
             this.id = id;
             this.title = title;
             this.createdAt = createdAt;
+            this.updatedAt = createdAt;
             this.rootPath = rootPath;
             this.workspacePath = rootPath + "/workspace";
             this.historyPath = rootPath + "/" + HISTORY_FILE_NAME;
@@ -8279,8 +8738,20 @@ public final class OringutanActivity extends AppCompatActivity
 
         void setMessage(String value) {
             String text = value == null ? "" : value;
+            boolean reveal = !text.isEmpty() && message.getVisibility() != View.VISIBLE;
             renderMarkdown(message, text);
             message.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
+            if (reveal) {
+                message.animate().cancel();
+                message.setAlpha(0f);
+                message.setTranslationY(dp(5));
+                message.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(190L)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.8f))
+                    .start();
+            }
         }
 
         void setMedia(ChatSession session, List<OminalChatMedia.Item> items) {
