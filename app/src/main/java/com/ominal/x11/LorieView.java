@@ -170,10 +170,14 @@ public final class LorieView extends SurfaceView {
 
     /** Releases the IME and clipboard listener before the display is hidden or backgrounded. */
     public void deactivateInputBridge() {
+        boolean wasActive = mInputBridgeActive;
         mInputBridgeActive = false;
         removeCallbacks(mShowKeyboardAfterLongPress);
         endAllTouches();
         updateClipboardListener();
+
+        // A parked display must not disturb the chat composer's active input connection.
+        if (!wasActive) return;
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             WindowInsetsController controller = getWindowInsetsController();
@@ -185,7 +189,6 @@ public final class LorieView extends SurfaceView {
         clearFocus();
         setFocusableInTouchMode(false);
         setFocusable(false);
-        if (mInputMethodManager != null) mInputMethodManager.restartInput(this);
     }
 
     public void refreshDisplaySize() {

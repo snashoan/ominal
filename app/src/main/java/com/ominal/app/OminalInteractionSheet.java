@@ -258,9 +258,8 @@ final class OminalInteractionSheet {
     private static View createRow(Context context, Theme theme, Row value,
                                   BottomSheetDialog dialog, Listener listener) {
         LinearLayout row = new LinearLayout(context);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(context, 10), dp(context, 8), dp(context, 12), dp(context, 8));
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(context, 10), dp(context, 8), dp(context, 10), dp(context, 5));
         row.setMinimumHeight(dp(context, value.detail.isEmpty() ? 50 : 58));
         row.setEnabled(value.enabled);
         row.setAlpha(value.enabled ? 1f : 0.45f);
@@ -270,14 +269,10 @@ final class OminalInteractionSheet {
             + (value.detail.isEmpty() ? "" : ", " + value.detail)
             + (value.selected ? ", selected" : ""));
 
-        View selected = new View(context);
-        selected.setBackground(roundRect(context,
-            value.selected ? theme.accent : Color.TRANSPARENT,
-            Color.TRANSPARENT, 2));
-        LinearLayout.LayoutParams selectedParams = new LinearLayout.LayoutParams(
-            dp(context, 3), dp(context, 26));
-        selectedParams.setMargins(0, 0, dp(context, 13), 0);
-        row.addView(selected, selectedParams);
+        LinearLayout content = new LinearLayout(context);
+        content.setOrientation(LinearLayout.HORIZONTAL);
+        content.setGravity(Gravity.CENTER_VERTICAL);
+        content.setPadding(dp(context, 4), 0, dp(context, 2), 0);
 
         LinearLayout labels = new LinearLayout(context);
         labels.setOrientation(LinearLayout.VERTICAL);
@@ -307,7 +302,7 @@ final class OminalInteractionSheet {
             detailParams.setMargins(0, dp(context, 4), 0, 0);
             labels.addView(detail, detailParams);
         }
-        row.addView(labels, new LinearLayout.LayoutParams(0,
+        content.addView(labels, new LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         if (!value.trailing.isEmpty()) {
@@ -322,8 +317,20 @@ final class OminalInteractionSheet {
             LinearLayout.LayoutParams trailingParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             trailingParams.setMargins(dp(context, 12), 0, 0, 0);
-            row.addView(trailing, trailingParams);
+            content.addView(trailing, trailingParams);
         }
+
+        row.addView(content, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        View selected = new View(context);
+        selected.setBackground(roundRect(context,
+            value.selected ? theme.accent : Color.TRANSPARENT,
+            Color.TRANSPARENT, 2));
+        LinearLayout.LayoutParams selectedParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 2));
+        selectedParams.setMargins(dp(context, 4), dp(context, 4), dp(context, 4), 0);
+        row.addView(selected, selectedParams);
 
         row.setOnClickListener(view -> {
             if (!value.enabled) return;

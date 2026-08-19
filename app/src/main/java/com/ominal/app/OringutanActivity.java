@@ -42,7 +42,6 @@ import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.text.TextWatcher;
-import android.text.method.ArrowKeyMovementMethod;
 import android.text.method.LinkMovementMethod;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
@@ -200,12 +199,16 @@ public final class OringutanActivity extends AppCompatActivity
         "Verify the build, sign-in, Screen, and chat before calling it done."
     };
     private static final String[][] CHAT_STARTER_PROMPTS = {
-        {"Build an Android app",
-            "Build me a simple Android habit tracker with local storage, then test it."},
-        {"Fix this project",
-            "Inspect this workspace, run its tests, and fix the highest-impact issue."},
-        {"Handle a task on screen",
-            "Open the browser and help me complete a task, pausing when you need my input."}
+        {"Convert an image to PDF", "Create a clean, shareable document.",
+            "Convert the attached image into a high-quality PDF."},
+        {"Clean up this workspace", "Review storage before removing anything.",
+            "Find the largest file in this workspace and ask before deleting it."},
+        {"Research a webpage", "Open, inspect, and summarize it clearly.",
+            "Open the webpage I provide and turn it into a clean one-page brief."},
+        {"Organize these photos", "Sort, rename, and group the files.",
+            "Organize the attached photos by date, rename them clearly, and put them into folders."},
+        {"Build an Android app", "Take an idea through a working build.",
+            "Build a simple Android habit tracker with local storage, then test it."}
     };
     private static final String NODE_VERSION = "24.18.0";
     private static final String CODEX_VERSION = "0.144.6";
@@ -2426,7 +2429,9 @@ public final class OringutanActivity extends AppCompatActivity
         mPromptInput.setMinHeight(dp(46));
         mPromptInput.setMinimumHeight(dp(46));
         mPromptInput.setSingleLine(false);
-        mPromptInput.setTextIsSelectable(true);
+        mPromptInput.setFocusable(true);
+        mPromptInput.setFocusableInTouchMode(true);
+        mPromptInput.setCursorVisible(true);
         mPromptInput.setIncludeFontPadding(false);
         mPromptInput.setTextColor(ui.composerInput.text);
         mPromptInput.setHintTextColor(ui.muted);
@@ -2464,8 +2469,11 @@ public final class OringutanActivity extends AppCompatActivity
             return false;
         });
         mPromptInput.setOnTouchListener((view, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN)
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                releaseNativeDisplayInput();
+                view.requestFocusFromTouch();
                 requestComposerKeyboard();
+            }
             return false;
         });
         mPromptInput.setOnFocusChangeListener((view, hasFocus) -> {
@@ -2797,6 +2805,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void setActiveSession(ChatSession session) {
         ChatSession previous = mActiveSession;
+        if (mPromptInput != null) mPromptInput.clearFocus();
         mActiveSession = session;
         if (previous != null && previous != session && previous.incognito) {
             mSessions.remove(previous);
@@ -2814,6 +2823,7 @@ public final class OringutanActivity extends AppCompatActivity
         renderMode();
         updateHarnessControls();
         refreshHarnessCapabilities(session.harnessId);
+        restoreComposerAfterSessionSelection();
     }
 
     private void renderChatDrawer() {
@@ -2822,12 +2832,20 @@ public final class OringutanActivity extends AppCompatActivity
         mChatDrawerList.removeAllViews();
 
         ArrayList<ChatSession> visibleSessions = rankedVisibleSessions();
+        int rowIndex = 0;
         for (ChatSession session : visibleSessions) {
             View row = createChatDrawerRow(session, session == mActiveSession);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             params.setMargins(0, 0, 0, dp(4));
             mChatDrawerList.addView(row, params);
+            row.setAlpha(0f);
+            row.setTranslationY(dp(5));
+            row.animate().alpha(1f).translationY(0f).setStartDelay(Math.min(90L,
+                rowIndex * 18L)).setDuration(150)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.8f))
+                .start();
+            rowIndex++;
         }
 
         if (visibleSessions.isEmpty()) {
@@ -2869,8 +2887,7 @@ public final class OringutanActivity extends AppCompatActivity
         UiSpec ui = ui();
         SurfaceSpec surface = active ? ui.drawerRowActive : ui.drawerRow;
         LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setOrientation(LinearLayout.VERTICAL);
         row.setPadding(0, 0, 0, 0);
         row.setMinimumHeight(dp(66));
         row.setClickable(true);
@@ -2888,12 +2905,10 @@ public final class OringutanActivity extends AppCompatActivity
             return true;
         });
 
-        View selectionRule = new View(this);
-        selectionRule.setBackground(makeRoundedDrawable(active ? ui.ink : Color.TRANSPARENT,
-            Color.TRANSPARENT, dp(2)));
-        LinearLayout.LayoutParams selectionParams = new LinearLayout.LayoutParams(dp(3), dp(30));
-        selectionParams.setMargins(0, 0, dp(12), 0);
-        row.addView(selectionRule, selectionParams);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.HORIZONTAL);
+        content.setGravity(Gravity.CENTER_VERTICAL);
+        content.setPadding(dp(14), 0, dp(6), 0);
 
         LinearLayout labels = new LinearLayout(this);
         labels.setOrientation(LinearLayout.VERTICAL);
@@ -2923,7 +2938,7 @@ public final class OringutanActivity extends AppCompatActivity
             LinearLayout.LayoutParams.MATCH_PARENT, dp(18));
         metaParams.setMargins(0, dp(5), 0, 0);
         labels.addView(meta, metaParams);
-        row.addView(labels, new LinearLayout.LayoutParams(0,
+        content.addView(labels, new LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         if (session.pinned) {
@@ -2934,8 +2949,19 @@ public final class OringutanActivity extends AppCompatActivity
             pin.setPadding(dp(6), dp(6), dp(6), dp(6));
             LinearLayout.LayoutParams pinParams = new LinearLayout.LayoutParams(dp(30), dp(30));
             pinParams.setMargins(0, 0, dp(8), 0);
-            row.addView(pin, pinParams);
+            content.addView(pin, pinParams);
         }
+
+        row.addView(content, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        View selectionRule = new View(this);
+        selectionRule.setBackground(makeRoundedDrawable(active ? ui.ink : Color.TRANSPARENT,
+            Color.TRANSPARENT, dp(2)));
+        LinearLayout.LayoutParams selectionParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(2));
+        selectionParams.setMargins(dp(14), 0, dp(14), dp(5));
+        row.addView(selectionRule, selectionParams);
 
         return row;
     }
@@ -3333,22 +3359,52 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void requestComposerKeyboard() {
         if (mPromptInput == null || mMode == MODE_DISPLAY) return;
+        releaseNativeDisplayInput();
+        mPromptInput.post(() -> showComposerKeyboard(true));
+    }
+
+    private void showComposerKeyboard(boolean retryIfWindowIsBusy) {
+        if (mPromptInput == null || mMode == MODE_DISPLAY) return;
+        if (!mPromptInput.hasWindowFocus()) {
+            if (retryIfWindowIsBusy)
+                mPromptInput.postDelayed(() -> showComposerKeyboard(false), 220L);
+            return;
+        }
+        mPromptInput.setShowSoftInputOnFocus(true);
+        mPromptInput.setFocusable(true);
+        mPromptInput.setFocusableInTouchMode(true);
+        mPromptInput.setCursorVisible(true);
+        mPromptInput.requestFocusFromTouch();
+        InputMethodManager manager = (InputMethodManager)
+            getSystemService(Context.INPUT_METHOD_SERVICE);
+        boolean shown = false;
+        if (manager != null) {
+            manager.restartInput(mPromptInput);
+            manager.viewClicked(mPromptInput);
+            shown = manager.showSoftInput(mPromptInput, InputMethodManager.SHOW_IMPLICIT);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+            && mPromptInput.getWindowInsetsController() != null) {
+            mPromptInput.getWindowInsetsController().show(WindowInsets.Type.ime());
+        }
+        if (!shown && retryIfWindowIsBusy)
+            mPromptInput.postDelayed(() -> showComposerKeyboard(false), 220L);
+    }
+
+    private void restoreComposerAfterSessionSelection() {
+        if (mPromptInput == null) return;
+        releaseNativeDisplayInput();
+        mPromptInput.setHint(mActiveSession != null && mActiveSession.incognito
+            ? "Write a temporary message" : getString(R.string.oringutan_prompt_hint));
+        setInputEnabled(true);
         mPromptInput.postDelayed(() -> {
-            if (mPromptInput == null || mMode == MODE_DISPLAY
-                || !mPromptInput.hasWindowFocus()) return;
+            if (mPromptInput == null || mMode != MODE_CHAT) return;
             mPromptInput.setShowSoftInputOnFocus(true);
-            mPromptInput.requestFocus();
             InputMethodManager manager = (InputMethodManager)
                 getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (manager != null) {
+            if (manager != null && mPromptInput.hasFocus())
                 manager.restartInput(mPromptInput);
-                manager.showSoftInput(mPromptInput, InputMethodManager.SHOW_IMPLICIT);
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-                && mPromptInput.getWindowInsetsController() != null) {
-                mPromptInput.getWindowInsetsController().show(WindowInsets.Type.ime());
-            }
-        }, 40);
+        }, 180L);
     }
 
     private void attachDisplayPaneToWarmHost(View pane) {
@@ -3518,8 +3574,12 @@ public final class OringutanActivity extends AppCompatActivity
         LinearLayout empty = new LinearLayout(this);
         empty.setOrientation(LinearLayout.VERTICAL);
         empty.setGravity(Gravity.CENTER_HORIZONTAL);
-        empty.setPadding(dp(8), dp(48), dp(8), dp(30));
-        empty.setMinimumHeight(dp(470));
+        empty.setPadding(dp(8), dp(34), dp(8), dp(30));
+        empty.setMinimumHeight(dp(500));
+        empty.setAlpha(0f);
+        empty.setTranslationY(dp(10));
+        empty.post(() -> empty.animate().alpha(1f).translationY(0f).setDuration(220)
+            .setInterpolator(new android.view.animation.DecelerateInterpolator(1.8f)).start());
 
         if (absoluteWelcome) {
             ImageView mark = new ImageView(this);
@@ -3539,8 +3599,8 @@ public final class OringutanActivity extends AppCompatActivity
         }
 
         TextView title = new TextView(this);
-        title.setText(session.incognito ? "Temporary chat"
-            : absoluteWelcome ? "Welcome" : "Start with an outcome");
+        title.setText(session.incognito ? "Say it here, then leave it behind"
+            : "What should GIR do?");
         title.setTextColor(ui.ink);
         title.setTextSize(absoluteWelcome ? 25f : 22f);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
@@ -3553,8 +3613,8 @@ public final class OringutanActivity extends AppCompatActivity
 
         TextView detail = new TextView(this);
         detail.setText(session.incognito
-            ? "Messages, files, terminal state, and workspace are deleted when you leave."
-            : "Choose an example or describe what you want done.");
+            ? "This chat, its files, and terminal state disappear when you leave it."
+            : "Choose a starting point or write your own request.");
         detail.setTextColor(ui.muted);
         detail.setTextSize(14f);
         detail.setGravity(Gravity.CENTER);
@@ -3565,18 +3625,32 @@ public final class OringutanActivity extends AppCompatActivity
         detailParams.setMargins(dp(20), dp(10), dp(20), dp(24));
         empty.addView(detail, detailParams);
 
-        for (String[] starterPrompt : CHAT_STARTER_PROMPTS) {
+        if (session.incognito) return empty;
+
+        for (int starterIndex = 0; starterIndex < CHAT_STARTER_PROMPTS.length; starterIndex++) {
+            String[] starterPrompt = CHAT_STARTER_PROMPTS[starterIndex];
             String label = starterPrompt[0];
-            String prompt = starterPrompt[1];
+            String detailText = starterPrompt[1];
+            String prompt = starterPrompt[2];
             LinearLayout starter = new LinearLayout(this);
             starter.setOrientation(LinearLayout.HORIZONTAL);
             starter.setGravity(Gravity.CENTER_VERTICAL);
-            starter.setPadding(dp(16), dp(12), dp(12), dp(12));
+            starter.setPadding(dp(12), dp(11), dp(12), dp(11));
             starter.setBackground(makeRoundedDrawable(ui.panel, ui.border, dp(16)));
             starter.setClickable(true);
             starter.setFocusable(true);
             attachNativeRipple(starter);
             starter.setOnClickListener(view -> useStarterPrompt(prompt));
+
+            ImageView taskIcon = new ImageView(this);
+            taskIcon.setImageResource(starterIcon(starterIndex));
+            taskIcon.setImageTintList(ColorStateList.valueOf(ui.ink));
+            taskIcon.setPadding(dp(7), dp(7), dp(7), dp(7));
+            taskIcon.setBackground(makeRoundedDrawable(ui.app.fill, ui.border, dp(11)));
+            taskIcon.setContentDescription(null);
+            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(42), dp(42));
+            iconParams.setMargins(0, 0, dp(12), 0);
+            starter.addView(taskIcon, iconParams);
 
             LinearLayout copy = new LinearLayout(this);
             copy.setOrientation(LinearLayout.VERTICAL);
@@ -3591,7 +3665,7 @@ public final class OringutanActivity extends AppCompatActivity
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
             TextView promptDetail = new TextView(this);
-            promptDetail.setText(prompt);
+            promptDetail.setText(detailText);
             promptDetail.setTextColor(ui.muted);
             promptDetail.setTextSize(13.5f);
             promptDetail.setLineSpacing(dp(1), 1.06f);
@@ -3619,6 +3693,16 @@ public final class OringutanActivity extends AppCompatActivity
             empty.addView(starter, starterParams);
         }
         return empty;
+    }
+
+    private int starterIcon(int index) {
+        switch (index) {
+            case 0: return R.drawable.ic_document;
+            case 1: return R.drawable.ic_folder;
+            case 2: return R.drawable.ic_browser;
+            case 3: return R.drawable.ic_images;
+            default: return R.drawable.ic_build;
+        }
     }
 
     private void useStarterPrompt(String prompt) {
@@ -5794,6 +5878,7 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void appendMessage(ChatSession session, ChatMessage message, boolean persist) {
+        boolean composerHadFocus = mPromptInput != null && mPromptInput.hasFocus();
         session.messages.add(message);
         if (persist) {
             appendHistory(session, message);
@@ -5806,7 +5891,20 @@ public final class OringutanActivity extends AppCompatActivity
             }
             if ("user".equals(message.role)) mChatScrollState.followLatest();
             renderChatMessage(session, message, true);
+            if (composerHadFocus) restoreComposerFocusAfterMessage();
         }
+    }
+
+    private void restoreComposerFocusAfterMessage() {
+        if (mPromptInput == null || mMode != MODE_CHAT || !mPromptInput.isEnabled()) return;
+        mPromptInput.post(() -> {
+            if (mPromptInput == null || mMode != MODE_CHAT || !mPromptInput.isEnabled()) return;
+            mPromptInput.requestFocus();
+            mPromptInput.setCursorVisible(true);
+            InputMethodManager manager = (InputMethodManager)
+                getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (manager != null) manager.restartInput(mPromptInput);
+        });
     }
 
     private void renderChatMessage(ChatSession session, ChatMessage message, boolean scrollNow) {
@@ -5875,11 +5973,9 @@ public final class OringutanActivity extends AppCompatActivity
         if (fromUser) bubble.setPadding(dp(15), dp(12), dp(15), dp(12));
         else bubble.setPadding(dp(1), dp(10), dp(1), dp(10));
         bubble.setBackground(makeSurfaceDrawable(surface, false));
-        bubble.setTextIsSelectable(true);
-        bubble.setMovementMethod(fromUser
-            ? ArrowKeyMovementMethod.getInstance() : LinkMovementMethod.getInstance());
-        bubble.setFocusable(true);
-        bubble.setFocusableInTouchMode(true);
+        if (!fromUser) bubble.setMovementMethod(LinkMovementMethod.getInstance());
+        bubble.setFocusable(false);
+        bubble.setFocusableInTouchMode(false);
         bubble.setOnLongClickListener(v -> {
             copyToClipboard("GIR message", bubble.getText().toString());
             Toast.makeText(this, "Message copied", Toast.LENGTH_SHORT).show();
@@ -6005,7 +6101,7 @@ public final class OringutanActivity extends AppCompatActivity
             }
         }
         gallery.setClickable(true);
-        gallery.setFocusable(true);
+        gallery.setFocusable(false);
         gallery.setOnClickListener(ignored -> showMediaPreview(workspace, images, 0));
         gallery.setContentDescription(images.size() == 1
             ? "Open image attachment" : "Open gallery with " + images.size() + " images");
@@ -6171,10 +6267,9 @@ public final class OringutanActivity extends AppCompatActivity
         message.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
         message.setPadding(dp(1), dp(10), dp(1), dp(10));
         message.setBackground(makeSurfaceDrawable(ui.bubbleAgent, false));
-        message.setTextIsSelectable(true);
         message.setMovementMethod(LinkMovementMethod.getInstance());
-        message.setFocusable(true);
-        message.setFocusableInTouchMode(true);
+        message.setFocusable(false);
+        message.setFocusableInTouchMode(false);
         message.setVisibility(View.GONE);
         message.setOnLongClickListener(v -> {
             copyToClipboard("GIR message", message.getText().toString());
@@ -6264,7 +6359,7 @@ public final class OringutanActivity extends AppCompatActivity
         AgentTurnView view = new AgentTurnView(message, media, workSurface, trace, detail,
             breakdown, pulse, meter, status);
         workSurface.setClickable(true);
-        workSurface.setFocusable(true);
+        workSurface.setFocusable(false);
         workSurface.setOnClickListener(ignored -> {
             view.expanded = !view.expanded;
             renderAgentTurnStatus(view);
@@ -6617,7 +6712,17 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void setInputEnabled(boolean enabled) {
         boolean available = enabled && mBootstrapReady && mRuntimeReady;
-        if (mPromptInput != null) mPromptInput.setEnabled(available);
+        boolean composerAvailable = mActiveSession != null && mMode != MODE_DISPLAY;
+        if (mPromptInput != null) {
+            if (mPromptInput.isEnabled() != composerAvailable)
+                mPromptInput.setEnabled(composerAvailable);
+            if (mPromptInput.isFocusable() != composerAvailable)
+                mPromptInput.setFocusable(composerAvailable);
+            if (mPromptInput.isFocusableInTouchMode() != composerAvailable)
+                mPromptInput.setFocusableInTouchMode(composerAvailable);
+            if (mPromptInput.isCursorVisible() != composerAvailable)
+                mPromptInput.setCursorVisible(composerAvailable);
+        }
         if (mAttachButton != null) mAttachButton.setEnabled(available);
         if (mSendButton != null) {
             mSendButton.setEnabled(available);

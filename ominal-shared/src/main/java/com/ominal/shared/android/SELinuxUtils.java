@@ -1,20 +1,20 @@
 package com.ominal.shared.android;
 
-import android.annotation.SuppressLint;
+import android.os.Process;
+import android.system.Os;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.ominal.shared.logger.Logger;
-import com.ominal.shared.reflection.ReflectionUtils;
-
-import java.lang.reflect.Method;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.nio.charset.StandardCharsets;
 
 public class SELinuxUtils {
 
-    public static final String ANDROID_OS_SELINUX_CLASS = "android.os.SELinux";
-
     private static final String LOG_TAG = "SELinuxUtils";
+    private static final String SELINUX_XATTR_NAME = "security.selinux";
 
     /**
      * Gets the security context of the current process.
@@ -24,21 +24,7 @@ public class SELinuxUtils {
      */
     @Nullable
     public static String getContext() {
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        String methodName = "getContext";
-        try {
-            @SuppressLint("PrivateApi") Class<?> clazz = Class.forName(ANDROID_OS_SELINUX_CLASS);
-            Method method = ReflectionUtils.getDeclaredMethod(clazz, methodName);
-            if (method == null) {
-                Logger.logError(LOG_TAG, "Failed to get " + methodName + "() method of " + ANDROID_OS_SELINUX_CLASS + " class");
-                return null;
-            }
-
-            return (String) ReflectionUtils.invokeMethod(method, null).value;
-        } catch (Exception e) {
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to call " + methodName + "() method of " + ANDROID_OS_SELINUX_CLASS + " class", e);
-            return null;
-        }
+        return getPidContext(Process.myPid());
     }
 
     /**
@@ -50,19 +36,13 @@ public class SELinuxUtils {
      */
     @Nullable
     public static String getPidContext(int pid) {
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        String methodName = "getPidContext";
-        try {
-            @SuppressLint("PrivateApi") Class<?> clazz = Class.forName(ANDROID_OS_SELINUX_CLASS);
-            Method method = ReflectionUtils.getDeclaredMethod(clazz, methodName, int.class);
-            if (method == null) {
-                Logger.logError(LOG_TAG, "Failed to get " + methodName + "() method of " + ANDROID_OS_SELINUX_CLASS + " class");
-                return null;
-            }
-
-            return (String) ReflectionUtils.invokeMethod(method, null, pid).value;
+        if (pid <= 0) return null;
+        String path = "/proc/" + pid + "/attr/current";
+        try (BufferedReader reader = new BufferedReader(new FileReader(path))) {
+            return normalizeContext(reader.readLine());
         } catch (Exception e) {
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to call " + methodName + "() method of " + ANDROID_OS_SELINUX_CLASS + " class", e);
+            Logger.logStackTraceWithMessage(LOG_TAG,
+                "Failed to read SELinux process context from " + path, e);
             return null;
         }
     }
@@ -76,21 +56,21 @@ public class SELinuxUtils {
      */
     @Nullable
     public static String getFileContext(@NonNull String path) {
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        String methodName = "getFileContext";
         try {
-            @SuppressLint("PrivateApi") Class<?> clazz = Class.forName(ANDROID_OS_SELINUX_CLASS);
-            Method method = ReflectionUtils.getDeclaredMethod(clazz, methodName, String.class);
-            if (method == null) {
-                Logger.logError(LOG_TAG, "Failed to get " + methodName + "() method of " + ANDROID_OS_SELINUX_CLASS + " class");
-                return null;
-            }
-
-            return (String) ReflectionUtils.invokeMethod(method, null, path).value;
+            byte[] value = Os.getxattr(path, SELINUX_XATTR_NAME);
+            return normalizeContext(new String(value, StandardCharsets.UTF_8));
         } catch (Exception e) {
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to call " + methodName + "() method of " + ANDROID_OS_SELINUX_CLASS + " class", e);
+            Logger.logStackTraceWithMessage(LOG_TAG,
+                "Failed to read SELinux file context for " + path, e);
             return null;
         }
+    }
+
+    @Nullable
+    private static String normalizeContext(@Nullable String value) {
+        if (value == null) return null;
+        String normalized = value.replace("\u0000", "").trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
 }

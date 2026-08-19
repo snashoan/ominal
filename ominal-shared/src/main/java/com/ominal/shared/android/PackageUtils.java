@@ -20,9 +20,7 @@ import com.ominal.shared.R;
 import com.ominal.shared.data.DataUtils;
 import com.ominal.shared.interact.MessageDialogUtils;
 import com.ominal.shared.logger.Logger;
-import com.ominal.shared.reflection.ReflectionUtils;
 
-import java.lang.reflect.Field;
 import java.security.MessageDigest;
 import java.util.List;
 
@@ -179,25 +177,18 @@ public class PackageUtils {
     }
 
     /**
-     * Get the {@code privateFlags} {@link Field} of the {@link ApplicationInfo} class.
+     * Private application flags are not exposed by the public Android SDK.
      *
      * @param applicationInfo The {@link ApplicationInfo} for the package.
      * @return Returns the private flags or {@code null} if an exception was raised.
      */
     @Nullable
     public static Integer getApplicationInfoPrivateFlagsForPackage(@NonNull final ApplicationInfo applicationInfo) {
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        try {
-            return (Integer) ReflectionUtils.invokeField(ApplicationInfo.class, "privateFlags", applicationInfo).value;
-        } catch (Exception e) {
-            // ClassCastException may be thrown
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to get privateFlags field value for ApplicationInfo class", e);
-            return null;
-        }
+        return null;
     }
 
     /**
-     * Get the {@code seInfo} {@link Field} of the {@link ApplicationInfo} class.
+     * Package seInfo is not exposed by the public Android SDK.
      *
      * String retrieved from the seinfo tag found in selinux policy. This value can be set through
      * the mac_permissions.xml policy construct. This value is used for setting an SELinux security
@@ -214,18 +205,11 @@ public class PackageUtils {
      */
     @Nullable
     public static String getApplicationInfoSeInfoForPackage(@NonNull final ApplicationInfo applicationInfo) {
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        try {
-            return (String) ReflectionUtils.invokeField(ApplicationInfo.class, Build.VERSION.SDK_INT < Build.VERSION_CODES.O ? "seinfo" : "seInfo", applicationInfo).value;
-        } catch (Exception e) {
-            // ClassCastException may be thrown
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to get seInfo field value for ApplicationInfo class", e);
-            return null;
-        }
+        return null;
     }
 
     /**
-     * Get the {@code seInfoUser} {@link Field} of the {@link ApplicationInfo} class.
+     * Package seInfoUser is not exposed by the public Android SDK.
      *
      * Also check {@link #getApplicationInfoSeInfoForPackage(ApplicationInfo)}.
      *
@@ -234,33 +218,18 @@ public class PackageUtils {
      */
     @Nullable
     public static String getApplicationInfoSeInfoUserForPackage(@NonNull final ApplicationInfo applicationInfo) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null;
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        try {
-            return (String) ReflectionUtils.invokeField(ApplicationInfo.class, "seInfoUser", applicationInfo).value;
-        } catch (Exception e) {
-            // ClassCastException may be thrown
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to get seInfoUser field value for ApplicationInfo class", e);
-            return null;
-        }
+        return null;
     }
 
     /**
-     * Get the {@code privateFlags} {@link Field} of the {@link ApplicationInfo} class.
+     * Private static ApplicationInfo fields are not exposed by the public Android SDK.
      *
      * @param fieldName The name of the field to get.
      * @return Returns the field value or {@code null} if an exception was raised.
      */
     @Nullable
     public static Integer getApplicationInfoStaticIntFieldValue(@NonNull String fieldName) {
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        try {
-            return (Integer) ReflectionUtils.invokeField(ApplicationInfo.class, fieldName, null).value;
-        } catch (Exception e) {
-            // ClassCastException may be thrown
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to get \"" + fieldName + "\" field value for ApplicationInfo class", e);
-            return null;
-        }
+        return null;
     }
 
     /**

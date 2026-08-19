@@ -1,0 +1,1 @@
+Removed an unsupported hidden-API bypass dependency and replaced private Android calls with supported interfaces. Improved chat input recovery, new-chat and incognito states, selector indicators, icons, transitions, and the transparent outlined launcher mark.
