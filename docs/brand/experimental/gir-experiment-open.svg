@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">GIR open spiral experiment</title>
+  <desc id="desc">A lighter open-corner version of the four-arm GIR spiral.</desc>
+  <defs>
+    <path id="arm" d="M128 128V62H186V112H158V88H176" />
+  </defs>
+  <g fill="none" stroke="#f2f3f5" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#arm" />
+    <use href="#arm" transform="rotate(90 128 128)" />
+    <use href="#arm" transform="rotate(180 128 128)" />
+    <use href="#arm" transform="rotate(270 128 128)" />
+  </g>
+</svg>

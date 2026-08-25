@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
   <title id="title">GIR compact spiral experiment</title>
-  <desc id="desc">A tighter, heavier GIR mark that keeps the four square spiral arms and compresses the turns toward the center.</desc>
+  <desc id="desc">Four compact square spiral quadrants with an open center and no connecting main line.</desc>
   <defs>
     <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#ff4d8d" />
@@ -8,7 +8,7 @@
     </linearGradient>
   </defs>
   <defs>
-    <path id="arm" d="M128 128V66H184V112H154V88H172" />
+    <path id="arm" d="M128 112V66H184V112H154V88H172" />
   </defs>
   <g fill="none" stroke-linecap="square" stroke-linejoin="miter">
     <g stroke="#f2f3f5" stroke-width="18">
@@ -23,6 +23,5 @@
       <use href="#arm" transform="rotate(180 128 128)" />
       <use href="#arm" transform="rotate(270 128 128)" />
     </g>
-    <circle cx="128" cy="128" r="14" stroke="#f2f3f5" stroke-width="2" stroke-opacity=".34" />
   </g>
 </svg>

@@ -1,6 +1,6 @@
 {
   "name": "GIR experimental logo variants",
-  "version": "experimental-2",
+  "version": "experimental-3",
   "reference": "../gir-prod-logo-white.png",
   "variants": [
     {
@@ -21,7 +21,22 @@
     {
       "name": "Compact spiral",
       "file": "gir-experiment-knot.svg",
-      "direction": "same four-arm GIR spiral compressed into a tighter, heavier mark"
+      "direction": "four compact spiral quadrants with an open center and no connecting main line"
+    },
+    {
+      "name": "Mono spiral",
+      "file": "gir-experiment-mono.svg",
+      "direction": "single-color thin line with no glow, orbit, or accent"
+    },
+    {
+      "name": "Open spiral",
+      "file": "gir-experiment-open.svg",
+      "direction": "lighter open-corner version of the same four spiral arms"
+    },
+    {
+      "name": "Pixel spiral",
+      "file": "gir-experiment-pixel.svg",
+      "direction": "heavier one-color geometric version with square joins and caps"
     }
   ]
 }

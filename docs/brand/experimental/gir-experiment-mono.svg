@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">GIR mono spiral experiment</title>
+  <desc id="desc">A single-color, thin-line version of the four-arm GIR spiral with no glow, orbit, or accent.</desc>
+  <defs>
+    <path id="arm" d="M128 128V54H194V120H154V82H180" />
+  </defs>
+  <g fill="none" stroke="#f2f3f5" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#arm" />
+    <use href="#arm" transform="rotate(90 128 128)" />
+    <use href="#arm" transform="rotate(180 128 128)" />
+    <use href="#arm" transform="rotate(270 128 128)" />
+  </g>
+</svg>
