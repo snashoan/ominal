@@ -23,8 +23,8 @@
       </feMerge>
     </filter>
     <style>
-      .orbit-spin { transform-box: fill-box; transform-origin: 128px 128px; animation: gir-spin 8s linear infinite; }
-      .signal-pulse { transform-box: fill-box; transform-origin: 128px 128px; animation: gir-pulse 2.8s ease-in-out infinite; }
+      .orbit-spin { transform-box: view-box; transform-origin: 50% 50%; animation: gir-spin 8s linear infinite; }
+      .signal-pulse { transform-box: view-box; transform-origin: 50% 50%; animation: gir-pulse 2.8s ease-in-out infinite; }
       @keyframes gir-spin { to { transform: rotate(360deg); } }
       @keyframes gir-pulse { 0%, 100% { opacity: .68; } 50% { opacity: 1; } }
       @media (prefers-reduced-motion: reduce) {
