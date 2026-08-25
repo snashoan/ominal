@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">GIR mark</title>
+  <desc id="desc">A luminous hourglass-shaped light cone inside an orbital ring.</desc>
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101216" />
+      <stop offset="1" stop-color="#050608" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff4d8d" />
+      <stop offset="1" stop-color="#ffabc5" />
+    </linearGradient>
+    <linearGradient id="cone" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff4d8d" stop-opacity=".22" />
+      <stop offset=".5" stop-color="#ff4d8d" stop-opacity=".04" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".12" />
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="256" height="256" rx="56" fill="url(#surface)" />
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="128" cy="128" r="88" stroke="#f2f3f5" stroke-opacity=".12" stroke-width="2" stroke-dasharray="1 12" />
+    <path d="M59 116a72 72 0 0 1 21-42" stroke="#f2f3f5" stroke-opacity=".52" stroke-width="3" />
+    <path d="M176 74a72 72 0 0 1 21 42" stroke="url(#accent)" stroke-opacity=".84" stroke-width="3" />
+    <path d="M197 140a72 72 0 0 1-21 42" stroke="url(#accent)" stroke-opacity=".62" stroke-width="3" />
+    <path d="M80 182a72 72 0 0 1-21-42" stroke="#f2f3f5" stroke-opacity=".38" stroke-width="3" />
+    <path d="M128 27v24M128 205v24M27 128h24M205 128h24" stroke="#f2f3f5" stroke-opacity=".38" stroke-width="2" />
+    <path d="M128 46v164" stroke="#f2f3f5" stroke-opacity=".16" stroke-width="2" />
+  </g>
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M64 79c15-18 113-18 128 0-15 16-113 16-128 0Z" fill="url(#cone)" stroke="#f2f3f5" stroke-opacity=".9" stroke-width="3" />
+    <path d="M64 79 128 128l64-49" fill="url(#cone)" stroke="url(#accent)" stroke-opacity=".86" stroke-width="3" />
+    <path d="M64 177c15 18 113 18 128 0-15-16-113-16-128 0Z" fill="url(#cone)" stroke="#f2f3f5" stroke-opacity=".9" stroke-width="3" />
+    <path d="M64 177 128 128l64 49" fill="url(#cone)" stroke="url(#accent)" stroke-opacity=".86" stroke-width="3" />
+    <path d="M76 128h104" stroke="#f2f3f5" stroke-opacity=".26" stroke-width="2" />
+    <path d="M88 88 128 128 168 88M88 168 128 128 168 168" stroke="#ffffff" stroke-opacity=".28" stroke-width="2" />
+  </g>
+
+  <g filter="url(#glow)" fill="url(#accent)">
+    <circle cx="128" cy="22" r="4" />
+    <circle cx="128" cy="35" r="2.5" opacity=".82" />
+    <circle cx="128" cy="234" r="4" />
+    <circle cx="128" cy="221" r="2.5" opacity=".82" />
+    <circle cx="128" cy="128" r="4" />
+  </g>
+</svg>

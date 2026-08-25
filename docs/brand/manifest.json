@@ -1,0 +1,19 @@
+{
+  "name": "GIR visual test assets",
+  "version": "2",
+  "description": "Browser-ready GIR mark and motion assets for visual review before app integration.",
+  "assets": [
+    {
+      "name": "GIR mark v2",
+      "file": "gir-mark-v2.svg",
+      "kind": "static-logo",
+      "motion": "none"
+    },
+    {
+      "name": "GIR mark v2 animated",
+      "file": "gir-mark-v2-animated.svg",
+      "kind": "animated-logo",
+      "motion": "8s linear orbit, 2.8s signal pulse, reduced-motion safe"
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07080a">
+  <meta name="description" content="GIR visual lab: named logo assets and motion tests.">
+  <title>GIR visual lab</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="../">
+        <span class="brand-mark" aria-hidden="true">G</span>
+        <span>GIR</span>
+      </a>
+      <span class="eyebrow">VISUAL LAB / BUILD 02</span>
+      <a class="manifest-link" href="./manifest.json">manifest.json</a>
+    </header>
+
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="kicker">A clearer signal</p>
+        <h1>Give GIR a mark that feels alive.</h1>
+        <p class="lede">A browser-only test surface for the next GIR identity: a light cone, an orbital axis, and a restrained active state that can hold attention without shouting.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#assets">Review assets</a>
+          <button class="button button-quiet" type="button" data-copy="./gir-mark-v2-animated.svg">Copy animated URL</button>
+        </div>
+        <p class="copy-status" aria-live="polite"></p>
+      </div>
+      <div class="hero-mark" aria-label="Animated GIR mark preview">
+        <span class="halo halo-one"></span>
+        <span class="halo halo-two"></span>
+        <img src="./gir-mark-v2-animated.svg" alt="Animated GIR light-cone mark">
+        <span class="state-chip"><i></i> active / orbiting</span>
+      </div>
+    </section>
+
+    <section class="section" id="assets">
+      <div class="section-heading">
+        <div>
+          <p class="kicker">Named assets</p>
+          <h2>Two marks, one system.</h2>
+        </div>
+        <p>Use the static mark for identity surfaces. Use the animated mark for loading, active work, and “GIR is thinking” states.</p>
+      </div>
+
+      <div class="asset-grid">
+        <article class="asset-card">
+          <div class="asset-preview static-preview">
+            <img src="./gir-mark-v2.svg" alt="Static GIR mark">
+          </div>
+          <div class="asset-meta">
+            <div>
+              <span class="asset-label">STATIC / IDLE</span>
+              <h3>gir-mark-v2.svg</h3>
+            </div>
+            <button class="icon-button" type="button" data-copy="./gir-mark-v2.svg" aria-label="Copy static mark URL">↗</button>
+          </div>
+          <p>Neutral silver geometry with a controlled coral signal. No motion.</p>
+        </article>
+
+        <article class="asset-card">
+          <div class="asset-preview animated-preview">
+            <img src="./gir-mark-v2-animated.svg" alt="Animated GIR mark">
+          </div>
+          <div class="asset-meta">
+            <div>
+              <span class="asset-label">ACTIVE / WORKING</span>
+              <h3>gir-mark-v2-animated.svg</h3>
+            </div>
+            <button class="icon-button" type="button" data-copy="./gir-mark-v2-animated.svg" aria-label="Copy animated mark URL">↗</button>
+          </div>
+          <p>Eight-second orbit, soft signal pulse, and a built-in reduced-motion fallback.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section motion-section">
+      <div class="section-heading">
+        <div>
+          <p class="kicker">Motion tests</p>
+          <h2>Feel the states before shipping them.</h2>
+        </div>
+        <p>The controls below are only for review. They wrap the same hosted static asset with different timing and emphasis.</p>
+      </div>
+
+      <div class="motion-lab" data-motion="spin">
+        <div class="motion-stage">
+          <img class="motion-mark" src="./gir-mark-v2.svg" alt="GIR motion test mark">
+          <span class="motion-readout">orbit / 8s</span>
+        </div>
+        <div class="motion-controls" role="group" aria-label="Motion controls">
+          <button type="button" class="control is-selected" data-motion-mode="spin">Orbit</button>
+          <button type="button" class="control" data-motion-mode="breathe">Breathe</button>
+          <button type="button" class="control" data-motion-mode="still">Still</button>
+          <label class="speed-control">Speed
+            <input type="range" min="0.5" max="2" step="0.25" value="1" data-motion-speed>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>GIR visual lab / asset test only</span>
+      <a href="../GIR_MARK.md">mark notes</a>
+      <a href="../">public docs</a>
+    </footer>
+  </main>
+  <script src="./script.js"></script>
+</body>
+</html>
