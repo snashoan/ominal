@@ -23,20 +23,18 @@
       </feMerge>
     </filter>
     <style>
-      .orbit-spin { transform-box: fill-box; transform-origin: 50% 50%; animation: gir-spin 8s linear infinite; }
-      .signal-pulse { transform-box: fill-box; transform-origin: 50% 50%; animation: gir-pulse 2.8s ease-in-out infinite; }
-      @keyframes gir-spin { to { transform: rotate(360deg); } }
+      .signal-pulse { animation: gir-pulse 2.8s ease-in-out infinite; }
       @keyframes gir-pulse { 0%, 100% { opacity: .68; } 50% { opacity: 1; } }
       @media (prefers-reduced-motion: reduce) {
-        .orbit-spin, .signal-pulse { animation: none; }
+        .signal-pulse { animation: none; }
       }
     </style>
   </defs>
 
   <rect width="256" height="256" rx="56" fill="url(#surface)" />
 
-  <g class="orbit-spin" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <rect width="256" height="256" fill="none" stroke="none" />
+  <g class="orbit-spin" transform="rotate(0 128 128)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <animateTransform attributeName="transform" type="rotate" from="0 128 128" to="360 128 128" dur="8s" repeatCount="indefinite" />
     <circle cx="128" cy="128" r="88" stroke="#f2f3f5" stroke-opacity=".12" stroke-width="2" stroke-dasharray="1 12" />
     <path d="M59 116a72 72 0 0 1 21-42" stroke="#f2f3f5" stroke-opacity=".52" stroke-width="3" />
     <path d="M176 74a72 72 0 0 1 21 42" stroke="url(#accent)" stroke-opacity=".84" stroke-width="3" />
@@ -46,8 +44,8 @@
     <path d="M128 46v164" stroke="#f2f3f5" stroke-opacity=".16" stroke-width="2" />
   </g>
 
-  <g class="orbit-spin" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <rect width="256" height="256" fill="none" stroke="none" />
+  <g class="orbit-spin" transform="rotate(0 128 128)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <animateTransform attributeName="transform" type="rotate" from="0 128 128" to="360 128 128" dur="8s" repeatCount="indefinite" />
     <path d="M64 79c15-18 113-18 128 0-15 16-113 16-128 0Z" fill="url(#cone)" stroke="#f2f3f5" stroke-opacity=".9" stroke-width="3" />
     <path d="M64 79 128 128l64-49" fill="url(#cone)" stroke="url(#accent)" stroke-opacity=".86" stroke-width="3" />
     <path d="M64 177c15 18 113 18 128 0-15-16-113-16-128 0Z" fill="url(#cone)" stroke="#f2f3f5" stroke-opacity=".9" stroke-width="3" />
