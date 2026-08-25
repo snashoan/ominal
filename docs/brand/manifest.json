@@ -1,19 +1,28 @@
 {
   "name": "GIR visual test assets",
-  "version": "2",
-  "description": "Browser-ready GIR mark and motion assets for visual review before app integration.",
+  "version": "prod-mirror-1",
+  "description": "Byte-for-byte copies of the GIR PNG resources referenced by the Android production code, plus browser-only motion review.",
   "assets": [
     {
-      "name": "GIR mark v2",
-      "file": "gir-mark-v2.svg",
-      "kind": "static-logo",
+      "name": "GIR production base logo",
+      "file": "gir-prod-logo.png",
+      "source": "app/src/main/res/drawable-nodpi/gir_final_logo.png",
+      "kind": "android-resource",
       "motion": "none"
     },
     {
-      "name": "GIR mark v2 animated",
-      "file": "gir-mark-v2-animated.svg",
-      "kind": "animated-logo",
-      "motion": "8s linear orbit, 2.8s signal pulse, reduced-motion safe"
+      "name": "GIR production white logo",
+      "file": "gir-prod-logo-white.png",
+      "source": "app/src/main/res/drawable-nodpi/gir_final_logo_white.png",
+      "kind": "android-resource",
+      "motion": "browser wrapper only"
+    },
+    {
+      "name": "GIR launcher foreground",
+      "file": "gir-prod-launcher-foreground.png",
+      "source": "app/src/main/res/drawable-nodpi/gir_launcher_foreground.png",
+      "kind": "android-resource",
+      "motion": "none"
     }
   ]
 }
