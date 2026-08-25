@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07080a">
+  <meta name="description" content="Experimental GIR logo variants for visual review.">
+  <title>GIR experimental variants</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="../">GIR / visual lab</a>
+      <span class="eyebrow">EXPERIMENTAL / 01</span>
+      <a class="manifest-link" href="./manifest.json">manifest.json</a>
+    </header>
+
+    <section class="intro">
+      <p class="kicker">Not production yet</p>
+      <h1>Four ways to make GIR simpler.</h1>
+      <p class="lede">The current production asset stays available as a reference. These are web-only SVG explorations for the next visual pass.</p>
+      <div class="controls" role="group" aria-label="Variant motion controls">
+        <button class="control is-selected" type="button" data-motion="still">Still</button>
+        <button class="control" type="button" data-motion="orbit">Orbit</button>
+        <button class="control" type="button" data-motion="breathe">Breathe</button>
+      </div>
+    </section>
+
+    <section class="gallery" data-motion="still" aria-label="GIR experimental logo variants">
+      <article class="card reference-card">
+        <div class="preview"><img class="variant-mark" src="../gir-prod-logo-white.png" alt="Current production GIR logo"></div>
+        <div class="meta"><span class="label">REFERENCE / PROD</span><a href="../gir-prod-logo-white.png">gir-prod-logo-white.png</a></div>
+        <p>The exact white production PNG currently used by Android.</p>
+      </article>
+
+      <article class="card">
+        <div class="preview"><img class="variant-mark" src="./gir-experiment-clean-line.svg" alt="GIR clean line experiment"></div>
+        <div class="meta"><span class="label">01 / CLEAN</span><a href="./gir-experiment-clean-line.svg">gir-experiment-clean-line.svg</a></div>
+        <p>One clear silhouette. No extra folding lines. The quietest direction.</p>
+      </article>
+
+      <article class="card">
+        <div class="preview"><img class="variant-mark" src="./gir-experiment-sketch-line.svg" alt="GIR sketch line experiment"></div>
+        <div class="meta"><span class="label">02 / SKETCH</span><a href="./gir-experiment-sketch-line.svg">gir-experiment-sketch-line.svg</a></div>
+        <p>The same GIR idea redrawn with a loose double-pass line.</p>
+      </article>
+
+      <article class="card">
+        <div class="preview"><img class="variant-mark" src="./gir-experiment-orbit-cut.svg" alt="GIR orbit cut experiment"></div>
+        <div class="meta"><span class="label">03 / ORBIT</span><a href="./gir-experiment-orbit-cut.svg">gir-experiment-orbit-cut.svg</a></div>
+        <p>A stronger orbital frame with a compact, legible core.</p>
+      </article>
+
+      <article class="card">
+        <div class="preview"><img class="variant-mark" src="./gir-experiment-knot.svg" alt="GIR signal knot experiment"></div>
+        <div class="meta"><span class="label">04 / KNOT</span><a href="./gir-experiment-knot.svg">gir-experiment-knot.svg</a></div>
+        <p>A more abstract signal direction for a future active state.</p>
+      </article>
+    </section>
+
+    <footer class="footer">
+      <span>Browser test only / no Android changes</span>
+      <a href="../">production asset mirror</a>
+    </footer>
+  </main>
+  <script src="./script.js"></script>
+</body>
+</html>
