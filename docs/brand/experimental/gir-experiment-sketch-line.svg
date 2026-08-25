@@ -1,18 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
-  <title id="title">GIR sketch line experiment</title>
-  <desc id="desc">A hand-drawn line interpretation of the GIR light-cone mark.</desc>
+  <title id="title">GIR sketch spiral line experiment</title>
+  <desc id="desc">The same four-arm GIR spiral drawn as a loose double-pass sketch.</desc>
   <defs>
     <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ff4d8d" />
-      <stop offset="1" stop-color="#ffabc5" />
+      <stop offset="0" stop-color="#f2f3f5" />
+      <stop offset="1" stop-color="#ff4d8d" />
     </linearGradient>
+    <path id="arm" d="M128 128V54H194V120H154V82H180" />
+    <path id="arm-loose" d="M126 129C127 104 126 79 127 53C149 54 173 53 196 55C195 77 196 100 195 122C180 120 168 122 152 121C153 107 151 94 153 80C164 82 173 80 183 82" />
   </defs>
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M57 112c5-17 13-31 26-43M58 111c6-16 15-30 27-41M173 69c13 12 21 27 26 43M174 71c12 12 20 27 24 41M198 144c-5 17-13 31-26 43M196 145c-6 17-14 30-25 41M83 186c-13-12-21-27-26-43M81 184c-12-12-20-26-23-41" stroke="#f2f3f5" stroke-opacity=".5" stroke-width="2.5" />
-    <path d="M128 52 65 80l63 49 63-49-63-28ZM128 129l-63 47 63 28 63-28-63-47Z" stroke="#f2f3f5" stroke-opacity=".82" stroke-width="3.5" />
-    <path d="M129 54 68 81l60 46 60-47-59-26ZM127 130l-60 46 61 26 61-27-62-45Z" stroke="url(#accent)" stroke-opacity=".55" stroke-width="2" stroke-dasharray="1 5" />
-    <path d="M65 80c24 17 44 32 63 49 21-18 42-34 63-49M65 176c22-16 43-32 63-47 22 16 42 31 63 47" stroke="url(#accent)" stroke-opacity=".75" stroke-width="2.5" />
-    <path d="M128 48v27M128 202v27M127 52v150" stroke="#f2f3f5" stroke-opacity=".26" stroke-width="2" stroke-dasharray="3 7" />
+    <g stroke="#f2f3f5" stroke-width="9" opacity=".88">
+      <use href="#arm" />
+      <use href="#arm" transform="rotate(90 128 128)" />
+      <use href="#arm" transform="rotate(180 128 128)" />
+      <use href="#arm" transform="rotate(270 128 128)" />
+    </g>
+    <g stroke="url(#accent)" stroke-width="3" opacity=".72">
+      <use href="#arm-loose" />
+      <use href="#arm-loose" transform="rotate(90 128 128)" />
+      <use href="#arm-loose" transform="rotate(180 128 128)" />
+      <use href="#arm-loose" transform="rotate(270 128 128)" />
+    </g>
   </g>
-  <g fill="url(#accent)"><circle cx="128" cy="22" r="3.5" /><circle cx="128" cy="234" r="3.5" /><circle cx="128" cy="128" r="3" /></g>
 </svg>

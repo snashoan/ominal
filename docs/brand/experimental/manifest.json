@@ -1,27 +1,27 @@
 {
   "name": "GIR experimental logo variants",
-  "version": "experimental-1",
+  "version": "experimental-2",
   "reference": "../gir-prod-logo-white.png",
   "variants": [
     {
       "name": "Clean line",
       "file": "gir-experiment-clean-line.svg",
-      "direction": "same light-cone silhouette, no extra folding lines"
+      "direction": "same four-arm GIR spiral, reduced to one clean line with no extra folding lines"
     },
     {
       "name": "Sketch line",
       "file": "gir-experiment-sketch-line.svg",
-      "direction": "same GIR silhouette with loose double-pass sketch strokes"
+      "direction": "same four-arm GIR spiral with loose double-pass sketch strokes"
     },
     {
       "name": "Orbit cut",
       "file": "gir-experiment-orbit-cut.svg",
-      "direction": "clean cone with a stronger broken orbital frame"
+      "direction": "same four-arm GIR spiral with a restrained broken orbital frame"
     },
     {
-      "name": "Signal knot",
+      "name": "Compact spiral",
       "file": "gir-experiment-knot.svg",
-      "direction": "abstract four-direction signal exploration"
+      "direction": "same four-arm GIR spiral compressed into a tighter, heavier mark"
     }
   ]
 }

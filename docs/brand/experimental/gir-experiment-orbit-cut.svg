@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
-  <title id="title">GIR orbit cut experiment</title>
-  <desc id="desc">A compact GIR mark with a broken orbital frame and a single clean light cone.</desc>
+  <title id="title">GIR orbit spiral experiment</title>
+  <desc id="desc">The GIR four-arm spiral with a restrained broken orbit around the unchanged core.</desc>
   <defs>
     <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#ff4d8d" />
@@ -9,11 +9,15 @@
   </defs>
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="128" cy="128" r="91" stroke="#f2f3f5" stroke-opacity=".12" stroke-width="2" stroke-dasharray="1 11" />
-    <path d="M48 116a81 81 0 0 1 31-53M177 63a81 81 0 0 1 31 53M208 140a81 81 0 0 1-31 53M79 193a81 81 0 0 1-31-53" stroke="url(#accent)" stroke-opacity=".86" stroke-width="4" />
-    <path d="M128 42v35M128 179v35" stroke="#f2f3f5" stroke-opacity=".33" stroke-width="2" />
-    <path d="M75 79c16-13 90-13 106 0l-53 49-53-49ZM75 177c16 13 90 13 106 0l-53-49-53 49Z" stroke="#f2f3f5" stroke-width="4" />
-    <path d="M75 79 128 128 181 79M75 177 128 128 181 177" stroke="url(#accent)" stroke-opacity=".94" stroke-width="3" />
+    <path d="M64 83A88 88 0 0 1 104 46M152 46A88 88 0 0 1 192 83M192 173A88 88 0 0 1 152 210M104 210A88 88 0 0 1 64 173" stroke="#f2f3f5" stroke-opacity=".38" stroke-width="3" />
+    <path d="M76 62A92 92 0 0 1 93 53M163 53A92 92 0 0 1 180 62M180 194A92 92 0 0 1 163 203M93 203A92 92 0 0 1 76 194" stroke="#ff4d8d" stroke-opacity=".72" stroke-width="4" />
+    <path id="arm" d="M128 128V50H198V122H151V78H184" stroke="#f2f3f5" stroke-width="12" stroke-linecap="square" stroke-linejoin="miter" />
+    <use href="#arm" transform="rotate(90 128 128)" />
+    <use href="#arm" transform="rotate(180 128 128)" />
+    <use href="#arm" transform="rotate(270 128 128)" />
+    <path id="arm-accent" d="M128 128V50H198V122H151V78H184" stroke="url(#accent)" stroke-width="3.5" stroke-linecap="square" stroke-linejoin="miter" />
+    <use href="#arm-accent" transform="rotate(90 128 128)" />
+    <use href="#arm-accent" transform="rotate(180 128 128)" />
+    <use href="#arm-accent" transform="rotate(270 128 128)" />
   </g>
-  <g fill="#f2f3f5"><circle cx="43" cy="128" r="3" /><circle cx="213" cy="128" r="3" /></g>
-  <g fill="url(#accent)"><circle cx="128" cy="27" r="4" /><circle cx="128" cy="229" r="4" /><circle cx="128" cy="128" r="4" /></g>
 </svg>
