@@ -14,6 +14,7 @@ CLAUDE_HOME="${OMINAL_CLAUDE_HOME:-$HOME/.ominal/harnesses/claude}"
 ANTIGRAVITY_HOME="${OMINAL_ANTIGRAVITY_HOME:-$HOME/.ominal/harnesses/antigravity}"
 CAPABILITIES_HOME="${OMINAL_CAPABILITIES_HOME:-$HOME/.ominal/harness-capabilities}"
 UI_THEME_HOME="${OMINAL_UI_THEME_HOME:-$HOME/.ominal/themes}"
+USER_PROFILE_FILE="${OMINAL_USER_PROFILE_FILE:-$HOME/.ominal/profile.json}"
 PROOT_ID="${OMINAL_PROOT_ID:-0:0}"
 XDG_OPEN_BRIDGE="$PREFIX/bin/ominal-xdg-open-guest"
 HARNESS_DISCOVER_BRIDGE="$PREFIX/bin/ominal-harness-discover"
@@ -46,11 +47,19 @@ esac
 mkdir -p "$RUNTIME_ROOT/tmp" "$SHM_DIR" "$BRIDGE_DIR" "$ROOTFS/.l2s" "$WORKSPACE" \
     "$ROOTFS/root/workspace" "$ROOTFS/root/.codex" "$ROOTFS/root/.claude" \
     "$ROOTFS/root/.gemini" "$ROOTFS/root/.ominal/harness-capabilities" \
-    "$ROOTFS/root/.ominal/themes" \
+    "$ROOTFS/root/.ominal/themes" "$ROOTFS/root/.ominal" \
     "$CODEX_HOME" "$CLAUDE_HOME" "$ANTIGRAVITY_HOME" "$CAPABILITIES_HOME" \
     "$UI_THEME_HOME"
 chmod 1777 "$SHM_DIR"
 chmod 700 "$BRIDGE_DIR"
+if [ ! -f "$USER_PROFILE_FILE" ]; then
+    printf '%s\n' '{"schemaVersion":1,"canonicalStorage":"device","scope":"shared-across-runtimes","available":false,"fields":{}}' \
+        > "$USER_PROFILE_FILE"
+    chmod 600 "$USER_PROFILE_FILE"
+fi
+if [ ! -e "$ROOTFS/root/.ominal/profile.json" ]; then
+    : > "$ROOTFS/root/.ominal/profile.json"
+fi
 
 hosts_file="$ROOTFS/etc/hosts"
 hosts_has_localhost=false
@@ -155,5 +164,6 @@ exec "$PROOT_BIN" --link2symlink --sysvipc -i "$PROOT_ID" -r "$ROOTFS" \
     -b "$ANTIGRAVITY_HOME:/root/.gemini" \
     -b "$CAPABILITIES_HOME:/root/.ominal/harness-capabilities" \
     -b "$UI_THEME_HOME:/root/.ominal/themes" \
+    -b "$USER_PROFILE_FILE:/root/.ominal/profile.json" \
     -b "$WORKSPACE:/root/workspace" \
     -w /root/workspace "$@"

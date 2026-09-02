@@ -5,7 +5,6 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.ComponentName;
-import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.ClipData;
 import android.content.Context;
@@ -20,11 +19,14 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PixelFormat;
 import android.graphics.Point;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.net.ConnectivityManager;
@@ -48,6 +50,8 @@ import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewConfiguration;
+import android.view.VelocityTracker;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
@@ -72,10 +76,13 @@ import androidx.appcompat.app.AppCompatDelegate;
 import androidx.appcompat.widget.SwitchCompat;
 import androidx.annotation.NonNull;
 import androidx.activity.OnBackPressedCallback;
+import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.Insets;
 import androidx.core.view.GravityCompat;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.PagerAdapter;
 import androidx.viewpager.widget.ViewPager;
@@ -95,6 +102,11 @@ import com.ominal.x11.LorieView;
 import com.ominal.x11.OminalNativeDisplay;
 
 import io.noties.markwon.Markwon;
+import io.noties.markwon.ext.latex.JLatexMathPlugin;
+import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin;
+import io.noties.markwon.syntax.Prism4jThemeDarkula;
+import io.noties.markwon.syntax.SyntaxHighlightPlugin;
+import io.noties.prism4j.Prism4j;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -124,6 +136,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
+import java.util.TimeZone;
 import java.util.regex.Pattern;
 
 /**
@@ -142,10 +155,16 @@ public final class OringutanActivity extends AppCompatActivity
     private static final String PREF_CODEX_REAUTH_REQUIRED = "codex_reauth_required";
     private static final String PREF_ACTIVE_CHAT_ID = "active_chat_id";
     private static final String PREF_COMPOSER_DRAFT = "composer_draft";
+    private static final String PREF_NOTIFICATION_PERMISSION_REQUESTED =
+        "notification_permission_requested";
+    private static final long COMPOSER_DRAFT_SAVE_DELAY_MS = 350L;
+    private static final long AUTH_STATUS_FRESHNESS_MS = 30_000L;
+    private static final long HARNESS_CATALOG_FRESHNESS_MS = 5L * 60L * 1000L;
     private static final String PREF_WELCOME_SEEN = "welcome_seen";
     private static final String PREF_LOLO_MODE_ENABLED = "lolo_mode_enabled";
     private static final String PREF_LIGHT_APPEARANCE = "light_appearance";
     private static final String STATE_MODE = "mode";
+    private static final String STATE_SETTINGS_ROUTE = "settings_route";
     private static final String DISPLAY_CLOSE_REQUEST_FILE_NAME =
         "ominal-display-close.request";
     private static final String LAUNCHER_LIGHT_COMPONENT = "com.ominal.LauncherLightV3";
@@ -172,6 +191,7 @@ public final class OringutanActivity extends AppCompatActivity
     private static final int DISPLAY_HEALTH_RETRIES = 30;
     private static final int DISPLAY_HEALTH_RETRY_DELAY_MS = 300;
     private static final int NATIVE_DISPLAY_HEALTH_RETRIES = 240;
+    private static final long NATIVE_DISPLAY_HEARTBEAT_TIMEOUT_MS = 5000L;
     private static final int DISPLAY_NAVIGATION_HEIGHT_DP = 56;
     private static final String[][] SETUP_STATE_WORDS = {
         {"damruuing", "damruued"},
@@ -199,14 +219,14 @@ public final class OringutanActivity extends AppCompatActivity
         "Verify the build, sign-in, Screen, and chat before calling it done."
     };
     private static final String[][] CHAT_STARTER_PROMPTS = {
-        {"Convert an image to PDF", "Create a clean, shareable document.",
-            "Convert the attached image into a high-quality PDF."},
-        {"Clean up this workspace", "Review storage before removing anything.",
-            "Find the largest file in this workspace and ask before deleting it."},
-        {"Research a webpage", "Open, inspect, and summarize it clearly.",
-            "Open the webpage I provide and turn it into a clean one-page brief."},
-        {"Organize these photos", "Sort, rename, and group the files.",
-            "Organize the attached photos by date, rename them clearly, and put them into folders."},
+        {"Build an Android app", "Create it, test it, and produce an installable build.",
+            "Build an Android app from my idea, test it, and produce an installable APK."},
+        {"Research a topic", "Compare reliable sources and return a concise brief.",
+            "Research the topic I give you, compare reliable sources, and write a concise brief."},
+        {"Organize this workspace", "Review, rename, and sort files after showing the plan.",
+            "Review this workspace, propose a clear organization, then rename and sort the files after I approve."},
+        {"Complete a form", "Use Screen and pause when private input is needed.",
+            "Open the form in Screen, complete what you can, and pause when you need private information from me."},
         {"Build an Android app", "Take an idea through a working build.",
             "Build a simple Android habit tracker with local storage, then test it."}
     };
@@ -244,6 +264,11 @@ public final class OringutanActivity extends AppCompatActivity
     private static final int MODE_CHAT = 0;
     private static final int MODE_TERMINAL = 1;
     private static final int MODE_DISPLAY = 2;
+    private static final int MODE_SETTINGS = 3;
+    private static final String SETTINGS_ROOT = "root";
+    private static final String SETTINGS_PROFILE = "profile";
+    private static final String SETTINGS_ACCOUNTS = "accounts";
+    private static final String SETTINGS_WORKSPACE = "workspace";
     private static final String DISPLAY_STATE_OFF = "off";
     private static final String DISPLAY_STATE_STARTING = "starting";
     private static final String DISPLAY_STATE_READY_IDLE = "ready_idle";
@@ -251,18 +276,18 @@ public final class OringutanActivity extends AppCompatActivity
     private static final String DISPLAY_STATE_NEEDS_USER = "needs_user";
     private static final String DISPLAY_STATE_ERROR = "error";
 
-    private static final int COLOR_CANVAS = Color.BLACK;
-    private static final int COLOR_PANEL = Color.rgb(14, 14, 14);
-    private static final int COLOR_ACCENT = Color.WHITE;
-    private static final int COLOR_ACCENT_DARK = Color.BLACK;
-    private static final int COLOR_BORDER = Color.rgb(40, 40, 40);
-    private static final int COLOR_INPUT_GLASS = Color.rgb(18, 18, 18);
+    private static final int COLOR_CANVAS = Color.rgb(2, 6, 8);
+    private static final int COLOR_PANEL = Color.rgb(7, 17, 20);
+    private static final int COLOR_ACCENT = Color.rgb(34, 211, 238);
+    private static final int COLOR_ACCENT_DARK = Color.rgb(4, 25, 31);
+    private static final int COLOR_BORDER = Color.rgb(22, 51, 58);
+    private static final int COLOR_INPUT_GLASS = Color.rgb(8, 21, 25);
 
     private static final BrandSkin[] BRAND_SKINS = new BrandSkin[]{
         new BrandSkin("ominal", "GIR", "GIR", "",
-            COLOR_CANVAS, COLOR_PANEL, Color.rgb(242, 242, 242),
-            Color.rgb(148, 148, 148), COLOR_ACCENT, COLOR_ACCENT_DARK,
-            COLOR_BORDER, Color.BLACK, Color.rgb(242, 242, 242))
+            COLOR_CANVAS, COLOR_PANEL, Color.rgb(234, 251, 255),
+            Color.rgb(140, 166, 173), COLOR_ACCENT, COLOR_ACCENT_DARK,
+            COLOR_BORDER, Color.rgb(2, 6, 8), Color.rgb(234, 251, 255))
     };
 
     private final ArrayList<ChatSession> mSessions = new ArrayList<>();
@@ -272,11 +297,13 @@ public final class OringutanActivity extends AppCompatActivity
     private DrawerLayout mDrawerLayout;
     private LinearLayout mChatDrawerList;
     private View mChatDrawer;
+    private View mChatSurfaceRoot;
     private EditText mChatSearchInput;
     private LinearLayout mMessagesView;
     private View mChatEmptyState;
     private LinearLayout mModeBar;
     private FrameLayout mRootFrame;
+    private View mChatSafeAreaMask;
     private FrameLayout mMainStage;
     private View mHeaderView;
     private View mComposerView;
@@ -290,6 +317,7 @@ public final class OringutanActivity extends AppCompatActivity
     private LinearLayout mCommandSuggestionsRow;
     private ImageButton mAttachButton;
     private ImageButton mSendButton;
+    private ImageButton mStopButton;
     private TextView mSubtitleView;
     private TextView mStatusView;
     private WebView mDisplayWebView;
@@ -307,7 +335,7 @@ public final class OringutanActivity extends AppCompatActivity
     private Button mDisplayModeButton;
     private ImageButton mHeaderDisplayButton;
     private Button mSwapButton;
-    private ImageButton mAccountButton;
+    private ImageButton mSettingsButton;
     private ImageButton mLoloButton;
     private Button mTerminalToolButton;
     private Button mDisplayToolButton;
@@ -346,8 +374,10 @@ public final class OringutanActivity extends AppCompatActivity
     private boolean mChatScrollGestureActive;
     private boolean mShowAbsoluteWelcome;
     private boolean mChatImeVisible;
+    private String mPendingComposerDraft = "";
 
     private SharedPreferences mPrefs;
+    private OminalUserProfile mUserProfile = OminalUserProfile.empty();
     private OminalUrlRequestBridge mUrlRequestBridge;
     private Uri mPendingInternalBrowserUrl;
     private ChatSession mActiveSession;
@@ -356,17 +386,21 @@ public final class OringutanActivity extends AppCompatActivity
     private UiSpec mUi = UiSpec.defaults(BRAND_SKINS[0]);
     private Properties mUiProperties = new Properties();
     private File mActiveUiConfigFile;
+    private Typeface mChatTypefaceRegular;
+    private Typeface mChatTypefaceBold;
     private String mDisplayName = BRAND_SKINS[0].name;
     private String mActiveThemeId = "default";
     private boolean mCustomThemeEnabled;
     private boolean mBootstrapReady;
     private boolean mRuntimeReady;
     private boolean mRuntimeSetupInFlight;
+    private OminalRuntimeArchitecture.Profile mRuntimeArchitecture;
     private boolean mHarnessUpdateInFlight;
     private String mRuntimeSetupDetail = "";
     private boolean mPromptRunning;
     private boolean mSendButtonShowsStop;
     private boolean mDisplayStartInFlight;
+    private boolean mNativeDisplayConnectInFlight;
     private boolean mReloadDisplayWhenReady;
     private boolean mDisplayReady;
     private boolean mDisplayUrlLoaded;
@@ -377,10 +411,12 @@ public final class OringutanActivity extends AppCompatActivity
     private boolean mCodexAccountDialogVisible;
     private Dialog mCodexAccountDialog;
     private boolean mCodexAuthRefreshInFlight;
+    private long mCodexAuthLastCheckedAt;
     private boolean mCodexSignedIn;
     private boolean mCodexSessionExpired;
     private final LinkedHashSet<String> mHarnessDiscoveryInFlight = new LinkedHashSet<>();
     private final HashMap<String, String> mHarnessDiscoveryErrors = new HashMap<>();
+    private boolean mReopenHarnessControlsAfterRefresh;
     private ConnectivityManager.NetworkCallback mRuntimeNetworkCallback;
     private long mHandledAgentRevision = -1;
     private int mDisplayRetryCount;
@@ -399,6 +435,19 @@ public final class OringutanActivity extends AppCompatActivity
     private final ArrayList<Runnable> mClipboardSyncCallbacks = new ArrayList<>();
     private float mSplitRatio = 0.52f;
     private int mMode = MODE_CHAT;
+    private String mSettingsRoute = SETTINGS_ROOT;
+    private int mSettingsTransitionDirection;
+    private int mRenderedContentMode = -1;
+    private boolean mReuseRenderedContentOnce;
+    private VelocityTracker mSurfaceVelocityTracker;
+    private float mSurfaceDownX;
+    private float mSurfaceDownY;
+    private boolean mSurfaceGestureEligible;
+    private boolean mSurfaceGestureLocked;
+    private boolean mSurfaceDisplayTwoFinger;
+    private boolean mSurfaceGestureFromHistory;
+    private int mSurfaceGestureDirection = OminalSurfaceNavigation.NONE;
+    private int mSurfaceTransitionGeneration;
     private int mDisplayNavigationInsetLeft;
     private int mDisplayNavigationInsetTop;
     private int mDisplayNavigationInsetRight;
@@ -411,22 +460,39 @@ public final class OringutanActivity extends AppCompatActivity
     private int mChatInsetRight;
     private int mChatInsetBottom;
 
+    private final Runnable mPersistComposerDraft = () -> {
+        if (mPrefs != null)
+            mPrefs.edit().putString(PREF_COMPOSER_DRAFT, mPendingComposerDraft).apply();
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Logger.logDebug(LOG_TAG, "onCreate");
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         mPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        mUserProfile = OminalUserProfileStore.load(mPrefs);
+        exportUserProfile();
         getDelegate().setLocalNightMode(mPrefs.getBoolean(PREF_LIGHT_APPEARANCE, false)
             ? AppCompatDelegate.MODE_NIGHT_NO : AppCompatDelegate.MODE_NIGHT_YES);
         super.onCreate(savedInstanceState);
         if (savedInstanceState != null) {
             int restoredMode = savedInstanceState.getInt(STATE_MODE, MODE_CHAT);
             if (restoredMode == MODE_CHAT || restoredMode == MODE_TERMINAL
-                || restoredMode == MODE_DISPLAY) {
+                || restoredMode == MODE_DISPLAY || restoredMode == MODE_SETTINGS) {
                 mMode = restoredMode;
             }
+            mSettingsRoute = normalizeSettingsRoute(
+                savedInstanceState.getString(STATE_SETTINGS_ROUTE, SETTINGS_ROOT));
         }
-        mMarkwon = Markwon.create(this);
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        float chatTextSize = 16f * getResources().getDisplayMetrics().scaledDensity;
+        Prism4j prism4j = new Prism4j(new OminalPrismGrammarLocator());
+        mMarkwon = Markwon.builder(this)
+            .usePlugin(MarkwonInlineParserPlugin.create())
+            .usePlugin(JLatexMathPlugin.create(chatTextSize, builder ->
+                builder.blocksEnabled(true).blocksLegacy(false).inlinesEnabled(true)))
+            .usePlugin(SyntaxHighlightPlugin.create(prism4j, Prism4jThemeDarkula.create()))
+            .build();
         configureBackNavigation();
         if (!usesNativeDisplay()
             && (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0)
@@ -442,7 +508,6 @@ public final class OringutanActivity extends AppCompatActivity
         consumeInternalBrowserIntent(getIntent());
         startWorkspace();
         maybeShowDebugPairing(getIntent());
-        requestNotificationPermissionIfNeeded();
     }
 
     private void configureBackNavigation() {
@@ -451,6 +516,10 @@ public final class OringutanActivity extends AppCompatActivity
             public void handleOnBackPressed() {
                 if (mMode == MODE_DISPLAY) {
                     navigateDisplayBack();
+                    return;
+                }
+                if (mMode == MODE_SETTINGS) {
+                    navigateBackFromSettings();
                     return;
                 }
                 if (mDrawerLayout != null && mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
@@ -462,6 +531,402 @@ public final class OringutanActivity extends AppCompatActivity
                 setEnabled(true);
             }
         });
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (handleSurfaceNavigation(event)) return true;
+        return super.dispatchTouchEvent(event);
+    }
+
+    private boolean handleSurfaceNavigation(MotionEvent event) {
+        if (event == null) return false;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            resetSurfaceGestureState();
+            mSurfaceGestureEligible = canStartSurfaceGesture(event);
+            if (!mSurfaceGestureEligible) return false;
+            mSurfaceGestureFromHistory = mMode == MODE_CHAT && mDrawerLayout != null
+                && mChatDrawer != null && mDrawerLayout.isDrawerOpen(mChatDrawer);
+            mSurfaceDownX = event.getRawX();
+            mSurfaceDownY = event.getRawY();
+            mSurfaceVelocityTracker = VelocityTracker.obtain();
+            mSurfaceVelocityTracker.addMovement(event);
+            return false;
+        }
+        if (!mSurfaceGestureEligible) return false;
+        if (action == MotionEvent.ACTION_POINTER_DOWN && mMode == MODE_DISPLAY
+            && event.getPointerCount() == 2) {
+            mSurfaceDisplayTwoFinger = true;
+            mSurfaceDownX = eventCenterX(event);
+            mSurfaceDownY = eventCenterY(event);
+            if (mSurfaceVelocityTracker != null) mSurfaceVelocityTracker.clear();
+            if (mSurfaceVelocityTracker != null) mSurfaceVelocityTracker.addMovement(event);
+            return false;
+        }
+        if (mMode == MODE_DISPLAY && !mSurfaceDisplayTwoFinger) {
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
+                resetSurfaceGestureState();
+            return false;
+        }
+        if (mMode == MODE_CHAT && event.getPointerCount() > 1) {
+            resetSurfaceGestureState();
+            return false;
+        }
+        if (mSurfaceVelocityTracker != null) mSurfaceVelocityTracker.addMovement(event);
+
+        float currentX = mMode == MODE_DISPLAY ? eventCenterX(event) : event.getRawX();
+        float currentY = mMode == MODE_DISPLAY ? eventCenterY(event) : event.getRawY();
+        float deltaX = currentX - mSurfaceDownX;
+        float deltaY = currentY - mSurfaceDownY;
+        if (action == MotionEvent.ACTION_MOVE && !mSurfaceGestureLocked) {
+            int direction = mSurfaceGestureFromHistory
+                ? OminalSurfaceNavigation.directionFromHistory(deltaX, deltaY,
+                    ViewConfiguration.get(this).getScaledTouchSlop())
+                : OminalSurfaceNavigation.directionFor(mMode == MODE_DISPLAY,
+                    mSurfaceDisplayTwoFinger, deltaX, deltaY,
+                    ViewConfiguration.get(this).getScaledTouchSlop());
+            if (direction == OminalSurfaceNavigation.NONE) {
+                if (Math.abs(deltaY) > ViewConfiguration.get(this).getScaledTouchSlop()
+                    && Math.abs(deltaY) > Math.abs(deltaX)) {
+                    resetSurfaceGestureState();
+                }
+                return false;
+            }
+            mSurfaceGestureLocked = true;
+            mSurfaceGestureDirection = direction;
+            MotionEvent cancel = MotionEvent.obtain(event);
+            cancel.setAction(MotionEvent.ACTION_CANCEL);
+            super.dispatchTouchEvent(cancel);
+            cancel.recycle();
+            prepareSurfacePreview(direction);
+        }
+
+        if (mSurfaceGestureLocked && action == MotionEvent.ACTION_MOVE) {
+            updateSurfacePreview(deltaX);
+            return true;
+        }
+        if (mSurfaceGestureLocked
+            && (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP
+                || action == MotionEvent.ACTION_CANCEL)) {
+            float velocityX = 0f;
+            if (mSurfaceVelocityTracker != null) {
+                mSurfaceVelocityTracker.computeCurrentVelocity(1000);
+                velocityX = mSurfaceVelocityTracker.getXVelocity();
+            }
+            finishSurfacePreview(action != MotionEvent.ACTION_CANCEL, deltaX, velocityX);
+            resetSurfaceGestureState();
+            return true;
+        }
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
+            resetSurfaceGestureState();
+        return false;
+    }
+
+    private static float eventCenterX(MotionEvent event) {
+        float sum = 0f;
+        for (int index = 0; index < event.getPointerCount(); index++)
+            sum += event.getRawX(index);
+        return sum / Math.max(1, event.getPointerCount());
+    }
+
+    private static float eventCenterY(MotionEvent event) {
+        float sum = 0f;
+        for (int index = 0; index < event.getPointerCount(); index++)
+            sum += event.getRawY(index);
+        return sum / Math.max(1, event.getPointerCount());
+    }
+
+    private boolean canStartSurfaceGesture(MotionEvent event) {
+        if (mDrawerLayout == null || mMainStage == null
+            || (mMode != MODE_CHAT && mMode != MODE_DISPLAY)) {
+            return false;
+        }
+        if (isVisibleOverlay(mPairingOverlay) || isVisibleOverlay(mSetupOverlay)) {
+            return false;
+        }
+        float rawX = event.getRawX();
+        float rawY = event.getRawY();
+        if (mMode == MODE_DISPLAY) return true;
+        return !isPointInsideView(mComposerView, rawX, rawY)
+            && !isPointInsideVisiblePager(mContentFrame, rawX, rawY);
+    }
+
+    private static boolean isVisibleOverlay(View view) {
+        return view != null && view.getVisibility() == View.VISIBLE && view.getAlpha() > 0f;
+    }
+
+    private boolean isPointInsideView(View view, float rawX, float rawY) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return false;
+        Rect bounds = new Rect();
+        return view.getGlobalVisibleRect(bounds) && bounds.contains((int) rawX, (int) rawY);
+    }
+
+    private boolean isPointInsideVisiblePager(View view, float rawX, float rawY) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return false;
+        if (view instanceof ViewPager && isPointInsideView(view, rawX, rawY)) return true;
+        if (!(view instanceof ViewGroup)) return false;
+        ViewGroup group = (ViewGroup) view;
+        for (int index = group.getChildCount() - 1; index >= 0; index--) {
+            if (isPointInsideVisiblePager(group.getChildAt(index), rawX, rawY)) return true;
+        }
+        return false;
+    }
+
+    private void prepareSurfacePreview(int direction) {
+        mSurfaceTransitionGeneration++;
+        cancelSurfaceAnimators();
+        int width = surfaceWidth();
+        setChatPageTranslation(0f);
+        if (mChatDrawer != null) mChatDrawer.setTranslationX(0f);
+        if (direction == OminalSurfaceNavigation.COMPUTER) {
+            prewarmDisplaySurface();
+            if (mDisplayWarmHost != null) {
+                mDisplayWarmHost.setVisibility(View.VISIBLE);
+                mDisplayWarmHost.setTranslationX(width);
+            }
+        } else if (direction == OminalSurfaceNavigation.CHAT && mDrawerLayout != null) {
+            mDrawerLayout.setVisibility(View.VISIBLE);
+            setChatContainerTranslation(-width);
+            if (mChatSafeAreaMask != null)
+                mChatSafeAreaMask.setVisibility(View.VISIBLE);
+            revealSurfacePreviewChrome(mHeaderView);
+            revealSurfacePreviewChrome(mComposerView);
+        } else if (direction == OminalSurfaceNavigation.CHAT_FROM_HISTORY) {
+            setChatPageTranslation(historyWidth());
+        }
+    }
+
+    private static void revealSurfacePreviewChrome(View view) {
+        if (view == null) return;
+        view.animate().cancel();
+        view.setVisibility(View.VISIBLE);
+        view.setAlpha(1f);
+        view.setTranslationY(0f);
+    }
+
+    private void updateSurfacePreview(float deltaX) {
+        if (mDrawerLayout == null) return;
+        int width = surfaceWidth();
+        if (mSurfaceGestureDirection == OminalSurfaceNavigation.HISTORY) {
+            float offset = Math.max(0f, Math.min(historyWidth(), deltaX));
+            if (mChatDrawer != null) mChatDrawer.setTranslationX(offset);
+            setChatPageTranslation(offset);
+        } else if (mSurfaceGestureDirection == OminalSurfaceNavigation.COMPUTER) {
+            float offset = Math.max(-width, Math.min(0f, deltaX));
+            setChatContainerTranslation(offset);
+            if (mDisplayWarmHost != null)
+                mDisplayWarmHost.setTranslationX(width + offset);
+        } else if (mSurfaceGestureDirection == OminalSurfaceNavigation.CHAT) {
+            float distance = Math.max(0f, Math.min(width, deltaX));
+            setChatContainerTranslation(-width + distance);
+            if (mDisplayWarmHost != null) mDisplayWarmHost.setTranslationX(distance);
+        } else if (mSurfaceGestureDirection == OminalSurfaceNavigation.CHAT_FROM_HISTORY) {
+            float distance = Math.max(0f, Math.min(historyWidth(), -deltaX));
+            if (mChatDrawer != null) mChatDrawer.setTranslationX(-distance);
+            setChatPageTranslation(historyWidth() - distance);
+        }
+    }
+
+    private void finishSurfacePreview(boolean released, float deltaX, float velocityX) {
+        if (mDrawerLayout == null) return;
+        int width = mSurfaceGestureDirection == OminalSurfaceNavigation.HISTORY
+            || mSurfaceGestureDirection == OminalSurfaceNavigation.CHAT_FROM_HISTORY
+            ? historyWidth() : surfaceWidth();
+        boolean commit = released && OminalSurfaceNavigation.shouldCommit(
+            mSurfaceGestureDirection, deltaX, width, velocityX, dp(900));
+        if (!commit) {
+            cancelSurfacePreview(width);
+            return;
+        }
+        int generation = mSurfaceTransitionGeneration;
+        cancelSurfaceAnimators();
+        mDrawerLayout.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        if (mSurfaceGestureDirection == OminalSurfaceNavigation.HISTORY) {
+            long duration = OminalSurfaceNavigation.settleDuration(
+                mChatSurfaceRoot == null ? 0f : mChatSurfaceRoot.getTranslationX(), width, width);
+            animateChatPageTranslation(width, duration);
+            mChatDrawer.animate().translationX(width).setDuration(duration)
+                .setInterpolator(surfaceInterpolator())
+                .withEndAction(() -> {
+                    if (generation != mSurfaceTransitionGeneration) return;
+                    mChatDrawer.setTranslationX(0f);
+                    mDrawerLayout.setDrawerLockMode(
+                        DrawerLayout.LOCK_MODE_UNLOCKED, GravityCompat.START);
+                    mDrawerLayout.openDrawer(mChatDrawer, false);
+                    setChatPageTranslation(historyWidth());
+                }).start();
+        } else if (mSurfaceGestureDirection == OminalSurfaceNavigation.CHAT_FROM_HISTORY) {
+            long duration = OminalSurfaceNavigation.settleDuration(
+                mChatSurfaceRoot == null ? width : mChatSurfaceRoot.getTranslationX(), 0f, width);
+            animateChatPageTranslation(0f, duration);
+            mChatDrawer.animate().translationX(-width).setDuration(duration)
+                .setInterpolator(surfaceInterpolator())
+                .withEndAction(() -> {
+                    if (generation != mSurfaceTransitionGeneration) return;
+                    mChatDrawer.setTranslationX(0f);
+                    mDrawerLayout.setDrawerLockMode(
+                        DrawerLayout.LOCK_MODE_UNLOCKED, GravityCompat.START);
+                    mDrawerLayout.closeDrawer(mChatDrawer, false);
+                    setChatPageTranslation(0f);
+                }).start();
+        } else if (mSurfaceGestureDirection == OminalSurfaceNavigation.COMPUTER) {
+            hideComposerKeyboardForSurfaceTransition();
+            long duration = OminalSurfaceNavigation.settleDuration(
+                mDrawerLayout.getTranslationX(), -width, width);
+            setChatContainerAnimation(-width, duration, null);
+            mDisplayWarmHost.animate().translationX(0f).setDuration(duration)
+                .setInterpolator(surfaceInterpolator())
+                .withEndAction(() -> {
+                    if (generation != mSurfaceTransitionGeneration) return;
+                    switchMode(MODE_DISPLAY);
+                    normalizeSurfaceTranslations();
+                }).start();
+        } else if (mSurfaceGestureDirection == OminalSurfaceNavigation.CHAT) {
+            long duration = OminalSurfaceNavigation.settleDuration(
+                mDrawerLayout.getTranslationX(), 0f, width);
+            if (mDisplayWarmHost != null)
+                mDisplayWarmHost.animate().translationX(width).setDuration(duration)
+                    .setInterpolator(surfaceInterpolator())
+                    .start();
+            setChatContainerAnimation(0f, duration, () -> {
+                if (generation != mSurfaceTransitionGeneration) return;
+                switchMode(MODE_CHAT);
+                normalizeSurfaceTranslations();
+            });
+        }
+    }
+
+    private void cancelSurfacePreview(int width) {
+        if (mDrawerLayout == null) return;
+        int generation = mSurfaceTransitionGeneration;
+        cancelSurfaceAnimators();
+        if (mSurfaceGestureDirection == OminalSurfaceNavigation.HISTORY) {
+            long duration = OminalSurfaceNavigation.settleDuration(
+                mChatSurfaceRoot == null ? 0f : mChatSurfaceRoot.getTranslationX(), 0f, width);
+            animateChatPageTranslation(0f, duration);
+            if (mChatDrawer != null)
+                mChatDrawer.animate().translationX(0f).setDuration(duration)
+                    .setInterpolator(surfaceInterpolator())
+                    .start();
+            return;
+        }
+        if (mSurfaceGestureDirection == OminalSurfaceNavigation.CHAT_FROM_HISTORY) {
+            long duration = OminalSurfaceNavigation.settleDuration(
+                mChatSurfaceRoot == null ? width : mChatSurfaceRoot.getTranslationX(), width, width);
+            animateChatPageTranslation(width, duration);
+            if (mChatDrawer != null)
+                mChatDrawer.animate().translationX(0f).setDuration(duration)
+                    .setInterpolator(surfaceInterpolator())
+                    .start();
+            return;
+        }
+        if (mSurfaceGestureDirection == OminalSurfaceNavigation.CHAT) {
+            long duration = OminalSurfaceNavigation.settleDuration(
+                mDrawerLayout.getTranslationX(), -width, width);
+            if (mDisplayWarmHost != null)
+                mDisplayWarmHost.animate().translationX(0f).setDuration(duration)
+                    .setInterpolator(surfaceInterpolator())
+                    .start();
+            setChatContainerAnimation(-width, duration, () -> {
+                    if (generation != mSurfaceTransitionGeneration) return;
+                    setChatContainerTranslation(0f);
+                    mDrawerLayout.setVisibility(View.GONE);
+                    if (mChatSafeAreaMask != null) mChatSafeAreaMask.setVisibility(View.GONE);
+                    if (mHeaderView != null) mHeaderView.setVisibility(View.GONE);
+                    if (mComposerView != null) mComposerView.setVisibility(View.GONE);
+                });
+            return;
+        }
+        long duration = OminalSurfaceNavigation.settleDuration(
+            mDrawerLayout.getTranslationX(), 0f, width);
+        if (mDisplayWarmHost != null)
+            mDisplayWarmHost.animate().translationX(width).setDuration(duration)
+                .setInterpolator(surfaceInterpolator())
+                .withEndAction(() -> {
+                    if (generation == mSurfaceTransitionGeneration)
+                        mDisplayWarmHost.setTranslationX(0f);
+                }).start();
+        setChatContainerAnimation(0f, duration, null);
+    }
+
+    private int surfaceWidth() {
+        if (mRootFrame != null && mRootFrame.getWidth() > 0) return mRootFrame.getWidth();
+        if (mDrawerLayout != null && mDrawerLayout.getWidth() > 0) return mDrawerLayout.getWidth();
+        return Math.max(1, getResources().getDisplayMetrics().widthPixels);
+    }
+
+    private int historyWidth() {
+        return mDrawerLayout != null && mDrawerLayout.getWidth() > 0
+            ? mDrawerLayout.getWidth() : surfaceWidth();
+    }
+
+    private void setChatPageTranslation(float translationX) {
+        if (mChatSurfaceRoot != null) mChatSurfaceRoot.setTranslationX(translationX);
+    }
+
+    private void animateChatPageTranslation(float translationX, long durationMs) {
+        android.view.animation.Interpolator interpolator = surfaceInterpolator();
+        if (mChatSurfaceRoot != null)
+            mChatSurfaceRoot.animate().translationX(translationX).setDuration(durationMs)
+                .setInterpolator(interpolator).start();
+    }
+
+    private void setChatContainerTranslation(float translationX) {
+        if (mDrawerLayout != null) mDrawerLayout.setTranslationX(translationX);
+        if (mChatSafeAreaMask != null) mChatSafeAreaMask.setTranslationX(translationX);
+    }
+
+    private void setChatContainerAnimation(float translationX, long durationMs,
+                                           Runnable endAction) {
+        android.view.animation.Interpolator interpolator = surfaceInterpolator();
+        if (mChatSafeAreaMask != null)
+            mChatSafeAreaMask.animate().translationX(translationX).setDuration(durationMs)
+                .setInterpolator(interpolator).start();
+        if (mDrawerLayout == null) {
+            if (endAction != null) endAction.run();
+            return;
+        }
+        android.view.ViewPropertyAnimator animator = mDrawerLayout.animate()
+            .translationX(translationX).setDuration(durationMs).setInterpolator(interpolator);
+        if (endAction != null) animator.withEndAction(endAction);
+        animator.start();
+    }
+
+    private android.view.animation.Interpolator surfaceInterpolator() {
+        return new android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f);
+    }
+
+    private void cancelSurfaceAnimators() {
+        if (mDrawerLayout != null) mDrawerLayout.animate().cancel();
+        if (mChatSurfaceRoot != null) mChatSurfaceRoot.animate().cancel();
+        if (mChatDrawer != null) mChatDrawer.animate().cancel();
+        if (mChatSafeAreaMask != null) mChatSafeAreaMask.animate().cancel();
+        if (mDisplayWarmHost != null) mDisplayWarmHost.animate().cancel();
+    }
+
+    private void normalizeSurfaceTranslations() {
+        if (mDrawerLayout != null) mDrawerLayout.setTranslationX(0f);
+        if (mChatDrawer != null) mChatDrawer.setTranslationX(0f);
+        if (mChatSurfaceRoot != null) {
+            boolean historyOpen = mChatDrawer != null
+                && mDrawerLayout != null && mDrawerLayout.isDrawerOpen(mChatDrawer);
+            mChatSurfaceRoot.setTranslationX(historyOpen ? historyWidth() : 0f);
+        }
+        if (mChatSafeAreaMask != null) mChatSafeAreaMask.setTranslationX(0f);
+        if (mDisplayWarmHost != null) mDisplayWarmHost.setTranslationX(0f);
+    }
+
+    private void resetSurfaceGestureState() {
+        if (mSurfaceVelocityTracker != null) {
+            mSurfaceVelocityTracker.recycle();
+            mSurfaceVelocityTracker = null;
+        }
+        mSurfaceGestureEligible = false;
+        mSurfaceGestureLocked = false;
+        mSurfaceDisplayTwoFinger = false;
+        mSurfaceGestureFromHistory = false;
+        mSurfaceGestureDirection = OminalSurfaceNavigation.NONE;
     }
 
     @Override
@@ -500,12 +965,16 @@ public final class OringutanActivity extends AppCompatActivity
     @Override
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         outState.putInt(STATE_MODE, mMode);
+        outState.putString(STATE_SETTINGS_ROUTE, mSettingsRoute);
         super.onSaveInstanceState(outState);
     }
 
     private void requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-            && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            && mPrefs != null
+            && !mPrefs.getBoolean(PREF_NOTIFICATION_PERMISSION_REQUESTED, false)) {
+            mPrefs.edit().putBoolean(PREF_NOTIFICATION_PERMISSION_REQUESTED, true).apply();
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATION_PERMISSION);
         }
     }
@@ -533,6 +1002,7 @@ public final class OringutanActivity extends AppCompatActivity
             ensureProviderCommands();
             ensureOminalMotd();
             mUi = loadUiSpec();
+            applySystemBars();
             loadOrCreateSessions();
             attachAgentRuntime();
             setStatus("Finishing setup");
@@ -560,11 +1030,25 @@ public final class OringutanActivity extends AppCompatActivity
         });
     }
 
+    private void enableInteractiveIme() {
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+    }
+
+    private void hideComposerKeyboardForSurfaceTransition() {
+        if (mPromptInput == null) return;
+        InputMethodManager manager = (InputMethodManager)
+            getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (manager != null)
+            manager.hideSoftInputFromWindow(mPromptInput.getWindowToken(), 0);
+        mPromptInput.clearFocus();
+        mPromptInput.setCursorVisible(false);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         if (mUrlRequestBridge != null) mUrlRequestBridge.start();
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         setDisplayFullscreen(mMode == MODE_DISPLAY);
         if (mMode == MODE_DISPLAY && mNativeDisplayView != null)
             mNativeDisplayView.activateInputBridge();
@@ -581,10 +1065,26 @@ public final class OringutanActivity extends AppCompatActivity
 
     @Override
     protected void onPause() {
+        persistComposerDraftNow();
+        resetSurfacePreviewImmediately();
         if (mUrlRequestBridge != null) mUrlRequestBridge.stop();
         if (mMode == MODE_DISPLAY) synchronizeDisplayClipboard(null);
         releaseNativeDisplayInput();
         super.onPause();
+    }
+
+    private void resetSurfacePreviewImmediately() {
+        mSurfaceTransitionGeneration++;
+        resetSurfaceGestureState();
+        cancelSurfaceAnimators();
+        if (mDrawerLayout == null) return;
+        normalizeSurfaceTranslations();
+        if (mMode == MODE_DISPLAY) {
+            mDrawerLayout.setVisibility(View.GONE);
+            if (mChatSafeAreaMask != null) mChatSafeAreaMask.setVisibility(View.GONE);
+            if (mHeaderView != null) mHeaderView.setVisibility(View.GONE);
+            if (mComposerView != null) mComposerView.setVisibility(View.GONE);
+        }
     }
 
     @Override
@@ -602,9 +1102,12 @@ public final class OringutanActivity extends AppCompatActivity
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus && mMode == MODE_DISPLAY) {
+        if (!hasFocus) return;
+        if (mMode == MODE_DISPLAY) {
             setDisplayFullscreen(true);
             if (mNativeDisplayView != null) mNativeDisplayView.activateInputBridge();
+        } else {
+            applySystemBars();
         }
     }
 
@@ -624,74 +1127,307 @@ public final class OringutanActivity extends AppCompatActivity
             ui.border, ui.accent, ui.accentDark);
     }
 
-    private void showAppMenu() {
+    private void openSettingsPage() {
+        if (mMode == MODE_SETTINGS) return;
+        mSettingsRoute = SETTINGS_ROOT;
+        mSettingsTransitionDirection = 0;
+        if (mDrawerLayout != null && mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
+            mDrawerLayout.closeDrawer(GravityCompat.START);
+            if (mRootFrame != null)
+                mRootFrame.postDelayed(() -> switchMode(MODE_SETTINGS), 180L);
+            else switchMode(MODE_SETTINGS);
+            return;
+        }
+        switchMode(MODE_SETTINGS);
+    }
+
+    private String normalizeSettingsRoute(String route) {
+        if (SETTINGS_PROFILE.equals(route) || SETTINGS_ACCOUNTS.equals(route)
+            || SETTINGS_WORKSPACE.equals(route)) return route;
+        return SETTINGS_ROOT;
+    }
+
+    private void navigateToSettings(String route) {
+        mSettingsRoute = normalizeSettingsRoute(route);
+        mSettingsTransitionDirection = 1;
+        renderMode();
+    }
+
+    private void navigateBackFromSettings() {
+        if (!SETTINGS_ROOT.equals(mSettingsRoute)) {
+            mSettingsRoute = SETTINGS_ROOT;
+            mSettingsTransitionDirection = -1;
+            renderMode();
+            return;
+        }
+        switchMode(MODE_CHAT);
+    }
+
+    private View createSettingsPage() {
+        if (SETTINGS_PROFILE.equals(mSettingsRoute)) return createProfileSettingsPage();
+        if (SETTINGS_ACCOUNTS.equals(mSettingsRoute)) return createAccountsSettingsPage();
+        if (SETTINGS_WORKSPACE.equals(mSettingsRoute)) return createWorkspaceSettingsPage();
+
         String harnessId = mActiveSession == null
             ? OminalHarnessRegistry.DEFAULT_HARNESS_ID : mActiveSession.harnessId;
-        OminalAgentHarness harness = OminalHarnessRegistry.activeOrDefault(harnessId);
-        boolean codex = OminalHarnessTerminal.CODEX_ID.equals(harnessId);
-        String accountState = codex && mCodexSessionExpired ? "Needs attention"
-            : codex && mCodexSignedIn ? "Signed in" : "Manage";
         String appearance = currentAppearanceLabel();
 
         ArrayList<OminalInteractionSheet.Section> sections = new ArrayList<>();
-        ArrayList<OminalInteractionSheet.Row> account = new ArrayList<>();
-        account.add(new OminalInteractionSheet.Row(
-            "agent", "Runtime", "Choose for this conversation",
-            OminalHarnessRegistry.resolvedDisplayName(harness), false, true, false));
-        account.add(new OminalInteractionSheet.Row(
-            "account", OminalHarnessRegistry.resolvedDisplayName(harness),
-            "Sign-in and runtime settings",
-            accountState, codex && mCodexSignedIn, true, false));
-        sections.add(new OminalInteractionSheet.Section("Account", account));
+        ArrayList<OminalInteractionSheet.Row> personal = new ArrayList<>();
+        personal.add(new OminalInteractionSheet.Row(
+            "profile", "Profile", "Shared consistently across selected runtimes",
+            mUserProfile.label(), !mUserProfile.isEmpty(), true, false,
+            R.drawable.ic_lucide_circle_user));
+        personal.add(new OminalInteractionSheet.Row(
+            "accounts", "Accounts", "Switch or manage installed intelligence",
+            Integer.toString(OminalHarnessRegistry.all().size()), false, true, false,
+            R.drawable.ic_lucide_circle_user));
+        sections.add(new OminalInteractionSheet.Section("Personal", personal));
 
-        ArrayList<OminalInteractionSheet.Row> preferences = new ArrayList<>();
-        preferences.add(new OminalInteractionSheet.Row("appearance", "Appearance",
-            "Choose a built-in or custom theme", appearance, false, true, false));
-        preferences.add(new OminalInteractionSheet.Row("lolo", "Lolo mode",
-            "Experimental access outside the Linux workspace",
-            isLoloModeEnabled() ? "On" : "Off", isLoloModeEnabled(), true, false));
-        preferences.add(new OminalInteractionSheet.Row("terminal", "Chat terminal",
-            "Open the persistent session for this conversation", "Open", false,
-            mActiveSession != null, false));
-        sections.add(new OminalInteractionSheet.Section("Preferences", preferences));
+        ArrayList<OminalInteractionSheet.Row> interfaceRows = new ArrayList<>();
+        interfaceRows.add(new OminalInteractionSheet.Row("appearance", "Appearance",
+            "Choose a built-in or custom theme", appearance, false, true, false,
+            R.drawable.ic_lucide_palette));
+        interfaceRows.add(new OminalInteractionSheet.Row("workspace", "Workspace",
+            "Terminal and experimental access", "", false, true, false,
+            R.drawable.ic_lucide_square_terminal));
+        sections.add(new OminalInteractionSheet.Section("App", interfaceRows));
 
         ArrayList<OminalInteractionSheet.Row> information = new ArrayList<>();
         information.add(new OminalInteractionSheet.Row("privacy", "Privacy",
-            "How app data and connected agents are handled", "Open", false, true, false));
+            "How app data and connected agents are handled", "Open", false, true, false,
+            R.drawable.ic_lucide_shield_check));
         sections.add(new OminalInteractionSheet.Section("Information", information));
 
-        OminalInteractionSheet.show(this, interactionSheetTheme(), "Settings",
-            "Account and device controls.", sections, id -> {
-                if ("agent".equals(id)) {
-                    if (mRootFrame != null)
-                        mRootFrame.postDelayed(this::showRunnerPairingChooser, 160);
-                    else showRunnerPairingChooser();
-                } else if ("account".equals(id)) {
-                    if (mRootFrame != null) mRootFrame.postDelayed(this::showCodexAccountDialog, 160);
-                    else showCodexAccountDialog();
-                } else if ("appearance".equals(id)) {
-                    if (mRootFrame != null) mRootFrame.postDelayed(this::showAppearanceChooser, 160);
-                    else showAppearanceChooser();
-                } else if ("lolo".equals(id)) {
-                    if (mRootFrame != null) mRootFrame.postDelayed(this::showLoloModeDialog, 160);
-                    else showLoloModeDialog();
-                } else if ("terminal".equals(id)) {
-                    openAgentTerminalForActiveChat();
-                } else if ("privacy".equals(id)) {
-                    startExternalActivity(new Intent(Intent.ACTION_VIEW,
-                        Uri.parse(PRIVACY_POLICY_URL)));
-                }
+        UiSpec ui = ui();
+        OminalInteractionSheet.Theme theme = new OminalInteractionSheet.Theme(
+            ui.app.fill, ui.panelSoft, ui.ink, ui.muted, ui.border, ui.accent, ui.accentDark);
+        return OminalSettingsPage.create(this, theme, "Settings", "", sections,
+            this::navigateBackFromSettings, this::handleSettingsSelection);
+    }
+
+    private void handleSettingsSelection(String id) {
+        if ("profile".equals(id)) {
+            navigateToSettings(SETTINGS_PROFILE);
+        } else if ("accounts".equals(id)) {
+            navigateToSettings(SETTINGS_ACCOUNTS);
+        } else if ("appearance".equals(id)) {
+            showAppearanceChooser();
+        } else if ("workspace".equals(id)) {
+            navigateToSettings(SETTINGS_WORKSPACE);
+        } else if ("privacy".equals(id)) {
+            startExternalActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)));
+        }
+    }
+
+    private View createProfileSettingsPage() {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+
+        EditText displayName = addProfileField(form, "Name", "Your name",
+            mUserProfile.displayName, false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            displayName.setAutofillHints(View.AUTOFILL_HINT_NAME);
+        EditText preferredName = addProfileField(form, "Preferred name",
+            "How the active intelligence should address you", mUserProfile.preferredName, false);
+        EditText language = addProfileField(form, "Language",
+            "Language or locale", mUserProfile.language.isEmpty()
+                ? Locale.getDefault().toLanguageTag() : mUserProfile.language, false);
+        EditText location = addProfileField(form, "Location or time zone",
+            "Used for dates, time, and regional context",
+            mUserProfile.locationOrTimeZone.isEmpty()
+                ? TimeZone.getDefault().getID() : mUserProfile.locationOrTimeZone, false);
+        EditText about = addProfileField(form, "About you",
+            "Background and preferences you want available across conversations",
+            mUserProfile.about, true);
+
+        OminalInteractionSheet.Theme theme = interactionSheetTheme();
+        return OminalSettingsPage.createForm(this, theme, "Profile",
+            "One device-resident profile is shared as context with the intelligence you choose. "
+                + "It is not a separate account for each provider.",
+            form, this::navigateBackFromSettings, () -> {
+                OminalUserProfile updated = new OminalUserProfile(
+                    displayName.getText().toString(), preferredName.getText().toString(),
+                    language.getText().toString(), location.getText().toString(),
+                    about.getText().toString());
+                if (saveUserProfile(updated)) navigateBackFromSettings();
+            }, this::confirmClearUserProfile);
+    }
+
+    private EditText addProfileField(LinearLayout form, String label, String hint,
+                                     String value, boolean multiline) {
+        TextView labelView = new TextView(this);
+        labelView.setText(label);
+        labelView.setTextColor(ui().ink);
+        labelView.setTextSize(14);
+        labelView.setTypeface(chatTypeface(Typeface.BOLD));
+        labelView.setIncludeFontPadding(false);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        labelParams.setMargins(dp(2), dp(10), dp(2), dp(8));
+        form.addView(labelView, labelParams);
+
+        EditText input = createProfileField(label, hint, multiline);
+        input.setText(value);
+        LinearLayout.LayoutParams inputParams = profileFieldParams();
+        if (multiline) inputParams.height = dp(124);
+        form.addView(input, inputParams);
+        return input;
+    }
+
+    private View createAccountsSettingsPage() {
+        String activeId = mActiveSession == null
+            ? OminalHarnessRegistry.DEFAULT_HARNESS_ID : mActiveSession.harnessId;
+        ArrayList<OminalInteractionSheet.Row> activeRows = new ArrayList<>();
+        ArrayList<OminalInteractionSheet.Row> availableRows = new ArrayList<>();
+        for (OminalAgentHarness harness : OminalHarnessRegistry.all()) {
+            if (!harness.isAvailable()) continue;
+            boolean active = harness.getId().equals(activeId);
+            OminalHarnessManifest manifest = OminalHarnessManifest.load(harness.getId());
+            String detail = OminalHarnessRegistry.resolvedPublisherName(harness);
+            if (manifest != null && !manifest.binaryVersion.isEmpty())
+                detail += "  ·  " + manifest.binaryVersion;
+            OminalInteractionSheet.Row row = new OminalInteractionSheet.Row(
+                "account:" + harness.getId(), OminalHarnessRegistry.resolvedDisplayName(harness),
+                detail, active ? accountStateFor(harness.getId()) : "Switch",
+                active, true, false, R.drawable.ic_lucide_bot);
+            (active ? activeRows : availableRows).add(row);
+        }
+
+        ArrayList<OminalInteractionSheet.Section> sections = new ArrayList<>();
+        if (!activeRows.isEmpty())
+            sections.add(new OminalInteractionSheet.Section("Active for this chat", activeRows));
+        if (!availableRows.isEmpty())
+            sections.add(new OminalInteractionSheet.Section("Available", availableRows));
+        return OminalSettingsPage.create(this, interactionSheetTheme(), "Accounts",
+            "Installed intelligence reports its own name, models, commands, and account state. "
+                + "Tap another entry to switch this conversation.", sections,
+            this::navigateBackFromSettings, this::handleAccountSettingsSelection);
+    }
+
+    private String accountStateFor(String harnessId) {
+        if (OminalHarnessTerminal.CODEX_ID.equals(harnessId)) {
+            if (mCodexSessionExpired) return "Needs attention";
+            if (mCodexSignedIn) return "Signed in";
+        }
+        return OminalHarnessTerminal.isSupported(harnessId) ? "Manage" : "Active";
+    }
+
+    private void handleAccountSettingsSelection(String id) {
+        String prefix = "account:";
+        if (!id.startsWith(prefix) || mActiveSession == null) return;
+        String harnessId = id.substring(prefix.length());
+        if (!OminalHarnessRegistry.isSelectable(harnessId)) return;
+        if (!harnessId.equals(mActiveSession.harnessId)) {
+            selectHarness(mActiveSession, harnessId);
+            mSettingsTransitionDirection = 0;
+            renderMode();
+            return;
+        }
+        showHarnessAccountDialog(harnessId);
+    }
+
+    private View createWorkspaceSettingsPage() {
+        ArrayList<OminalInteractionSheet.Row> rows = new ArrayList<>();
+        rows.add(new OminalInteractionSheet.Row("lolo", "Lolo mode",
+            "Experimental access outside the Linux workspace",
+            isLoloModeEnabled() ? "On" : "Off", isLoloModeEnabled(), true, false,
+            R.drawable.ic_lucide_flask_conical));
+        rows.add(new OminalInteractionSheet.Row("terminal", "Chat terminal",
+            "Open the persistent session for this conversation", "Open", false,
+            mActiveSession != null, false, R.drawable.ic_lucide_square_terminal));
+        return OminalSettingsPage.create(this, interactionSheetTheme(), "Workspace",
+            "Advanced controls for the current conversation.",
+            Collections.singletonList(new OminalInteractionSheet.Section("Access", rows)),
+            this::navigateBackFromSettings, id -> {
+                if ("lolo".equals(id)) showLoloModeDialog();
+                else if ("terminal".equals(id)) openAgentTerminalForActiveChat();
             });
     }
 
+    private EditText createProfileField(String label, String hint, boolean multiline) {
+        EditText input = new EditText(this);
+        input.setContentDescription(label);
+        input.setHint(hint);
+        input.setTextColor(ui().ink);
+        input.setHintTextColor(ui().muted);
+        input.setTextSize(15);
+        input.setIncludeFontPadding(false);
+        input.setPadding(dp(14), dp(multiline ? 12 : 0), dp(14), dp(multiline ? 12 : 0));
+        input.setBackground(makeSurfaceDrawable(ui().composerInput, true));
+        if (multiline) {
+            input.setGravity(Gravity.TOP | Gravity.START);
+            input.setSingleLine(false);
+            input.setMaxLines(5);
+            input.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        } else {
+            input.setSingleLine(true);
+            input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+            input.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+        }
+        return input;
+    }
+
+    private LinearLayout.LayoutParams profileFieldParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(52));
+        params.setMargins(0, 0, 0, dp(12));
+        return params;
+    }
+
+    private void confirmClearUserProfile() {
+        AlertDialog confirmation = new AlertDialog.Builder(this)
+            .setTitle("Clear profile?")
+            .setMessage("The shared profile context will be removed from every runtime.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Clear", (ignored, which) -> {
+                if (saveUserProfile(OminalUserProfile.empty())) navigateBackFromSettings();
+            })
+            .create();
+        confirmation.show();
+        styleBlackDialog(confirmation);
+        confirmation.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(255, 69, 58));
+    }
+
+    private boolean saveUserProfile(OminalUserProfile profile) {
+        try {
+            OminalUserProfileStore.save(mPrefs, profile);
+            mUserProfile = profile;
+            exportUserProfile();
+            for (ChatSession session : mSessions) writeRuntimeContract(session);
+            Toast.makeText(this, profile.isEmpty() ? "Profile cleared" : "Profile saved",
+                Toast.LENGTH_SHORT).show();
+            return true;
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Could not save user profile", e);
+            Toast.makeText(this, "Could not save profile", Toast.LENGTH_SHORT).show();
+            return false;
+        }
+    }
+
+    private void exportUserProfile() {
+        try {
+            OminalUserProfileStore.export(
+                new File(OminalConstants.OMINAL_HOME_DIR_PATH), mUserProfile);
+        } catch (IOException | JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Could not export user profile", e);
+        }
+    }
+
     private void showCodexAccountDialog() {
-        if (mCodexAccountDialogVisible) return;
-        mCodexAccountDialogVisible = true;
         String harnessId = mActiveSession == null
             ? OminalHarnessRegistry.DEFAULT_HARNESS_ID : mActiveSession.harnessId;
+        showHarnessAccountDialog(harnessId);
+    }
+
+    private void showHarnessAccountDialog(String harnessId) {
+        if (mCodexAccountDialogVisible) return;
+        mCodexAccountDialogVisible = true;
         OminalAgentHarness harness = OminalHarnessRegistry.activeOrDefault(harnessId);
         String harnessName = OminalHarnessRegistry.resolvedDisplayName(harness);
         boolean codex = OminalHarnessTerminal.CODEX_ID.equals(harnessId);
+        boolean terminalHarness = OminalHarnessTerminal.isSupported(harnessId);
         boolean sessionExpired = codex && mCodexSessionExpired;
         boolean signedIn = codex && mCodexSignedIn;
 
@@ -703,9 +1439,13 @@ public final class OringutanActivity extends AppCompatActivity
 
         ArrayList<OminalInteractionSheet.Row> rows = new ArrayList<>();
         rows.add(new OminalInteractionSheet.Row("open",
-            signedIn && !sessionExpired ? "Check session" : "Open " + harnessName,
-            codex ? "Continue in the agent's own sign-in flow" : "Open the agent terminal",
-            "Open", false, true, false));
+            terminalHarness
+                ? signedIn && !sessionExpired ? "Check session" : "Open " + harnessName
+                : "Runtime-managed account",
+            terminalHarness ? codex ? "Continue in the agent's own sign-in flow"
+                : "Open the agent terminal"
+                : "Authentication stays inside the installed runtime adapter",
+            terminalHarness ? "Open" : "", false, terminalHarness, false));
 
         if (codex && mCodexSignedIn) {
             rows.add(new OminalInteractionSheet.Row("logout", "Log out",
@@ -719,7 +1459,7 @@ public final class OringutanActivity extends AppCompatActivity
                     showCodexLogoutConfirmation();
                 } else if (codex && signedIn && !sessionExpired) {
                     refreshCodexAuthStatus(false);
-                } else {
+                } else if (terminalHarness) {
                     launchHarnessTerminal(harnessId, false);
                 }
             });
@@ -777,7 +1517,7 @@ public final class OringutanActivity extends AppCompatActivity
                 if (mPrefs != null)
                     mPrefs.edit().putBoolean(PREF_RUNNER_PAIRING_COMPLETE, true).apply();
                 shutdownAgentRuntime();
-                styleAccountButton();
+                styleSettingsButton();
                 setStatus("Sign in");
                 Toast.makeText(this, "Logged out", Toast.LENGTH_SHORT).show();
             });
@@ -801,8 +1541,14 @@ public final class OringutanActivity extends AppCompatActivity
     private void refreshCodexAuthStatus(boolean promptWhenSignedOut) {
         if (!mBootstrapReady || !mRuntimeReady || mActiveSession == null || mCodexAuthRefreshInFlight) return;
         if (!OminalHarnessTerminal.CODEX_ID.equals(mActiveSession.harnessId)) {
-            styleAccountButton();
+            styleSettingsButton();
             setStatus("Ready");
+            return;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (!promptWhenSignedOut && mCodexAuthLastCheckedAt > 0L
+            && now - mCodexAuthLastCheckedAt < AUTH_STATUS_FRESHNESS_MS) {
+            styleSettingsButton();
             return;
         }
         refreshRuntimeDns();
@@ -827,9 +1573,10 @@ public final class OringutanActivity extends AppCompatActivity
                 && command.resultData.exitCode != null && command.resultData.exitCode == 0;
             runOnUiThread(() -> {
                 mCodexAuthRefreshInFlight = false;
+                mCodexAuthLastCheckedAt = SystemClock.elapsedRealtime();
                 boolean needsReauthentication = mCodexSessionExpired;
                 mCodexSignedIn = signedIn && !needsReauthentication;
-                styleAccountButton();
+                styleSettingsButton();
                 setStatus(mCodexSignedIn ? "Signed in" : "Sign in");
                 if (mCodexSignedIn) {
                     completeRunnerPairing(true);
@@ -925,6 +1672,8 @@ public final class OringutanActivity extends AppCompatActivity
         loadUiProperties(properties, configFile);
         mUiProperties = properties;
         mActiveUiConfigFile = configFile;
+        mChatTypefaceRegular = null;
+        mChatTypefaceBold = null;
         mCustomThemeEnabled = Boolean.parseBoolean(
             properties.getProperty("theme.enabled", "false").trim());
         if (configFile == null) mCustomThemeEnabled = false;
@@ -1006,6 +1755,52 @@ public final class OringutanActivity extends AppCompatActivity
 
     private UiSpec ui() {
         return mUi != null ? mUi : UiSpec.defaults(skin());
+    }
+
+    private Typeface chatTypeface(int style) {
+        if (style == Typeface.BOLD && mChatTypefaceBold != null) return mChatTypefaceBold;
+        if (style != Typeface.BOLD && mChatTypefaceRegular != null) return mChatTypefaceRegular;
+
+        Typeface base = loadThemeTypeface();
+        Typeface resolved = Typeface.create(base, style);
+        if (style == Typeface.BOLD) mChatTypefaceBold = resolved;
+        else mChatTypefaceRegular = resolved;
+        return resolved;
+    }
+
+    private Typeface loadThemeTypeface() {
+        String relativePath = mUiProperties == null ? ""
+            : mUiProperties.getProperty("typography.file", "").trim();
+        if (!relativePath.isEmpty() && mActiveUiConfigFile != null
+            && (relativePath.endsWith(".ttf") || relativePath.endsWith(".otf"))) {
+            try {
+                File themeDirectory = mActiveUiConfigFile.getParentFile().getCanonicalFile();
+                File fontFile = new File(themeDirectory, relativePath).getCanonicalFile();
+                String themePrefix = themeDirectory.getPath() + File.separator;
+                if (fontFile.getPath().startsWith(themePrefix) && fontFile.isFile()
+                    && fontFile.length() > 0 && fontFile.length() <= 8L * 1024L * 1024L) {
+                    return Typeface.createFromFile(fontFile);
+                }
+            } catch (IOException | RuntimeException e) {
+                Logger.logWarn(LOG_TAG, "Could not load custom chat typeface");
+            }
+        }
+
+        String family = mUiProperties == null ? "sans-serif-rounded"
+            : mUiProperties.getProperty("typography.family", "sans-serif-rounded").trim();
+        if (!family.matches("[A-Za-z0-9 ._-]{1,64}")) family = "sans-serif-rounded";
+        return Typeface.create(family, Typeface.NORMAL);
+    }
+
+    private float chatTextSize(float baseSize) {
+        String configured = mUiProperties == null ? "1"
+            : mUiProperties.getProperty("typography.scale", "1").trim();
+        float scale = 1f;
+        try {
+            scale = Float.parseFloat(configured);
+        } catch (NumberFormatException ignored) {
+        }
+        return baseSize * Math.max(0.85f, Math.min(1.25f, scale));
     }
 
     private void ensureDefaultUiProperties() {
@@ -1162,8 +1957,12 @@ public final class OringutanActivity extends AppCompatActivity
 
         new Thread(() -> {
             try {
-                if (!supportsArm64())
-                    throw new IOException("This phone isn't supported yet.");
+                mRuntimeArchitecture = OminalRuntimeArchitecture.detect(Build.SUPPORTED_ABIS);
+                if (mRuntimeArchitecture == null)
+                    throw new IOException("This device architecture isn't supported yet.");
+                if (!OminalRuntimeArchitecture.hasPackagedRuntime(mRuntimeArchitecture))
+                    throw new IOException("This GIR build does not include the "
+                        + mRuntimeArchitecture.androidAbi + " Linux runtime yet.");
 
                 String bootstrap = OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/ominal-runtime-bootstrap";
                 showSetupProgress(4, "Checking system components",
@@ -1249,7 +2048,8 @@ public final class OringutanActivity extends AppCompatActivity
         if (detail != null) {
             detail = detail.trim();
             if (detail.startsWith("GIR needs at least 4 GB")
-                || detail.startsWith("This phone isn't supported")) return detail;
+                || detail.startsWith("This device architecture")
+                || detail.startsWith("This GIR build does not include")) return detail;
         }
         return "Setup couldn't finish. Check your connection and free space, then restart GIR.";
     }
@@ -1265,13 +2065,6 @@ public final class OringutanActivity extends AppCompatActivity
         });
     }
 
-    private boolean supportsArm64() {
-        for (String abi : Build.SUPPORTED_ABIS) {
-            if ("arm64-v8a".equals(abi)) return true;
-        }
-        return false;
-    }
-
     private boolean runRuntimeShell(String commandLine, String label) {
         ExecutionCommand command = new ExecutionCommand(-1,
             OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/sh",
@@ -1282,6 +2075,8 @@ public final class OringutanActivity extends AppCompatActivity
             false);
         command.commandLabel = label;
         HashMap<String, String> environment = new HashMap<>();
+        if (mRuntimeArchitecture != null)
+            environment.put("OMINAL_RUNTIME_ARCH", mRuntimeArchitecture.linuxArchitecture);
         String dnsServers = getRuntimeDnsServerList();
         if (!dnsServers.isEmpty()) environment.put("OMINAL_DNS_SERVERS", dnsServers);
         String aptHostAddresses = getRuntimeHostAddresses("ports.ubuntu.com");
@@ -1595,6 +2390,10 @@ public final class OringutanActivity extends AppCompatActivity
         builder.append("# 'export key=value' also works, but the app reads only documented UI keys.\n");
         builder.append("# From an agent session, run: ominal-event reload-ui\n");
         builder.append("# Colors accept #RRGGBB or #AARRGGBB.\n\n");
+        builder.append("# Chat typography may use an Android family or a theme-local TTF/OTF.\n");
+        builder.append("typography.family=sans-serif-rounded\n");
+        builder.append("typography.scale=1.0\n");
+        builder.append("# typography.file=fonts/chat.ttf\n\n");
         builder.append("# Optional monochrome PNG/WebP role icons are relative to this theme directory.\n");
         builder.append("# Example: icon.chat-history=icons/chat-history.png\n");
         builder.append("# Roles include chat-history, screen, account-and-settings, new-chat, attach-file,\n");
@@ -1660,16 +2459,20 @@ public final class OringutanActivity extends AppCompatActivity
     private View createContentView() {
         UiSpec ui = ui();
         mRootFrame = new FrameLayout(this);
-        mRootFrame.setBackgroundColor(ui.app.fill);
+        mRootFrame.setBackgroundColor(resolveSystemBarColor(ui.header.fill, ui.canvas));
+        mRootFrame.setFocusable(true);
+        mRootFrame.setFocusableInTouchMode(true);
+        mRootFrame.requestFocus();
 
         mDrawerLayout = new DrawerLayout(this);
-        mDrawerLayout.setScrimColor(Color.argb(172, 0, 0, 0));
-        mDrawerLayout.setDrawerElevation(dp(10));
+        mDrawerLayout.setScrimColor(Color.TRANSPARENT);
+        mDrawerLayout.setDrawerElevation(0f);
         mDrawerLayout.setBackgroundColor(ui.app.fill);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(ui.app.fill);
+        mChatSurfaceRoot = root;
 
         mHeaderView = createHeader();
         root.addView(mHeaderView, new LinearLayout.LayoutParams(
@@ -1683,6 +2486,8 @@ public final class OringutanActivity extends AppCompatActivity
         mDisplayModeButton = null;
         mSwapButton = null;
         mDisplayPane = null;
+        mRenderedContentMode = -1;
+        mReuseRenderedContentOnce = false;
         mDisplayNavigationBar = null;
         mDisplayAvailabilityView = null;
         mDisplayAgentStatusView = null;
@@ -1717,9 +2522,46 @@ public final class OringutanActivity extends AppCompatActivity
             DrawerLayout.LayoutParams.MATCH_PARENT, DrawerLayout.LayoutParams.MATCH_PARENT));
 
         DrawerLayout.LayoutParams drawerParams = new DrawerLayout.LayoutParams(
-            getDrawerWidth(), DrawerLayout.LayoutParams.MATCH_PARENT);
+            getResources().getDisplayMetrics().widthPixels,
+            DrawerLayout.LayoutParams.MATCH_PARENT);
         drawerParams.gravity = GravityCompat.START;
         mDrawerLayout.addView(mChatDrawer, drawerParams);
+        mDrawerLayout.addOnLayoutChangeListener((view, left, top, right, bottom,
+                                                 oldLeft, oldTop, oldRight, oldBottom) -> {
+            int availableWidth = right - left;
+            if (availableWidth <= 0 || mChatDrawer == null) return;
+            ViewGroup.LayoutParams rawParams = mChatDrawer.getLayoutParams();
+            if (!(rawParams instanceof DrawerLayout.LayoutParams)
+                || rawParams.width == availableWidth) {
+                return;
+            }
+            rawParams.width = availableWidth;
+            mChatDrawer.setLayoutParams(rawParams);
+        });
+        mDrawerLayout.addDrawerListener(new DrawerLayout.SimpleDrawerListener() {
+            @Override
+            public void onDrawerSlide(@NonNull View drawerView, float slideOffset) {
+                if (drawerView != mChatDrawer || mSurfaceGestureLocked) return;
+                setChatPageTranslation(historyWidth() * slideOffset);
+            }
+
+            @Override
+            public void onDrawerOpened(@NonNull View drawerView) {
+                if (drawerView != mChatDrawer) return;
+                mDrawerLayout.setDrawerLockMode(
+                    DrawerLayout.LOCK_MODE_UNLOCKED, GravityCompat.START);
+                setChatPageTranslation(historyWidth());
+            }
+
+            @Override
+            public void onDrawerClosed(@NonNull View drawerView) {
+                if (drawerView != mChatDrawer) return;
+                setChatPageTranslation(0f);
+                if (mMode == MODE_CHAT)
+                    mDrawerLayout.setDrawerLockMode(
+                        DrawerLayout.LOCK_MODE_LOCKED_CLOSED, GravityCompat.START);
+            }
+        });
 
         mDisplayWarmHost = new FrameLayout(this);
         mDisplayWarmHost.setAlpha(1f);
@@ -1731,6 +2573,14 @@ public final class OringutanActivity extends AppCompatActivity
         FrameLayout.LayoutParams warmParams = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
         mRootFrame.addView(mDisplayWarmHost, warmParams);
+
+        mChatSafeAreaMask = new View(this);
+        mChatSafeAreaMask.setBackgroundColor(
+            resolveSystemBarColor(ui.header.fill, ui.canvas));
+        mChatSafeAreaMask.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        mRootFrame.addView(mChatSafeAreaMask, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, dp(8), Gravity.TOP));
 
         mRootFrame.addView(mDrawerLayout, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -1765,26 +2615,26 @@ public final class OringutanActivity extends AppCompatActivity
         content.setPadding(dp(30), dp(48), dp(30), dp(40));
 
         ImageView mark = new ImageView(this);
-        mark.setImageResource(R.drawable.splash_mark);
+        mark.setImageResource(R.drawable.gir_final_logo_white);
         mark.setScaleType(ImageView.ScaleType.FIT_CENTER);
         mark.setContentDescription(uiDisplayName());
-        content.addView(mark, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        content.addView(mark, new LinearLayout.LayoutParams(dp(104), dp(104)));
 
         TextView title = new TextView(this);
         title.setText("Choose a runtime");
         title.setTextColor(Color.WHITE);
-        title.setTextSize(26);
+        title.setTextSize(23);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         title.setGravity(Gravity.CENTER);
         title.setIncludeFontPadding(false);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        titleParams.setMargins(0, dp(24), 0, 0);
+        titleParams.setMargins(0, dp(22), 0, 0);
         content.addView(title, titleParams);
 
         TextView detail = new TextView(this);
-        detail.setText("Choose an installed runtime to open its sign-in. "
-            + "You can switch for each conversation.");
+        detail.setText("Each runtime brings its own sign-in, models, and tools. "
+            + "You can switch for any conversation.");
         detail.setTextColor(Color.rgb(174, 174, 174));
         detail.setTextSize(15);
         detail.setGravity(Gravity.CENTER);
@@ -1798,11 +2648,7 @@ public final class OringutanActivity extends AppCompatActivity
 
         LinearLayout runtimeGroup = new LinearLayout(this);
         runtimeGroup.setOrientation(LinearLayout.VERTICAL);
-        runtimeGroup.setBackground(makeRoundedDrawable(
-            Color.rgb(16, 16, 16), Color.rgb(48, 48, 48), dp(18)));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            runtimeGroup.setClipToOutline(true);
-        }
+        runtimeGroup.setBackgroundColor(Color.TRANSPARENT);
 
         mPairingHarnessButtons.clear();
         List<OminalAgentHarness> runtimes = OminalHarnessRegistry.all();
@@ -1811,17 +2657,18 @@ public final class OringutanActivity extends AppCompatActivity
             if (!mPairingHarnessButtons.isEmpty()) runtimeGroup.addView(createPairingDivider());
             String name = OminalHarnessRegistry.resolvedDisplayName(runtime);
             String publisher = OminalHarnessRegistry.resolvedPublisherName(runtime);
-            View row = createPairingRuntimeRow(
-                name, publisher + "  ·  Sign in through " + name);
+            View row = createPairingRuntimeRow(runtime.getId(), name,
+                TextUtils.isEmpty(publisher) ? "Uses its own account and settings"
+                    : publisher + " runtime");
             row.setOnClickListener(v -> beginRuntimePairing(runtime));
             mPairingHarnessButtons.add(row);
             runtimeGroup.addView(row, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(70)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(64)));
         }
 
         LinearLayout.LayoutParams runtimeParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        runtimeParams.setMargins(0, dp(32), 0, 0);
+        runtimeParams.setMargins(0, dp(28), 0, 0);
         content.addView(runtimeGroup, runtimeParams);
 
         mPairingComputerOnlyButton = createPairingQuietButton("Continue without intelligence");
@@ -1832,7 +2679,7 @@ public final class OringutanActivity extends AppCompatActivity
         content.addView(mPairingComputerOnlyButton, computerOnlyParams);
 
         TextView attribution = new TextView(this);
-        attribution.setText("Authentication is handled by the selected runtime.");
+        attribution.setText("Sign-in stays between you and the selected runtime.");
         attribution.setTextColor(Color.rgb(100, 100, 100));
         attribution.setTextSize(12);
         attribution.setGravity(Gravity.CENTER);
@@ -1854,16 +2701,19 @@ public final class OringutanActivity extends AppCompatActivity
         if (mActiveSession != null) selectHarness(mActiveSession, runtime.getId());
         if (OminalHarnessTerminal.CODEX_ID.equals(runtime.getId())) {
             startCodexTerminal();
-        } else {
+        } else if (OminalHarnessTerminal.isSupported(runtime.getId())) {
             launchHarnessTerminal(runtime.getId(), true);
+        } else {
+            completeRunnerPairing(false);
+            setStatus("Ready");
         }
     }
 
-    private View createPairingRuntimeRow(String title, String detail) {
+    private View createPairingRuntimeRow(String runtimeId, String title, String detail) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(14), dp(7), dp(12), dp(7));
+        row.setPadding(dp(6), dp(7), dp(4), dp(7));
         row.setClickable(true);
         row.setFocusable(true);
         row.setContentDescription(title + ", " + detail);
@@ -1871,18 +2721,16 @@ public final class OringutanActivity extends AppCompatActivity
             ColorStateList.valueOf(Color.argb(34, 255, 255, 255)),
             makeRoundedDrawable(Color.TRANSPARENT, Color.TRANSPARENT, 0), null));
 
-        FrameLayout iconWell = new FrameLayout(this);
-        iconWell.setBackground(makeRoundedDrawable(
-            Color.rgb(27, 27, 27), Color.rgb(53, 53, 53), dp(12)));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) iconWell.setClipToOutline(true);
         ImageView icon = new ImageView(this);
-        icon.setImageResource(R.drawable.ic_runtime);
-        icon.setImageTintList(ColorStateList.valueOf(Color.WHITE));
+        boolean antigravity = OminalHarnessTerminal.ANTIGRAVITY_ID.equals(runtimeId);
+        boolean codex = OminalHarnessTerminal.CODEX_ID.equals(runtimeId);
+        icon.setImageResource(antigravity ? R.drawable.runtime_antigravity
+            : codex ? R.drawable.runtime_codex : R.drawable.ic_lucide_bot);
+        icon.setImageTintList(antigravity || codex ? null
+            : ColorStateList.valueOf(Color.rgb(220, 220, 220)));
         icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        icon.setPadding(dp(9), dp(9), dp(9), dp(9));
-        iconWell.addView(icon, new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        row.addView(iconWell, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        icon.setPadding(dp(5), dp(5), dp(5), dp(5));
+        row.addView(icon, new LinearLayout.LayoutParams(dp(32), dp(32)));
 
         LinearLayout labels = new LinearLayout(this);
         labels.setOrientation(LinearLayout.VERTICAL);
@@ -1911,7 +2759,7 @@ public final class OringutanActivity extends AppCompatActivity
 
         ImageView next = new ImageView(this);
         next.setImageResource(R.drawable.ic_chevron_right);
-        next.setImageTintList(ColorStateList.valueOf(Color.rgb(132, 132, 132)));
+        next.setImageTintList(ColorStateList.valueOf(Color.rgb(112, 112, 112)));
         next.setContentDescription(null);
         row.addView(next, new LinearLayout.LayoutParams(dp(18), dp(18)));
         return row;
@@ -1922,7 +2770,7 @@ public final class OringutanActivity extends AppCompatActivity
         divider.setBackgroundColor(Color.rgb(40, 40, 40));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 1);
-        params.setMargins(dp(72), 0, 0, 0);
+        params.setMargins(dp(46), 0, 0, 0);
         divider.setLayoutParams(params);
         return divider;
     }
@@ -1977,7 +2825,7 @@ public final class OringutanActivity extends AppCompatActivity
             runOnUiThread(() -> {
                 mHarnessUpdateInFlight = false;
                 if (mActiveSession != null)
-                    refreshHarnessCapabilities(mActiveSession.harnessId);
+                    refreshHarnessCapabilities(mActiveSession.harnessId, true);
             });
         }, "ominal-harness-update").start();
     }
@@ -2066,84 +2914,94 @@ public final class OringutanActivity extends AppCompatActivity
         focus.setGravity(Gravity.CENTER_HORIZONTAL);
 
         mSetupMarkView = new SetupMarkView(this);
-        focus.addView(mSetupMarkView, new LinearLayout.LayoutParams(dp(104), dp(104)));
+        LinearLayout.LayoutParams markParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(108));
+        focus.addView(mSetupMarkView, markParams);
 
         mSetupStageView = new TextView(this);
-        mSetupStageView.setTextColor(Color.rgb(154, 154, 154));
-        mSetupStageView.setTextSize(13);
-        mSetupStageView.setGravity(Gravity.CENTER);
-        mSetupStageView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        mSetupStageView.setTextColor(Color.rgb(132, 132, 132));
+        mSetupStageView.setTextSize(12);
+        mSetupStageView.setGravity(Gravity.START);
+        mSetupStageView.setTypeface(Typeface.create("sans-serif-rounded", Typeface.NORMAL));
         mSetupStageView.setVisibility(View.GONE);
-        LinearLayout.LayoutParams stageParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        stageParams.setMargins(0, dp(14), 0, 0);
-        focus.addView(mSetupStageView, stageParams);
 
         mSetupTitleView = new TextView(this);
-        mSetupTitleView.setTextColor(Color.WHITE);
-        mSetupTitleView.setTextSize(22);
+        mSetupTitleView.setTextColor(Color.rgb(238, 238, 238));
+        mSetupTitleView.setTextSize(20);
         mSetupTitleView.setGravity(Gravity.CENTER);
-        mSetupTitleView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        mSetupTitleView.setTypeface(Typeface.create("sans-serif-rounded", Typeface.BOLD));
         mSetupTitleView.setIncludeFontPadding(false);
         mSetupTitleView.setSingleLine(true);
         mSetupTitleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
         mSetupTitleView.setVisibility(View.GONE);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        titleParams.setMargins(0, dp(18), 0, 0);
+        titleParams.setMargins(0, dp(24), 0, 0);
         focus.addView(mSetupTitleView, titleParams);
 
         mSetupDetailView = new TextView(this);
-        mSetupDetailView.setTextColor(Color.rgb(174, 174, 174));
-        mSetupDetailView.setTextSize(15);
+        mSetupDetailView.setTextColor(Color.rgb(166, 166, 166));
+        mSetupDetailView.setTextSize(14);
         mSetupDetailView.setGravity(Gravity.CENTER);
+        mSetupDetailView.setTypeface(Typeface.create("sans-serif-rounded", Typeface.NORMAL));
         mSetupDetailView.setIncludeFontPadding(false);
-        mSetupDetailView.setLineSpacing(dp(2), 1f);
+        mSetupDetailView.setLineSpacing(dp(3), 1f);
         mSetupDetailView.setMaxLines(4);
         mSetupDetailView.setVisibility(View.GONE);
         LinearLayout.LayoutParams detailParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        detailParams.setMargins(0, dp(7), 0, 0);
+        detailParams.setMargins(dp(10), dp(10), dp(10), 0);
         focus.addView(mSetupDetailView, detailParams);
 
         mSetupNoteView = new TextView(this);
-        mSetupNoteView.setTextColor(Color.rgb(154, 154, 154));
-        mSetupNoteView.setTextSize(14);
-        mSetupNoteView.setGravity(Gravity.CENTER);
+        mSetupNoteView.setTextColor(Color.rgb(132, 132, 132));
+        mSetupNoteView.setTextSize(13);
+        mSetupNoteView.setGravity(Gravity.START);
+        mSetupNoteView.setTypeface(Typeface.create("sans-serif-rounded", Typeface.NORMAL));
         mSetupNoteView.setIncludeFontPadding(false);
         mSetupNoteView.setLineSpacing(dp(2), 1f);
-        mSetupNoteView.setMaxLines(3);
+        mSetupNoteView.setMaxLines(2);
         mSetupNoteView.setVisibility(View.GONE);
-        LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        noteParams.setMargins(dp(12), dp(24), dp(12), 0);
-        focus.addView(mSetupNoteView, noteParams);
 
         FrameLayout.LayoutParams focusParams = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.CENTER);
-        focusParams.setMargins(dp(24), 0, dp(24), dp(64));
+        focusParams.setMargins(dp(24), 0, dp(24), dp(68));
         overlay.addView(focus, focusParams);
 
         LinearLayout statusDock = new LinearLayout(this);
         statusDock.setOrientation(LinearLayout.VERTICAL);
         statusDock.setGravity(Gravity.START);
-        statusDock.setPadding(dp(24), dp(12), dp(24), dp(28));
+        statusDock.setPadding(dp(24), dp(12), dp(24), dp(30));
+
+        LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        noteParams.setMargins(0, 0, dp(24), dp(18));
+        statusDock.addView(mSetupNoteView, noteParams);
+
+        LinearLayout progressMeta = new LinearLayout(this);
+        progressMeta.setOrientation(LinearLayout.HORIZONTAL);
+        progressMeta.setGravity(Gravity.CENTER_VERTICAL);
+        progressMeta.addView(mSetupStageView, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         mSetupPercentView = new TextView(this);
-        mSetupPercentView.setTextColor(Color.rgb(154, 154, 154));
-        mSetupPercentView.setTextSize(13);
+        mSetupPercentView.setTextColor(Color.rgb(132, 132, 132));
+        mSetupPercentView.setTextSize(12);
         mSetupPercentView.setGravity(Gravity.END);
+        mSetupPercentView.setTypeface(Typeface.create("sans-serif-rounded", Typeface.NORMAL));
         mSetupPercentView.setIncludeFontPadding(false);
         mSetupPercentView.setVisibility(View.GONE);
-        statusDock.addView(mSetupPercentView, new LinearLayout.LayoutParams(
+        progressMeta.addView(mSetupPercentView, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        statusDock.addView(progressMeta, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         mSetupProgressView = new RoundedSetupProgressView(this);
         mSetupProgressView.setVisibility(View.GONE);
         LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(4));
-        progressParams.setMargins(0, dp(18), 0, 0);
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(2));
+        progressParams.setMargins(0, dp(12), 0, 0);
         statusDock.addView(mSetupProgressView, progressParams);
 
         mSetupRetryButton = createSecondaryButton("Try again");
@@ -2251,6 +3109,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void completeSetupProgress() {
         if (mSetupOverlay == null) return;
+        enableInteractiveIme();
         showSetupProgress(4, "Workspace ready", "Opening your chats", 100);
         long exitDelayMs = 360L;
         if (mSetupMarkView != null) {
@@ -2337,17 +3196,47 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void applySystemBars() {
         UiSpec ui = ui();
-        getWindow().setStatusBarColor(ui.header.fill);
-        getWindow().setNavigationBarColor(isLightAppearanceEnabled() ? ui.canvas : Color.BLACK);
+        int windowSurfaceColor = resolveSystemBarColor(ui.header.fill, ui.canvas);
+        getWindow().setBackgroundDrawable(new ColorDrawable(windowSurfaceColor));
+        getWindow().setFormat(PixelFormat.OPAQUE);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        int statusBarColor = Color.BLACK;
+        int navigationBarColor = mMode == MODE_DISPLAY
+            ? Color.BLACK : resolveSystemBarColor(ui.canvas, ui.app.fill);
+        boolean lightNavigationBar = ColorUtils.calculateLuminance(navigationBarColor) >= 0.5d;
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+        getWindow().setStatusBarColor(statusBarColor);
+        getWindow().setNavigationBarColor(navigationBarColor);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+            getWindow().setNavigationBarDividerColor(navigationBarColor);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            getWindow().setStatusBarContrastEnforced(false);
+            getWindow().setNavigationBarContrastEnforced(false);
+        }
         View decor = getWindow().getDecorView();
+        WindowInsetsControllerCompat insetsController =
+            WindowCompat.getInsetsController(getWindow(), decor);
+        insetsController.setAppearanceLightStatusBars(false);
+        insetsController.setAppearanceLightNavigationBars(lightNavigationBar);
+        insetsController.setSystemBarsBehavior(
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        insetsController.hide(WindowInsetsCompat.Type.statusBars());
+        insetsController.show(WindowInsetsCompat.Type.navigationBars());
         int visibility = decor.getSystemUiVisibility()
             & ~(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
-        if (isLightAppearanceEnabled() && mMode != MODE_DISPLAY) {
-            visibility |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                visibility |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-        }
-        decor.setSystemUiVisibility(visibility);
+        if (lightNavigationBar && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            visibility |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        decor.setSystemUiVisibility(visibility
+            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            | View.SYSTEM_UI_FLAG_FULLSCREEN);
+    }
+
+    private static int resolveSystemBarColor(int color, int fallback) {
+        if (Color.alpha(color) == 255) return color;
+        int background = Color.alpha(fallback) == 255 ? fallback : Color.BLACK;
+        return ColorUtils.compositeColors(color, background);
     }
 
     private View createHeader() {
@@ -2358,6 +3247,8 @@ public final class OringutanActivity extends AppCompatActivity
         header.setPadding(dp(16), dp(5), dp(16), dp(5));
         header.setMinimumHeight(dp(52));
         header.setBackgroundColor(ui.header.fill);
+        header.setClipChildren(false);
+        header.setClipToPadding(false);
 
         ImageButton chatsButton = createToolbarIconButton(R.drawable.ic_menu, "Chat history");
         chatsButton.setOnClickListener(v -> showChatPicker());
@@ -2381,7 +3272,7 @@ public final class OringutanActivity extends AppCompatActivity
 
         mLoloButton = null;
 
-        mAccountButton = null;
+        mSettingsButton = null;
 
         return header;
     }
@@ -2425,22 +3316,35 @@ public final class OringutanActivity extends AppCompatActivity
         mPromptInput = new EditText(this);
         mPromptInput.setHint(getString(R.string.oringutan_prompt_hint));
         mPromptInput.setMinLines(1);
-        mPromptInput.setMaxLines(8);
+        mPromptInput.setMaxLines(6);
+        mPromptInput.setMaxHeight(dp(152));
         mPromptInput.setMinHeight(dp(46));
         mPromptInput.setMinimumHeight(dp(46));
         mPromptInput.setSingleLine(false);
+        mPromptInput.setGravity(Gravity.TOP | Gravity.START);
+        mPromptInput.setHorizontallyScrolling(false);
+        mPromptInput.setVerticalScrollBarEnabled(false);
+        mPromptInput.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         mPromptInput.setFocusable(true);
         mPromptInput.setFocusableInTouchMode(true);
-        mPromptInput.setCursorVisible(true);
+        mPromptInput.setCursorVisible(false);
         mPromptInput.setIncludeFontPadding(false);
         mPromptInput.setTextColor(ui.composerInput.text);
         mPromptInput.setHintTextColor(ui.muted);
-        mPromptInput.setTextSize(16f);
+        Drawable promptCursor = getDrawable(R.drawable.chat_cursor_underscore);
+        if (promptCursor != null) {
+            promptCursor = promptCursor.mutate();
+            promptCursor.setTint(ui.composerInput.text);
+            mPromptInput.setTextCursorDrawable(promptCursor);
+        }
+        mPromptInput.setTextSize(chatTextSize(16f));
+        mPromptInput.setTypeface(chatTypeface(Typeface.NORMAL));
         mPromptInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         mPromptInput.setImeOptions(EditorInfo.IME_ACTION_SEND);
         mPromptInput.setBackgroundColor(Color.TRANSPARENT);
-        mPromptInput.setPadding(dp(11), dp(9), dp(11), dp(4));
+        mPromptInput.setPadding(dp(11), dp(12), dp(11), dp(5));
         String savedDraft = mPrefs == null ? "" : mPrefs.getString(PREF_COMPOSER_DRAFT, "");
+        mPendingComposerDraft = savedDraft;
         mPromptInput.setText(savedDraft);
         mPromptInput.setSelection(mPromptInput.length());
         mPromptInput.addTextChangedListener(new TextWatcher() {
@@ -2450,10 +3354,9 @@ public final class OringutanActivity extends AppCompatActivity
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
-                if (mPrefs != null)
-                    mPrefs.edit().putString(PREF_COMPOSER_DRAFT,
-                        s == null ? "" : s.toString()).apply();
-                renderCommandSuggestions(s == null ? "" : s.toString());
+                String draft = s == null ? "" : s.toString();
+                scheduleComposerDraftPersistence(draft);
+                renderCommandSuggestions(draft);
             }
 
             @Override
@@ -2471,12 +3374,15 @@ public final class OringutanActivity extends AppCompatActivity
         mPromptInput.setOnTouchListener((view, event) -> {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 releaseNativeDisplayInput();
-                view.requestFocusFromTouch();
-                requestComposerKeyboard();
+                InputMethodManager manager = (InputMethodManager)
+                    getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (!view.hasFocus() || manager == null || !manager.isActive(view))
+                    view.post(this::requestComposerKeyboard);
             }
             return false;
         });
         mPromptInput.setOnFocusChangeListener((view, hasFocus) -> {
+            updateComposerPromptPresentation();
             if (!hasFocus || mMode != MODE_CHAT) return;
             mChatScrollState.followLatest();
             view.postDelayed(() -> scrollToBottom(true), 100L);
@@ -2520,22 +3426,38 @@ public final class OringutanActivity extends AppCompatActivity
         mSendButton = createComposerSendButton(R.drawable.ic_send,
             getString(R.string.oringutan_send));
         mSendButton.setContentDescription(getString(R.string.oringutan_send));
-        mSendButton.setOnClickListener(v -> {
-            if (mPromptRunning) stopActiveTurn();
-            else submitPrompt();
-        });
+        mSendButton.setOnClickListener(v -> submitPrompt());
         mSendButton.setOnLongClickListener(v -> {
             v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
             openAgentTerminalForActiveChat();
             return true;
         });
         LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(dp(38), dp(38));
+
+        mStopButton = createComposerIconButton(R.drawable.ic_stop, "Stop response");
+        mStopButton.setVisibility(View.GONE);
+        mStopButton.setOnClickListener(v -> stopActiveTurn());
+        LinearLayout.LayoutParams stopParams = new LinearLayout.LayoutParams(dp(38), dp(38));
+        stopParams.setMargins(0, 0, dp(3), 0);
+        actionRail.addView(mStopButton, stopParams);
         actionRail.addView(mSendButton, sendParams);
         writingRail.addView(actionRail, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
         composer.addView(writingRail, writingRailParams);
 
         return composer;
+    }
+
+    private void scheduleComposerDraftPersistence(String draft) {
+        mPendingComposerDraft = draft == null ? "" : draft;
+        if (mPromptInput == null) return;
+        mPromptInput.removeCallbacks(mPersistComposerDraft);
+        mPromptInput.postDelayed(mPersistComposerDraft, COMPOSER_DRAFT_SAVE_DELAY_MS);
+    }
+
+    private void persistComposerDraftNow() {
+        if (mPromptInput != null) mPromptInput.removeCallbacks(mPersistComposerDraft);
+        mPersistComposerDraft.run();
     }
 
     private void loadOrCreateSessions() {
@@ -2699,6 +3621,8 @@ public final class OringutanActivity extends AppCompatActivity
             return;
         }
 
+        mDrawerLayout.setDrawerLockMode(
+            DrawerLayout.LOCK_MODE_UNLOCKED, GravityCompat.START);
         mDrawerLayout.openDrawer(mChatDrawer);
     }
 
@@ -2707,7 +3631,7 @@ public final class OringutanActivity extends AppCompatActivity
         LinearLayout drawer = new LinearLayout(this);
         drawer.setOrientation(LinearLayout.VERTICAL);
         drawer.setPadding(dp(18), dp(16), dp(18), dp(14));
-        drawer.setBackgroundColor(ui.drawer.fill);
+        drawer.setBackgroundColor(ui.chat.fill);
 
         LinearLayout topRow = new LinearLayout(this);
         topRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -2715,19 +3639,19 @@ public final class OringutanActivity extends AppCompatActivity
 
         TextView title = new TextView(this);
         title.setText("Chats");
-        title.setTextColor(ui.drawer.text);
+        title.setTextColor(ui.chat.text);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         title.setTextSize(19);
         title.setSingleLine(true);
         title.setIncludeFontPadding(false);
         topRow.addView(title, new LinearLayout.LayoutParams(0, dp(40), 1));
 
-        mAccountButton = createToolbarIconButton(R.drawable.ic_account, "Account and settings");
-        mAccountButton.setOnClickListener(v -> showAppMenu());
-        LinearLayout.LayoutParams accountParams = new LinearLayout.LayoutParams(dp(36), dp(36));
-        accountParams.setMargins(dp(10), 0, 0, 0);
-        topRow.addView(mAccountButton, accountParams);
-        styleAccountButton();
+        mSettingsButton = createToolbarIconButton(R.drawable.ic_lucide_settings, "Settings");
+        mSettingsButton.setOnClickListener(v -> openSettingsPage());
+        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(dp(36), dp(36));
+        settingsParams.setMargins(dp(10), 0, 0, 0);
+        topRow.addView(mSettingsButton, settingsParams);
+        styleSettingsButton();
 
         ImageButton incognitoButton = createToolbarIconButton(
             R.drawable.ic_incognito, "New incognito chat");
@@ -2757,17 +3681,17 @@ public final class OringutanActivity extends AppCompatActivity
         mChatSearchInput.setHint("Search");
         mChatSearchInput.setText(mChatSearchQuery);
         mChatSearchInput.setTextSize(14.5f);
-        mChatSearchInput.setTextColor(ui.drawerSearch.text);
-        mChatSearchInput.setHintTextColor(ui.onDarkMuted);
+        mChatSearchInput.setTextColor(ui.composerInput.text);
+        mChatSearchInput.setHintTextColor(ui.muted);
         mChatSearchInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         mChatSearchInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         mChatSearchInput.setPadding(dp(12), 0, dp(12), 0);
-        mChatSearchInput.setBackground(makeSurfaceDrawable(ui.drawerSearch, true));
+        mChatSearchInput.setBackground(makeSurfaceDrawable(ui.composerInput, true));
         mChatSearchInput.setCompoundDrawablesWithIntrinsicBounds(
             R.drawable.ic_search, 0, 0, 0);
         mChatSearchInput.setCompoundDrawablePadding(dp(8));
         mChatSearchInput.setCompoundDrawableTintList(
-            ColorStateList.valueOf(ui.onDarkMuted));
+            ColorStateList.valueOf(ui.muted));
         mChatSearchInput.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -2814,6 +3738,8 @@ public final class OringutanActivity extends AppCompatActivity
         OminalAgentRuntime.Snapshot agentSnapshot = mAgentRuntime == null
             ? null : mAgentRuntime.snapshot(session.id);
         mPromptRunning = agentSnapshot != null && agentSnapshot.isRunning();
+        mRenderedContentMode = -1;
+        mReuseRenderedContentOnce = false;
         stopAgentEventObserver();
         if (mPromptRunning)
             startAgentEventObserver(session, agentEventLogFile(session));
@@ -2851,7 +3777,7 @@ public final class OringutanActivity extends AppCompatActivity
         if (visibleSessions.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText("No matching chats");
-            empty.setTextColor(ui.onDarkMuted);
+            empty.setTextColor(ui.muted);
             empty.setTextSize(14);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(12), dp(28), dp(12), dp(28));
@@ -2885,7 +3811,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     private View createChatDrawerRow(ChatSession session, boolean active) {
         UiSpec ui = ui();
-        SurfaceSpec surface = active ? ui.drawerRowActive : ui.drawerRow;
+        SurfaceSpec surface = active ? ui.bubbleUser : ui.bubbleAgent;
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
         row.setPadding(0, 0, 0, 0);
@@ -2956,7 +3882,7 @@ public final class OringutanActivity extends AppCompatActivity
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         View selectionRule = new View(this);
-        selectionRule.setBackground(makeRoundedDrawable(active ? ui.ink : Color.TRANSPARENT,
+        selectionRule.setBackground(makeRoundedDrawable(active ? ui.accent : Color.TRANSPARENT,
             Color.TRANSPARENT, dp(2)));
         LinearLayout.LayoutParams selectionParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(2));
@@ -3167,6 +4093,9 @@ public final class OringutanActivity extends AppCompatActivity
         }
         if (mode == MODE_DISPLAY) clearDisplayCloseRequest();
         else stopDisplayControlObserver();
+        mReuseRenderedContentOnce = leavingDisplay
+            && mRenderedContentMode == mode
+            && mContentFrame != null && mContentFrame.getChildCount() > 0;
         mMode = mode;
         renderMode();
         if (leavingDisplay) rebindComposerInput();
@@ -3293,14 +4222,8 @@ public final class OringutanActivity extends AppCompatActivity
         updateAppChromeForMode();
         updateComposerTools();
 
-        if (mMode != MODE_DISPLAY) parkDisplayPane();
-        mContentFrame.removeAllViews();
-        mMessagesView = null;
-        mChatEmptyState = null;
-        mScrollView = null;
-        mJumpToLatestButton = null;
-        mActiveAgentTurnView = null;
         if (mMode == MODE_DISPLAY) {
+            mReuseRenderedContentOnce = false;
             View displayPane = getOrCreateDisplayPane();
             attachDisplayPaneToWarmHost(displayPane);
             mDisplayWarmHost.setImportantForAccessibility(
@@ -3311,15 +4234,40 @@ public final class OringutanActivity extends AppCompatActivity
                 mNativeDisplayView.activateInputBridge();
                 mNativeDisplayView.post(this::showLiveDisplay);
             }
-            animateModeView(displayPane);
+            displayPane.animate().cancel();
+            displayPane.setAlpha(1f);
+            displayPane.setTranslationY(0f);
+            displayPane.setScaleX(1f);
+            displayPane.setScaleY(1f);
             return;
         }
 
-        View nextView = mMode == MODE_TERMINAL
-            ? createToolPaneSurface(createTerminalPane())
-            : createChatPane();
+        parkDisplayPane();
+        if (mReuseRenderedContentOnce && mRenderedContentMode == mMode
+            && mContentFrame.getChildCount() > 0) {
+            mReuseRenderedContentOnce = false;
+            if (mMode == MODE_CHAT) updateChatComposerInset();
+            return;
+        }
+        mReuseRenderedContentOnce = false;
+        mContentFrame.removeAllViews();
+        mMessagesView = null;
+        mChatEmptyState = null;
+        mScrollView = null;
+        mJumpToLatestButton = null;
+        mActiveAgentTurnView = null;
+
+        View nextView;
+        if (mMode == MODE_TERMINAL) {
+            nextView = createToolPaneSurface(createTerminalPane());
+        } else if (mMode == MODE_SETTINGS) {
+            nextView = createSettingsPage();
+        } else {
+            nextView = createChatPane();
+        }
         mContentFrame.addView(nextView, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        mRenderedContentMode = mMode;
         animateModeView(nextView);
     }
 
@@ -3373,14 +4321,16 @@ public final class OringutanActivity extends AppCompatActivity
         mPromptInput.setShowSoftInputOnFocus(true);
         mPromptInput.setFocusable(true);
         mPromptInput.setFocusableInTouchMode(true);
-        mPromptInput.setCursorVisible(true);
-        mPromptInput.requestFocusFromTouch();
+        if (!mPromptInput.hasFocus()) mPromptInput.requestFocusFromTouch();
+        updateComposerPromptPresentation();
         InputMethodManager manager = (InputMethodManager)
             getSystemService(Context.INPUT_METHOD_SERVICE);
         boolean shown = false;
         if (manager != null) {
-            manager.restartInput(mPromptInput);
-            manager.viewClicked(mPromptInput);
+            if (!manager.isActive(mPromptInput)) {
+                manager.restartInput(mPromptInput);
+                manager.viewClicked(mPromptInput);
+            }
             shown = manager.showSoftInput(mPromptInput, InputMethodManager.SHOW_IMPLICIT);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
@@ -3391,12 +4341,22 @@ public final class OringutanActivity extends AppCompatActivity
             mPromptInput.postDelayed(() -> showComposerKeyboard(false), 220L);
     }
 
+    private void updateComposerPromptPresentation() {
+        if (mPromptInput == null) return;
+        boolean editing = mPromptInput.hasFocus() && mPromptInput.isEnabled()
+            && mMode == MODE_CHAT;
+        mPromptInput.setCursorVisible(editing);
+        mPromptInput.setHint(editing ? ""
+            : mActiveSession != null && mActiveSession.incognito
+                ? "Write a temporary message"
+                : getString(R.string.oringutan_prompt_hint));
+    }
+
     private void restoreComposerAfterSessionSelection() {
         if (mPromptInput == null) return;
         releaseNativeDisplayInput();
-        mPromptInput.setHint(mActiveSession != null && mActiveSession.incognito
-            ? "Write a temporary message" : getString(R.string.oringutan_prompt_hint));
         setInputEnabled(true);
+        updateComposerPromptPresentation();
         mPromptInput.postDelayed(() -> {
             if (mPromptInput == null || mMode != MODE_CHAT) return;
             mPromptInput.setShowSoftInputOnFocus(true);
@@ -3587,7 +4547,7 @@ public final class OringutanActivity extends AppCompatActivity
                 ? R.drawable.gir_final_logo : R.drawable.gir_final_logo_white);
             mark.setScaleType(ImageView.ScaleType.FIT_CENTER);
             mark.setContentDescription("GIR");
-            empty.addView(mark, new LinearLayout.LayoutParams(dp(86), dp(86)));
+            empty.addView(mark, new LinearLayout.LayoutParams(dp(104), dp(104)));
         } else if (session.incognito) {
             ImageView incognito = new ImageView(this);
             incognito.setImageResource(R.drawable.ic_incognito);
@@ -3602,8 +4562,8 @@ public final class OringutanActivity extends AppCompatActivity
         title.setText(session.incognito ? "Say it here, then leave it behind"
             : "What should GIR do?");
         title.setTextColor(ui.ink);
-        title.setTextSize(absoluteWelcome ? 25f : 22f);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        title.setTextSize(chatTextSize(absoluteWelcome ? 25f : 22f));
+        title.setTypeface(chatTypeface(Typeface.BOLD));
         title.setGravity(Gravity.CENTER);
         title.setIncludeFontPadding(false);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
@@ -3616,7 +4576,8 @@ public final class OringutanActivity extends AppCompatActivity
             ? "This chat, its files, and terminal state disappear when you leave it."
             : "Choose a starting point or write your own request.");
         detail.setTextColor(ui.muted);
-        detail.setTextSize(14f);
+        detail.setTextSize(chatTextSize(14f));
+        detail.setTypeface(chatTypeface(Typeface.NORMAL));
         detail.setGravity(Gravity.CENTER);
         detail.setLineSpacing(dp(1), 1.08f);
         detail.setIncludeFontPadding(false);
@@ -3635,8 +4596,8 @@ public final class OringutanActivity extends AppCompatActivity
             LinearLayout starter = new LinearLayout(this);
             starter.setOrientation(LinearLayout.HORIZONTAL);
             starter.setGravity(Gravity.CENTER_VERTICAL);
-            starter.setPadding(dp(12), dp(11), dp(12), dp(11));
-            starter.setBackground(makeRoundedDrawable(ui.panel, ui.border, dp(16)));
+            starter.setPadding(dp(4), dp(12), dp(2), dp(12));
+            starter.setBackgroundColor(Color.TRANSPARENT);
             starter.setClickable(true);
             starter.setFocusable(true);
             attachNativeRipple(starter);
@@ -3645,11 +4606,10 @@ public final class OringutanActivity extends AppCompatActivity
             ImageView taskIcon = new ImageView(this);
             taskIcon.setImageResource(starterIcon(starterIndex));
             taskIcon.setImageTintList(ColorStateList.valueOf(ui.ink));
-            taskIcon.setPadding(dp(7), dp(7), dp(7), dp(7));
-            taskIcon.setBackground(makeRoundedDrawable(ui.app.fill, ui.border, dp(11)));
+            taskIcon.setPadding(dp(2), dp(2), dp(2), dp(2));
             taskIcon.setContentDescription(null);
-            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(42), dp(42));
-            iconParams.setMargins(0, 0, dp(12), 0);
+            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(24), dp(24));
+            iconParams.setMargins(0, 0, dp(14), 0);
             starter.addView(taskIcon, iconParams);
 
             LinearLayout copy = new LinearLayout(this);
@@ -3658,8 +4618,8 @@ public final class OringutanActivity extends AppCompatActivity
             TextView promptTitle = new TextView(this);
             promptTitle.setText(label);
             promptTitle.setTextColor(ui.ink);
-            promptTitle.setTextSize(15f);
-            promptTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            promptTitle.setTextSize(chatTextSize(15f));
+            promptTitle.setTypeface(chatTypeface(Typeface.BOLD));
             promptTitle.setIncludeFontPadding(false);
             copy.addView(promptTitle, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -3667,7 +4627,8 @@ public final class OringutanActivity extends AppCompatActivity
             TextView promptDetail = new TextView(this);
             promptDetail.setText(detailText);
             promptDetail.setTextColor(ui.muted);
-            promptDetail.setTextSize(13.5f);
+            promptDetail.setTextSize(chatTextSize(13.5f));
+            promptDetail.setTypeface(chatTypeface(Typeface.NORMAL));
             promptDetail.setLineSpacing(dp(1), 1.06f);
             promptDetail.setIncludeFontPadding(false);
             promptDetail.setMaxLines(2);
@@ -3679,18 +4640,19 @@ public final class OringutanActivity extends AppCompatActivity
             starter.addView(copy, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-            ImageView arrow = new ImageView(this);
-            arrow.setImageResource(R.drawable.ic_chevron_right);
-            arrow.setImageTintList(ColorStateList.valueOf(ui.muted));
-            arrow.setContentDescription(null);
-            LinearLayout.LayoutParams arrowParams = new LinearLayout.LayoutParams(dp(24), dp(24));
-            arrowParams.setMargins(dp(12), 0, 0, 0);
-            starter.addView(arrow, arrowParams);
-
             LinearLayout.LayoutParams starterParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            starterParams.setMargins(0, 0, 0, dp(9));
+            starterParams.setMargins(0, 0, 0, starterIndex == CHAT_STARTER_PROMPTS.length - 1
+                ? 0 : dp(1));
             empty.addView(starter, starterParams);
+            if (starterIndex < CHAT_STARTER_PROMPTS.length - 1) {
+                View divider = new View(this);
+                divider.setBackgroundColor(ui.border);
+                LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(1));
+                dividerParams.setMargins(dp(38), 0, 0, 0);
+                empty.addView(divider, dividerParams);
+            }
         }
         return empty;
     }
@@ -3981,7 +4943,15 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void showLiveDisplay() {
-        if (usesNativeDisplay() && !isNativeDesktopReady()) mDisplayReady = false;
+        if (usesNativeDisplay()) {
+            mDisplayReady = isNativeDesktopReady();
+            if (mDisplayReady && !LorieView.connected()) {
+                setDisplayLifecycleState(DISPLAY_STATE_STARTING);
+                showDisplayState("Reconnecting screen...");
+                startNativeDisplaySurface();
+                return;
+            }
+        }
         if (!mDisplayReady) {
             setDisplayLifecycleState(DISPLAY_STATE_STARTING);
             ensureDisplayServerStarted(true);
@@ -4019,7 +4989,7 @@ public final class OringutanActivity extends AppCompatActivity
         mDisplayAgentStatusView.setFocusable(false);
 
         mDisplayAgentPulse = new WorkPulseView(this,
-            Color.rgb(148, 148, 148), Color.rgb(242, 242, 242));
+            Color.rgb(140, 166, 173), COLOR_ACCENT);
         mDisplayAgentStatusView.addView(mDisplayAgentPulse,
             new LinearLayout.LayoutParams(dp(22), dp(22)));
 
@@ -4054,7 +5024,7 @@ public final class OringutanActivity extends AppCompatActivity
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(2.5f * density);
             paint.setStrokeJoin(Paint.Join.ROUND);
-            paint.setColor(Color.argb(238, 255, 255, 255));
+            paint.setColor(Color.argb(238, 34, 211, 238));
             setWillNotDraw(false);
         }
 
@@ -4139,6 +5109,20 @@ public final class OringutanActivity extends AppCompatActivity
         if (!mBootstrapReady || mActiveSession == null) return;
         if (usesNativeDisplay() && mNativeDisplayView == null) {
             if (mRootFrame != null) mRootFrame.post(this::prewarmDisplaySurface);
+            return;
+        }
+        if (usesNativeDisplay() && isNativeDesktopReady()) {
+            mDisplayReady = true;
+            mDisplayRetryCount = 0;
+            setDisplayLifecycleState(LorieView.connected()
+                ? DISPLAY_STATE_READY_IDLE : DISPLAY_STATE_STARTING);
+            if (!LorieView.connected()) {
+                if (mMode == MODE_DISPLAY) showDisplayState("Reconnecting screen...");
+                startNativeDisplaySurface();
+            } else {
+                hideDisplayState();
+                if (reloadWhenReady && mMode == MODE_DISPLAY) showLiveDisplay();
+            }
             return;
         }
         long now = System.currentTimeMillis();
@@ -4251,6 +5235,18 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void startNativeDisplaySurface() {
         if (mNativeDisplayView == null) return;
+        if (LorieView.connected()) {
+            mNativeDisplayConnectInFlight = false;
+            mDisplayReady = isNativeDesktopReady();
+            mNativeDisplayView.refreshDisplaySize();
+            if (mDisplayReady) {
+                setDisplayLifecycleState(DISPLAY_STATE_READY_IDLE);
+                hideDisplayState();
+            }
+            return;
+        }
+        if (mNativeDisplayConnectInFlight) return;
+        mNativeDisplayConnectInFlight = true;
         OminalDisplayGeometry geometry = currentDisplayGeometry();
         File runtimeRoot = new File(OminalConstants.OMINAL_HOME_DIR_PATH, ".ominal/runtime");
         File temporaryDirectory = new File(runtimeRoot, "tmp");
@@ -4259,7 +5255,10 @@ public final class OringutanActivity extends AppCompatActivity
             geometry.densityDpi, new OminalNativeDisplay.Callback() {
                 @Override
                 public void onConnected() {
-                    if (mDisplayReady && isNativeDesktopReady()) {
+                    mNativeDisplayConnectInFlight = false;
+                    mDisplayReady = isNativeDesktopReady();
+                    if (mDisplayReady) {
+                        mDisplayRetryCount = 0;
                         setDisplayLifecycleState(DISPLAY_STATE_READY_IDLE);
                         hideDisplayState();
                         if (mMode == MODE_DISPLAY) showLiveDisplay();
@@ -4272,32 +5271,46 @@ public final class OringutanActivity extends AppCompatActivity
 
                 @Override
                 public void onDisconnected() {
-                    mDisplayReady = false;
+                    mNativeDisplayConnectInFlight = true;
+                    mDisplayReady = isNativeDesktopReady();
                     setDisplayLifecycleState(DISPLAY_STATE_STARTING);
-                    showDisplayState("Reconnecting screen...");
+                    if (mMode == MODE_DISPLAY) showDisplayState("Reconnecting screen...");
                 }
 
                 @Override
                 public void onError(String message) {
-                    mDisplayReady = false;
-                    setDisplayLifecycleState(DISPLAY_STATE_ERROR);
-                    showDisplayState(message);
+                    mNativeDisplayConnectInFlight = false;
+                    mDisplayReady = isNativeDesktopReady();
+                    setDisplayLifecycleState(mDisplayReady
+                        ? DISPLAY_STATE_STARTING : DISPLAY_STATE_ERROR);
+                    if (mMode == MODE_DISPLAY)
+                        showDisplayState(mDisplayReady ? "Reconnecting screen..." : message);
                     Logger.logError(LOG_TAG, message);
+                    if (mDisplayReady && mRootFrame != null && mDisplayRetryCount < 2) {
+                        mDisplayRetryCount++;
+                        mRootFrame.postDelayed(
+                            OringutanActivity.this::startNativeDisplaySurface, 500L);
+                    }
                 }
             });
     }
 
     private void restoreNativeDisplayConnection() {
         if (!usesNativeDisplay() || mNativeDisplayView == null || LorieView.connected()) return;
-        mDisplayReady = false;
+        mDisplayReady = isNativeDesktopReady();
         setDisplayLifecycleState(DISPLAY_STATE_STARTING);
-        showDisplayState("Reconnecting screen...");
+        if (mMode == MODE_DISPLAY) showDisplayState("Reconnecting screen...");
         startNativeDisplaySurface();
     }
 
     private boolean isNativeDesktopReady() {
-        return new File(OminalConstants.OMINAL_HOME_DIR_PATH,
-            ".ominal/display/ready").isFile();
+        File displayDirectory = new File(
+            OminalConstants.OMINAL_HOME_DIR_PATH, ".ominal/display");
+        File readyMarker = new File(displayDirectory, "ready");
+        File heartbeat = new File(displayDirectory, "heartbeat");
+        if (!readyMarker.isFile() || !heartbeat.isFile()) return false;
+        long age = System.currentTimeMillis() - heartbeat.lastModified();
+        return age >= 0L && age <= NATIVE_DISPLAY_HEARTBEAT_TIMEOUT_MS;
     }
 
     private void submitPrompt() {
@@ -4323,10 +5336,19 @@ public final class OringutanActivity extends AppCompatActivity
         OminalAgentRuntime.Snapshot current = mAgentRuntime == null
             ? null : mAgentRuntime.snapshot(mActiveSession.id);
         if (current != null && !current.isIdle()) {
+            if (current.isRunning() && mAgentRuntime.steer(mActiveSession.id, prompt)) {
+                mActiveSession.markContextCurrent(mActiveSession.harnessId,
+                    mActiveSession.messages.size());
+                saveMeta(mActiveSession);
+                updateHarnessControls();
+                setStatus("Update sent");
+                setInputEnabled(true);
+                return;
+            }
             mActiveSession.pendingTurns.add(turn);
             saveMeta(mActiveSession);
             updateHarnessControls();
-            setStatus("Queued  /  " + mActiveSession.pendingTurns.size());
+            setStatus("Next message queued  /  " + mActiveSession.pendingTurns.size());
             setInputEnabled(true);
             return;
         }
@@ -4362,8 +5384,7 @@ public final class OringutanActivity extends AppCompatActivity
                 return true;
             case "/model":
                 OminalHarnessManifest manifest = OminalHarnessManifest.load(session.harnessId);
-                if (manifest == null || manifest.modelFlag.isEmpty()
-                    || manifest.models.isEmpty()) {
+                if (manifest == null || manifest.models.isEmpty()) {
                     return false;
                 }
                 if (argument.isEmpty()) {
@@ -4387,8 +5408,7 @@ public final class OringutanActivity extends AppCompatActivity
                 OminalHarnessManifest effortManifest =
                     OminalHarnessManifest.load(session.harnessId);
                 List<String> efforts = availableEfforts(effortManifest);
-                if (effortManifest == null || effortManifest.effortFlag.isEmpty()
-                    || efforts.isEmpty()) {
+                if (effortManifest == null || efforts.isEmpty()) {
                     return false;
                 }
                 if (argument.isEmpty()) {
@@ -4418,7 +5438,7 @@ public final class OringutanActivity extends AppCompatActivity
                 }
                 return true;
             case "/refresh":
-                refreshHarnessCapabilities(session.harnessId);
+                refreshHarnessCapabilities(session.harnessId, true);
                 appendCommandResponse(session, "Refreshing harness capabilities.");
                 return true;
             case "/terminal":
@@ -4504,12 +5524,11 @@ public final class OringutanActivity extends AppCompatActivity
     private String validatedModelId(String harnessId, String modelId) {
         if (modelId == null || modelId.isEmpty()) return "";
         OminalHarnessManifest manifest = OminalHarnessManifest.load(harnessId);
-        return manifest != null && !manifest.modelFlag.isEmpty()
-            && findModel(manifest, modelId) != null ? modelId : "";
+        return manifest != null && findModel(manifest, modelId) != null ? modelId : "";
     }
 
     private List<String> availableEfforts(OminalHarnessManifest manifest) {
-        if (manifest == null || manifest.effortFlag.isEmpty()) return Collections.emptyList();
+        if (manifest == null) return Collections.emptyList();
         LinkedHashSet<String> efforts = new LinkedHashSet<>();
         for (OminalHarnessManifest.Model model : manifest.models)
             efforts.addAll(model.efforts);
@@ -4543,7 +5562,7 @@ public final class OringutanActivity extends AppCompatActivity
         }
         saveMeta(session);
         writeRuntimeContract(session);
-        styleAccountButton();
+        styleSettingsButton();
         updateHarnessControls();
         refreshHarnessCapabilities(session.harnessId);
         setStatus("Ready");
@@ -4603,66 +5622,100 @@ public final class OringutanActivity extends AppCompatActivity
             boolean selected = harness.getId().equals(mActiveSession.harnessId);
             harnessRows.add(new OminalInteractionSheet.Row("harness:" + harness.getId(),
                 OminalHarnessRegistry.resolvedDisplayName(harness),
-                selected ? "Active for this conversation" : "Switch runtime",
-                selected ? "Current" : "", selected, true, false));
+                selected ? "Selected for this conversation" : "Use for this conversation",
+                "", selected, true, false, R.drawable.ic_lucide_bot));
         }
         sections.add(new OminalInteractionSheet.Section("Runtime", harnessRows));
 
-        ArrayList<OminalInteractionSheet.Row> configurationRows = new ArrayList<>();
+        ArrayList<OminalInteractionSheet.Row> modelRows = new ArrayList<>();
         if (manifest == null) {
             String discoveryError = mHarnessDiscoveryErrors.get(mActiveSession.harnessId);
             if (TextUtils.isEmpty(discoveryError)) {
-                configurationRows.add(new OminalInteractionSheet.Row("loading", "Loading controls",
-                    "Reading models and commands from the active agent", "",
-                    false, false, false));
+                modelRows.add(new OminalInteractionSheet.Row("loading", "Reading models",
+                    "The selected runtime is publishing its available controls", "",
+                    false, false, false, R.drawable.ic_lucide_bot));
+                mReopenHarnessControlsAfterRefresh = true;
                 refreshHarnessCapabilities(mActiveSession.harnessId);
             } else {
-                configurationRows.add(new OminalInteractionSheet.Row("refresh",
-                    "Controls unavailable", "The active agent did not return its catalog",
-                    "Retry", false, true, false));
+                modelRows.add(new OminalInteractionSheet.Row("refresh", "Try again",
+                    discoveryError, "", false, true, false, R.drawable.ic_lucide_bot));
             }
         } else {
-            if (!manifest.models.isEmpty() && !manifest.modelFlag.isEmpty()) {
-                String selectedId = activeModelId(mActiveSession);
-                OminalHarnessManifest.Model selectedModel = findModel(manifest, selectedId);
-                configurationRows.add(new OminalInteractionSheet.Row("model", "Model",
-                    selectedModel == null ? "Selected automatically" : selectedModel.label,
-                    Integer.toString(manifest.models.size()), false, true, false));
+            String selectedModelId = activeModelId(mActiveSession);
+            modelRows.add(new OminalInteractionSheet.Row("model:", "Automatic",
+                "Use the runtime default", "", selectedModelId.isEmpty(), true, false,
+                R.drawable.ic_lucide_bot));
+            for (OminalHarnessManifest.Model model : manifest.models) {
+                String detail = model.label.equals(model.id) ? "Reported by the runtime" : model.id;
+                modelRows.add(new OminalInteractionSheet.Row("model:" + model.id, model.label,
+                    detail, "", model.id.equals(selectedModelId), true, false,
+                    R.drawable.ic_lucide_bot));
             }
+            if (manifest.models.isEmpty()) {
+                modelRows.add(new OminalInteractionSheet.Row("refresh", "No models reported",
+                    "Refresh the runtime catalog", "", false, true, false,
+                    R.drawable.ic_lucide_bot));
+            }
+        }
+        sections.add(new OminalInteractionSheet.Section("Model", modelRows));
+
+        if (manifest != null) {
             List<String> efforts = availableEfforts(manifest);
             if (!efforts.isEmpty()) {
-                String selected = activeEffortId(mActiveSession);
-                configurationRows.add(new OminalInteractionSheet.Row("effort", "Effort",
-                    selected.isEmpty() ? "Selected automatically" : selected,
-                    Integer.toString(efforts.size()), false, true, false));
+                ArrayList<OminalInteractionSheet.Row> effortRows = new ArrayList<>();
+                String selectedEffort = activeEffortId(mActiveSession);
+                effortRows.add(new OminalInteractionSheet.Row("effort:", "Automatic",
+                    "Use the model default", "", selectedEffort.isEmpty(), true, false,
+                    R.drawable.ic_lucide_flask_conical));
+                for (String effort : efforts) {
+                    String label = effort.substring(0, 1).toUpperCase(Locale.ROOT)
+                        + effort.substring(1);
+                    effortRows.add(new OminalInteractionSheet.Row("effort:" + effort, label,
+                        "Reasoning effort", "", effort.equals(selectedEffort), true, false,
+                        R.drawable.ic_lucide_flask_conical));
+                }
+                sections.add(new OminalInteractionSheet.Section("Effort", effortRows));
             }
-            if (!manifest.commands.isEmpty()) {
-                configurationRows.add(new OminalInteractionSheet.Row("commands", "Commands",
-                    "Commands reported by the active agent",
-                    Integer.toString(manifest.commands.size()), false, true, false));
-            }
-            configurationRows.add(new OminalInteractionSheet.Row("refresh", "Refresh",
-                "Read installed capabilities again", "", false, true, false));
-        }
-        sections.add(new OminalInteractionSheet.Section("Controls", configurationRows));
 
-        String agentName = OminalHarnessRegistry.resolvedDisplayName(
-            OminalHarnessRegistry.activeOrDefault(mActiveSession.harnessId));
-        OminalInteractionSheet.show(this, interactionSheetTheme(), "Agent",
-            agentName + " is active for this conversation.", sections, id -> {
+            ArrayList<OminalInteractionSheet.Row> tools = new ArrayList<>();
+            if (!manifest.commands.isEmpty()) {
+                tools.add(new OminalInteractionSheet.Row("commands", "Commands",
+                    "Browse runtime-provided commands", Integer.toString(manifest.commands.size()),
+                    false, true, false, R.drawable.ic_lucide_square_terminal));
+            }
+            if (!tools.isEmpty())
+                sections.add(new OminalInteractionSheet.Section("More", tools));
+        }
+
+        OminalInteractionSheet.show(this, interactionSheetTheme(), "Model & runtime",
+            "Selections apply only to this conversation.", sections, id -> {
                 if (id.startsWith("harness:")) {
                     selectHarness(mActiveSession, id.substring("harness:".length()));
                     if (mRootFrame != null)
-                        mRootFrame.postDelayed(this::showHarnessControlsDialog, 180);
-                } else if ("model".equals(id) && manifest != null) {
-                    showHarnessModelPicker(manifest);
-                } else if ("effort".equals(id) && manifest != null) {
-                    showHarnessEffortPicker(manifest);
+                        mRootFrame.postDelayed(() -> {
+                            mReopenHarnessControlsAfterRefresh = false;
+                            showHarnessControlsDialog();
+                        }, 180);
+                } else if (id.startsWith("model:") && manifest != null) {
+                    String modelId = id.substring("model:".length());
+                    mActiveSession.setModelId(modelId);
+                    OminalHarnessManifest.Model selected = findModel(manifest, modelId);
+                    if (selected != null
+                        && !selected.efforts.contains(mActiveSession.effortId())) {
+                        mActiveSession.setEffortId("");
+                    }
+                    saveMeta(mActiveSession);
+                    updateHarnessControls();
+                } else if (id.startsWith("effort:") && manifest != null) {
+                    mActiveSession.setEffortId(id.substring("effort:".length()));
+                    saveMeta(mActiveSession);
+                    updateHarnessControls();
                 } else if ("commands".equals(id) && manifest != null) {
                     showHarnessCommands(manifest);
                 } else if ("refresh".equals(id)) {
-                    refreshHarnessCapabilities(mActiveSession.harnessId);
-                    setStatus("Refreshing controls");
+                    mReopenHarnessControlsAfterRefresh = true;
+                    refreshHarnessCapabilities(mActiveSession.harnessId, true);
+                    setStatus("Refreshing models");
                 }
             });
     }
@@ -4730,8 +5783,20 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void refreshHarnessCapabilities(String harnessId) {
+        refreshHarnessCapabilities(harnessId, false);
+    }
+
+    private void refreshHarnessCapabilities(String harnessId, boolean force) {
         if (!mBootstrapReady || !mRuntimeReady
             || !OminalHarnessRegistry.isSelectable(harnessId)) {
+            return;
+        }
+        File manifestFile = OminalHarnessManifest.manifestFile(harnessId);
+        long age = System.currentTimeMillis() - manifestFile.lastModified();
+        if (!force && manifestFile.isFile() && age >= 0L
+            && age < HARNESS_CATALOG_FRESHNESS_MS) {
+            mHarnessDiscoveryErrors.remove(harnessId);
+            updateHarnessControls();
             return;
         }
         synchronized (mHarnessDiscoveryInFlight) {
@@ -4754,9 +5819,8 @@ public final class OringutanActivity extends AppCompatActivity
                         }
                     });
             if (!started) {
-                synchronized (mHarnessDiscoveryInFlight) {
-                    mHarnessDiscoveryInFlight.remove(harnessId);
-                }
+                finishHarnessCapabilityRefresh(harnessId,
+                    "The Codex model catalog is not available yet.");
             }
             return;
         }
@@ -4769,16 +5833,9 @@ public final class OringutanActivity extends AppCompatActivity
             command.commandLabel = "Read " + harnessId + " capabilities";
             AppShell.execute(this, command, null, new OminalShellEnvironment(),
                 codexServerEnvironment(), true);
-            synchronized (mHarnessDiscoveryInFlight) {
-                mHarnessDiscoveryInFlight.remove(harnessId);
-            }
-            runOnUiThread(() -> {
-                if (mActiveSession != null && harnessId.equals(mActiveSession.harnessId)) {
-                    updateHarnessControls();
-                    renderCommandSuggestions(
-                        mPromptInput == null ? "" : mPromptInput.getText().toString());
-                }
-            });
+            finishHarnessCapabilityRefresh(harnessId,
+                OminalHarnessManifest.load(harnessId) == null
+                    ? "The runtime did not publish a valid catalog." : "");
         }, "ominal-harness-discovery-" + harnessId).start();
     }
 
@@ -4794,6 +5851,10 @@ public final class OringutanActivity extends AppCompatActivity
                 updateHarnessControls();
                 renderCommandSuggestions(
                     mPromptInput == null ? "" : mPromptInput.getText().toString());
+                if (mReopenHarnessControlsAfterRefresh && mRootFrame != null) {
+                    mReopenHarnessControlsAfterRefresh = false;
+                    mRootFrame.postDelayed(this::showHarnessControlsDialog, 120);
+                }
             }
         });
     }
@@ -4821,8 +5882,7 @@ public final class OringutanActivity extends AppCompatActivity
                 addCommandSuggestion(OminalHarnessRegistry.resolvedDisplayName(harness), "Agent",
                     "/harness " + harness.getId());
             }
-        } else if (lower.startsWith("/model ") && manifest != null
-            && !manifest.modelFlag.isEmpty()) {
+        } else if (lower.startsWith("/model ") && manifest != null) {
             String query = lower.substring("/model ".length()).trim();
             for (OminalHarnessManifest.Model model : manifest.models) {
                 if (!model.id.toLowerCase(Locale.ROOT).startsWith(query)
@@ -4831,8 +5891,7 @@ public final class OringutanActivity extends AppCompatActivity
                 }
                 addCommandSuggestion(model.label, "Model", "/model " + model.id);
             }
-        } else if (lower.startsWith("/effort ") && manifest != null
-            && !manifest.effortFlag.isEmpty()) {
+        } else if (lower.startsWith("/effort ") && manifest != null) {
             String query = lower.substring("/effort ".length()).trim();
             for (String effort : availableEfforts(manifest)) {
                 if (!effort.startsWith(query)) continue;
@@ -5106,6 +6165,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void runPrompt(ChatSession session, PendingTurn turn,
                            AgentTurnView responseView) {
+        requestNotificationPermissionIfNeeded();
         refreshRuntimeDns();
         if (session == mActiveSession) {
             mPromptRunning = true;
@@ -5418,10 +6478,14 @@ public final class OringutanActivity extends AppCompatActivity
         environment.put("OMINAL_UI_THEME_ACTIVE", mActiveThemeId);
         environment.put("OMINAL_UI_CONFIG", "default".equals(mActiveThemeId) ? ""
             : "/root/.ominal/themes/" + mActiveThemeId + ".properties");
+        environment.put("OMINAL_USER_PROFILE", OminalUserProfileStore.RUNTIME_PATH);
+        environment.put("MONOPOT_PROTOCOL", MonopotEvent.PROTOCOL);
         if (session != null) {
             environment.put("OMINAL_AGENT_SESSION", session.id);
             environment.put("OMINAL_EVENT_LOG",
                 guestWorkspacePath(session) + "/.ominal/events.jsonl");
+            environment.put("MONOPOT_EVENT_LOG",
+                guestWorkspacePath(session) + "/.ominal/monopot/monopot.jsonl");
         }
         return environment;
     }
@@ -5434,6 +6498,10 @@ public final class OringutanActivity extends AppCompatActivity
         return "You are the selected intelligence harness inside Monolith, an Android computer. "
             + "Use the current working directory for this chat's files and outputs. "
             + "Read ./.ominal/runtime.json before acting; it is the authoritative Ominal runtime contract. "
+            + "The profile section is the user's provider-neutral identity and preferences. Use it "
+            + "consistently across runtime or model changes, but do not modify or expose it unnecessarily. "
+            + "Monopot is a local JSONL execution contract, not a network service; do not replace or extend "
+            + "the selected harness's native tools, authentication, or model behavior. "
             + "The user's primary interface is chat and the Linux desktop stays hidden until needed. "
             + "A graphical desktop is available on DISPLAY=:20. Before GUI work run `ominal-screen wait 20`; "
             + "`ominal-screen status` is the authoritative readiness probe. Then take a screenshot before "
@@ -5465,17 +6533,18 @@ public final class OringutanActivity extends AppCompatActivity
         ArrayList<OminalChatMedia.Item> media = OminalChatMedia.changedSince(
             new File(session.workspacePath), mediaBefore);
         runOnUiThread(() -> {
+            ChatMessage assistantMessage = new ChatMessage("assistant", visibleOutput, nowLabel(),
+                detail, trace, media);
             if (responseView != null) {
                 responseView.setMessage(visibleOutput);
-                responseView.setMedia(session, media);
-                responseView.status = detail.isEmpty() ? "Complete" : "";
+                responseView.setMedia(session, assistantMessage, media);
+                bindMessageActions(responseView.message, session, assistantMessage);
+                responseView.status = "";
                 responseView.usage = usage;
                 responseView.trace = trace;
                 responseView.running = false;
                 renderAgentTurnStatus(responseView);
             }
-            ChatMessage assistantMessage = new ChatMessage("assistant", visibleOutput, nowLabel(),
-                detail, trace, media);
             session.messages.add(assistantMessage);
             appendHistory(session, assistantMessage);
             session.markContextCurrent(harnessId, userMessageIndex + 1);
@@ -5492,7 +6561,7 @@ public final class OringutanActivity extends AppCompatActivity
                 mCodexSignedIn = true;
                 setCodexSessionExpired(false);
             }
-            styleAccountButton();
+            styleSettingsButton();
             completeRunnerPairing(codex);
             if (activeSession) setInputEnabled(true);
             boolean openedAndroid = handleLoloRequests(events.androidRequests);
@@ -5537,15 +6606,16 @@ public final class OringutanActivity extends AppCompatActivity
             String visibleError = authenticationRequired
                 ? OminalCodexAppServer.AUTHENTICATION_REQUIRED_MESSAGE
                 : cancelled && TextUtils.isEmpty(error) ? "" : error;
+            ChatMessage assistantMessage = new ChatMessage("assistant", visibleError, nowLabel(),
+                cancelled ? "Stopped" : "", trace);
             if (responseView != null) {
                 responseView.setMessage(visibleError);
+                bindMessageActions(responseView.message, session, assistantMessage);
                 responseView.status = cancelled ? "Stopped" : "";
                 responseView.trace = trace;
                 responseView.running = false;
                 renderAgentTurnStatus(responseView);
             }
-            ChatMessage assistantMessage = new ChatMessage("assistant", visibleError, nowLabel(),
-                cancelled ? "Stopped" : "", trace);
             session.messages.add(assistantMessage);
             appendHistory(session, assistantMessage);
             session.markContextCurrent(harnessId, userMessageIndex + 1);
@@ -5563,7 +6633,7 @@ public final class OringutanActivity extends AppCompatActivity
             if (authenticationRequired) {
                 mCodexSignedIn = false;
                 setCodexSessionExpired(true);
-                styleAccountButton();
+                styleSettingsButton();
                 if (runtime != null) runtime.releaseSessionTransport(session.id);
                 stopAgentEventObserver();
                 if (activeSession) setStatus("Sign in");
@@ -5674,7 +6744,8 @@ public final class OringutanActivity extends AppCompatActivity
                 mMode == MODE_DISPLAY, displayOperational, currentDisplayState(),
                 harness, mCodexSignedIn,
                 guestWorkspace + "/.ominal/events.jsonl", session.threadId(selectedHarness),
-                isLoloModeEnabled());
+                isLoloModeEnabled(), mUserProfile,
+                guestWorkspace + "/.ominal/monopot/monopot.jsonl");
             writeFile(new File(runtimeDirectory, AGENT_RUNTIME_CONTRACT_NAME), contract);
         } catch (IOException | JSONException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to write the Ominal runtime contract", e);
@@ -5903,7 +6974,8 @@ public final class OringutanActivity extends AppCompatActivity
             mPromptInput.setCursorVisible(true);
             InputMethodManager manager = (InputMethodManager)
                 getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (manager != null) manager.restartInput(mPromptInput);
+            if (manager != null && !manager.isActive(mPromptInput))
+                manager.restartInput(mPromptInput);
         });
     }
 
@@ -5912,7 +6984,8 @@ public final class OringutanActivity extends AppCompatActivity
             && (!message.detail.isEmpty() || !message.trace.isEmpty())) {
             AgentTurnView view = addAgentTurn("", false);
             view.setMessage(visibleMessageText(message));
-            view.setMedia(session, message.media);
+            view.setMedia(session, message, message.media);
+            bindMessageActions(view.message, session, message);
             view.detail.setText(message.detail);
             view.detail.setVisibility(View.VISIBLE);
             view.trace = message.trace;
@@ -5921,9 +6994,10 @@ public final class OringutanActivity extends AppCompatActivity
             return;
         }
         if (message.media.isEmpty()) {
-            addBubble(visibleMessageText(message), "user".equals(message.role), scrollNow);
+            addBubble(visibleMessageText(message), "user".equals(message.role), scrollNow,
+                session, message);
         } else {
-            addMediaMessage(session, visibleMessageText(message),
+            addMediaMessage(session, message, visibleMessageText(message),
                 "user".equals(message.role), message.media, scrollNow);
         }
     }
@@ -5943,11 +7017,12 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void addTransientSystemMessage(String message) {
         if (mMode != MODE_CHAT) switchMode(MODE_CHAT);
-        addBubble(message, false, true);
+        addBubble(message, false, true, null, null);
     }
 
-    private TextView addBubble(String message, boolean fromUser, boolean scrollNow) {
-        TextView bubble = createBubbleView(message, fromUser);
+    private TextView addBubble(String message, boolean fromUser, boolean scrollNow,
+                               ChatSession session, ChatMessage chatMessage) {
+        TextView bubble = createBubbleView(message, fromUser, session, chatMessage);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.gravity = fromUser ? Gravity.END : Gravity.START;
@@ -5958,29 +7033,26 @@ public final class OringutanActivity extends AppCompatActivity
         return bubble;
     }
 
-    private TextView createBubbleView(String message, boolean fromUser) {
+    private TextView createBubbleView(String message, boolean fromUser,
+                                      ChatSession session, ChatMessage chatMessage) {
         UiSpec ui = ui();
         SurfaceSpec surface = fromUser ? ui.bubbleUser : ui.bubbleAgent;
         TextView bubble = new TextView(this);
         if (fromUser) bubble.setText(message);
         else renderMarkdown(bubble, message);
-        bubble.setTextSize(16f);
+        bubble.setTextSize(chatTextSize(16f));
         bubble.setLetterSpacing(0f);
         bubble.setLineSpacing(dp(4), 1.1f);
         bubble.setTextColor(surface.text);
         bubble.setIncludeFontPadding(false);
-        bubble.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+        bubble.setTypeface(chatTypeface(Typeface.NORMAL));
         if (fromUser) bubble.setPadding(dp(15), dp(12), dp(15), dp(12));
         else bubble.setPadding(dp(1), dp(10), dp(1), dp(10));
         bubble.setBackground(makeSurfaceDrawable(surface, false));
         if (!fromUser) bubble.setMovementMethod(LinkMovementMethod.getInstance());
         bubble.setFocusable(false);
         bubble.setFocusableInTouchMode(false);
-        bubble.setOnLongClickListener(v -> {
-            copyToClipboard("GIR message", bubble.getText().toString());
-            Toast.makeText(this, "Message copied", Toast.LENGTH_SHORT).show();
-            return true;
-        });
+        bindMessageActions(bubble, session, chatMessage);
         int width = getResources().getDisplayMetrics().widthPixels;
         bubble.setMaxWidth(fromUser
             ? Math.min(Math.round(width * 0.88f), dp(620))
@@ -5988,14 +7060,168 @@ public final class OringutanActivity extends AppCompatActivity
         return bubble;
     }
 
-    private void addMediaMessage(ChatSession session, String message, boolean fromUser,
+    private void bindMessageActions(TextView view, ChatSession session,
+                                    ChatMessage message) {
+        if (view == null) return;
+        view.setOnLongClickListener(target -> {
+            target.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            if (session == null || message == null) {
+                copyToClipboard("GIR message", view.getText().toString());
+                Toast.makeText(this, "Message copied", Toast.LENGTH_SHORT).show();
+                return true;
+            }
+            showMessageActions(session, message);
+            return true;
+        });
+    }
+
+    private void showMessageActions(ChatSession session, ChatMessage message) {
+        ArrayList<OminalInteractionSheet.Row> rows = new ArrayList<>();
+        if (!TextUtils.isEmpty(message.text)) {
+            rows.add(new OminalInteractionSheet.Row("copy", "Copy",
+                "Copy this message", "", false, true, false));
+        }
+        rows.add(new OminalInteractionSheet.Row("delete", "Delete message",
+            "Remove it from this conversation", "", false, true, true));
+        OminalInteractionSheet.show(this, interactionSheetTheme(), "Message",
+            "Chat options",
+            Collections.singletonList(new OminalInteractionSheet.Section("", rows)), id -> {
+                Runnable action = () -> {
+                    if ("copy".equals(id)) {
+                        copyToClipboard("GIR message", message.text);
+                        Toast.makeText(this, "Message copied", Toast.LENGTH_SHORT).show();
+                    } else if ("delete".equals(id)) {
+                        showDeleteMessageConfirmation(session, message);
+                    }
+                };
+                if (mRootFrame != null) mRootFrame.postDelayed(action, 160L);
+                else action.run();
+            });
+    }
+
+    private void showDeleteMessageConfirmation(ChatSession session, ChatMessage message) {
+        if (!canEditConversation(session)) return;
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("Delete this message?")
+            .setMessage("It will be removed from this chat and future conversation context.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Delete", (ignored, which) -> deleteMessage(session, message))
+            .create();
+        dialog.show();
+        styleBlackDialog(dialog);
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(255, 69, 58));
+    }
+
+    private boolean canEditConversation(ChatSession session) {
+        if (session == null) return false;
+        OminalAgentRuntime.Snapshot snapshot = mAgentRuntime == null
+            ? null : mAgentRuntime.snapshot(session.id);
+        boolean busy = session.activeTurn != null || !session.pendingTurns.isEmpty()
+            || snapshot != null && !snapshot.isIdle();
+        if (!busy) return true;
+        Toast.makeText(this, "Stop the current response first", Toast.LENGTH_SHORT).show();
+        return false;
+    }
+
+    private void deleteMessage(ChatSession session, ChatMessage message) {
+        if (!canEditConversation(session) || !session.messages.remove(message)) return;
+        persistConversationEdit(session);
+        Toast.makeText(this, "Message deleted", Toast.LENGTH_SHORT).show();
+    }
+
+    private void showMediaActions(ChatSession session, ChatMessage message,
+                                  List<OminalChatMedia.Item> items) {
+        if (session == null || message == null || items == null || items.isEmpty()) return;
+        if (items.size() == 1) {
+            showRemoveMediaConfirmation(session, message, items.get(0));
+            return;
+        }
+        ArrayList<OminalInteractionSheet.Row> rows = new ArrayList<>();
+        for (int index = 0; index < items.size(); index++) {
+            OminalChatMedia.Item item = items.get(index);
+            rows.add(new OminalInteractionSheet.Row(Integer.toString(index), item.name,
+                "Remove from chat", "", false, true, true));
+        }
+        OminalInteractionSheet.showChoices(this, interactionSheetTheme(), "Media",
+            "Choose an item to remove", rows, id -> {
+                int index;
+                try {
+                    index = Integer.parseInt(id);
+                } catch (NumberFormatException ignored) {
+                    return;
+                }
+                if (index < 0 || index >= items.size()) return;
+                Runnable action = () ->
+                    showRemoveMediaConfirmation(session, message, items.get(index));
+                if (mRootFrame != null) mRootFrame.postDelayed(action, 160L);
+                else action.run();
+            });
+    }
+
+    private void showRemoveMediaConfirmation(ChatSession session, ChatMessage message,
+                                             OminalChatMedia.Item item) {
+        if (!canEditConversation(session)) return;
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("Remove " + item.name + "?")
+            .setMessage("It will be removed from this chat. The workspace file will remain.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Remove",
+                (ignored, which) -> removeMediaFromMessage(session, message, item))
+            .create();
+        dialog.show();
+        styleBlackDialog(dialog);
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(255, 69, 58));
+    }
+
+    private void removeMediaFromMessage(ChatSession session, ChatMessage message,
+                                        OminalChatMedia.Item removedItem) {
+        if (!canEditConversation(session)) return;
+        int messageIndex = session.messages.indexOf(message);
+        if (messageIndex < 0) return;
+        ArrayList<OminalChatMedia.Item> remaining = new ArrayList<>();
+        boolean removed = false;
+        for (OminalChatMedia.Item item : message.media) {
+            if (!removed && item.path.equals(removedItem.path)) {
+                removed = true;
+                continue;
+            }
+            remaining.add(item);
+        }
+        if (!removed) return;
+        if (remaining.isEmpty() && TextUtils.isEmpty(message.text)) {
+            session.messages.remove(messageIndex);
+        } else {
+            session.messages.set(messageIndex, new ChatMessage(message.role, message.text,
+                message.timestamp, message.detail, message.trace, remaining));
+        }
+        persistConversationEdit(session);
+        Toast.makeText(this, "Media removed", Toast.LENGTH_SHORT).show();
+    }
+
+    private void persistConversationEdit(ChatSession session) {
+        session.threadIds.clear();
+        session.contextCursors.clear();
+        if (mAgentRuntime != null) mAgentRuntime.forgetSession(session.id);
+        rewriteHistory(session);
+        touchSession(session, true);
+        writeRuntimeContract(session);
+        if (session == mActiveSession && mMode == MODE_CHAT) {
+            persistComposerDraftNow();
+            mRenderedContentMode = -1;
+            mReuseRenderedContentOnce = false;
+            renderMode();
+        }
+    }
+
+    private void addMediaMessage(ChatSession session, ChatMessage chatMessage,
+                                 String message, boolean fromUser,
                                  List<OminalChatMedia.Item> media, boolean scrollNow) {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
         container.setGravity(fromUser ? Gravity.END : Gravity.START);
 
         if (!TextUtils.isEmpty(message)) {
-            TextView bubble = createBubbleView(message, fromUser);
+            TextView bubble = createBubbleView(message, fromUser, session, chatMessage);
             LinearLayout.LayoutParams bubbleParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             bubbleParams.gravity = fromUser ? Gravity.END : Gravity.START;
@@ -6006,7 +7232,7 @@ public final class OringutanActivity extends AppCompatActivity
         LinearLayout mediaView = new LinearLayout(this);
         mediaView.setOrientation(LinearLayout.VERTICAL);
         mediaView.setGravity(fromUser ? Gravity.END : Gravity.START);
-        renderMediaItems(mediaView, session, media);
+        renderMediaItems(mediaView, session, chatMessage, media);
         container.addView(mediaView, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -6020,6 +7246,7 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void renderMediaItems(LinearLayout container, ChatSession session,
+                                  ChatMessage chatMessage,
                                   List<OminalChatMedia.Item> media) {
         container.removeAllViews();
         if (session == null || media == null || media.isEmpty()) {
@@ -6037,7 +7264,7 @@ public final class OringutanActivity extends AppCompatActivity
             else files.add(item);
         }
         if (!images.isEmpty()) {
-            View gallery = createMediaGalleryView(workspace, images);
+            View gallery = createMediaGalleryView(session, chatMessage, workspace, images);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 mediaContentWidth(), LinearLayout.LayoutParams.WRAP_CONTENT);
             params.setMargins(0, 0, 0, dp(6));
@@ -6046,7 +7273,7 @@ public final class OringutanActivity extends AppCompatActivity
         for (OminalChatMedia.Item item : files) {
             File file = OminalChatMedia.resolve(workspace, item.path);
             if (file == null || !file.isFile()) continue;
-            View mediaItem = createFileMediaView(file, item);
+            View mediaItem = createFileMediaView(session, chatMessage, file, item);
             ViewGroup.LayoutParams currentParams = mediaItem.getLayoutParams();
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 currentParams == null ? mediaContentWidth() : currentParams.width,
@@ -6061,7 +7288,9 @@ public final class OringutanActivity extends AppCompatActivity
         return Math.min(getResources().getDisplayMetrics().widthPixels - dp(36), dp(720));
     }
 
-    private View createMediaGalleryView(File workspace, List<OminalChatMedia.Item> images) {
+    private View createMediaGalleryView(ChatSession session, ChatMessage chatMessage,
+                                        File workspace,
+                                        List<OminalChatMedia.Item> images) {
         UiSpec ui = ui();
         int width = mediaContentWidth();
         int layers = Math.min(2, images.size() - 1);
@@ -6103,6 +7332,13 @@ public final class OringutanActivity extends AppCompatActivity
         gallery.setClickable(true);
         gallery.setFocusable(false);
         gallery.setOnClickListener(ignored -> showMediaPreview(workspace, images, 0));
+        if (chatMessage != null) {
+            gallery.setOnLongClickListener(view -> {
+                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                showMediaActions(session, chatMessage, images);
+                return true;
+            });
+        }
         gallery.setContentDescription(images.size() == 1
             ? "Open image attachment" : "Open gallery with " + images.size() + " images");
         gallery.setLayoutParams(new LinearLayout.LayoutParams(width, deckHeight));
@@ -6158,7 +7394,8 @@ public final class OringutanActivity extends AppCompatActivity
         return Math.max(1, sample);
     }
 
-    private View createFileMediaView(File file, OminalChatMedia.Item item) {
+    private View createFileMediaView(ChatSession session, ChatMessage chatMessage,
+                                     File file, OminalChatMedia.Item item) {
         UiSpec ui = ui();
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -6184,6 +7421,13 @@ public final class OringutanActivity extends AppCompatActivity
         row.setContentDescription("File " + item.name);
         row.setOnClickListener(ignored ->
             Toast.makeText(this, file.getName(), Toast.LENGTH_SHORT).show());
+        if (chatMessage != null) {
+            row.setOnLongClickListener(view -> {
+                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                showMediaActions(session, chatMessage, Collections.singletonList(item));
+                return true;
+            });
+        }
         row.setLayoutParams(new LinearLayout.LayoutParams(
             mediaContentWidth(), LinearLayout.LayoutParams.WRAP_CONTENT));
         return row;
@@ -6259,12 +7503,12 @@ public final class OringutanActivity extends AppCompatActivity
         container.setGravity(Gravity.START);
 
         TextView message = new TextView(this);
-        message.setTextSize(16f);
+        message.setTextSize(chatTextSize(16f));
         message.setLetterSpacing(0f);
         message.setLineSpacing(dp(4), 1.1f);
         message.setTextColor(ui.bubbleAgent.text);
         message.setIncludeFontPadding(false);
-        message.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+        message.setTypeface(chatTypeface(Typeface.NORMAL));
         message.setPadding(dp(1), dp(10), dp(1), dp(10));
         message.setBackground(makeSurfaceDrawable(ui.bubbleAgent, false));
         message.setMovementMethod(LinkMovementMethod.getInstance());
@@ -6309,13 +7553,13 @@ public final class OringutanActivity extends AppCompatActivity
         statusRow.setGravity(Gravity.CENTER_VERTICAL);
         statusRow.setPadding(0, dp(3), 0, 0);
 
-        WorkPulseView pulse = new WorkPulseView(this, ui.muted, ui.ink);
+        WorkPulseView pulse = new WorkPulseView(this, ui.muted, ui.accent);
         statusRow.addView(pulse, new LinearLayout.LayoutParams(dp(22), dp(22)));
 
         TextView detail = new TextView(this);
         detail.setText(status);
-        detail.setTextSize(12.5f);
-        detail.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        detail.setTextSize(chatTextSize(12.5f));
+        detail.setTypeface(chatTypeface(Typeface.BOLD));
         detail.setTextColor(ui.muted);
         detail.setPadding(dp(5), 0, dp(5), 0);
         detail.setSingleLine(false);
@@ -6373,10 +7617,11 @@ public final class OringutanActivity extends AppCompatActivity
         if (view == null) return;
         boolean hasTrace = view.trace != null && !view.trace.isEmpty();
         String total = tokenUsageTotal(view.usage);
-        if (view.status.isEmpty())
-            view.detail.setText(total.isEmpty() && hasTrace ? workTraceSummary(view.trace) : total);
-        else if (total.isEmpty()) view.detail.setText(view.status);
-        else view.detail.setText(view.status + "  /  " + total);
+        String activity = hasTrace ? workTraceSummary(view.trace) : "";
+        String visibleStatus = view.running && !activity.isEmpty() ? activity : view.status;
+        if (visibleStatus.isEmpty()) view.detail.setText(total);
+        else if (total.isEmpty()) view.detail.setText(visibleStatus);
+        else view.detail.setText(visibleStatus + "  /  " + total);
         view.detail.setVisibility(view.detail.getText().length() == 0 ? View.GONE : View.VISIBLE);
         view.pulse.setRunning(view.running);
         view.pulse.setVisibility(view.running
@@ -6525,19 +7770,35 @@ public final class OringutanActivity extends AppCompatActivity
         if (session.incognito) return;
         ensureDirectory(session.rootPath);
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(session.historyPath, true))) {
-            JSONObject object = new JSONObject();
-            object.put("role", message.role);
-            object.put("text", message.text);
-            object.put("timestamp", message.timestamp);
-            if (!message.detail.isEmpty()) object.put("detail", message.detail);
-            if (!message.trace.isEmpty()) object.put("trace", message.trace.toJson());
-            if (!message.media.isEmpty())
-                object.put("media", OminalChatMedia.toJson(message.media));
-            writer.write(object.toString());
+            writer.write(chatMessageToJson(message).toString());
             writer.newLine();
         } catch (IOException | JSONException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to append chat history", e);
         }
+    }
+
+    private void rewriteHistory(ChatSession session) {
+        if (session.incognito) return;
+        ensureDirectory(session.rootPath);
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(session.historyPath, false))) {
+            for (ChatMessage message : session.messages) {
+                writer.write(chatMessageToJson(message).toString());
+                writer.newLine();
+            }
+        } catch (IOException | JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to rewrite chat history", e);
+        }
+    }
+
+    private JSONObject chatMessageToJson(ChatMessage message) throws JSONException {
+        JSONObject object = new JSONObject();
+        object.put("role", message.role);
+        object.put("text", message.text);
+        object.put("timestamp", message.timestamp);
+        if (!message.detail.isEmpty()) object.put("detail", message.detail);
+        if (!message.trace.isEmpty()) object.put("trace", message.trace.toJson());
+        if (!message.media.isEmpty()) object.put("media", OminalChatMedia.toJson(message.media));
+        return object;
     }
 
     private void saveMeta(ChatSession session) {
@@ -6712,7 +7973,8 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void setInputEnabled(boolean enabled) {
         boolean available = enabled && mBootstrapReady && mRuntimeReady;
-        boolean composerAvailable = mActiveSession != null && mMode != MODE_DISPLAY;
+        boolean composerAvailable = available && mActiveSession != null
+            && mMode != MODE_DISPLAY && mMode != MODE_SETTINGS;
         if (mPromptInput != null) {
             if (mPromptInput.isEnabled() != composerAvailable)
                 mPromptInput.setEnabled(composerAvailable);
@@ -6720,14 +7982,14 @@ public final class OringutanActivity extends AppCompatActivity
                 mPromptInput.setFocusable(composerAvailable);
             if (mPromptInput.isFocusableInTouchMode() != composerAvailable)
                 mPromptInput.setFocusableInTouchMode(composerAvailable);
-            if (mPromptInput.isCursorVisible() != composerAvailable)
-                mPromptInput.setCursorVisible(composerAvailable);
+            updateComposerPromptPresentation();
         }
         if (mAttachButton != null) mAttachButton.setEnabled(available);
         if (mSendButton != null) {
             mSendButton.setEnabled(available);
             updateSendButtonState();
         }
+        if (mStopButton != null) mStopButton.setEnabled(available && mPromptRunning);
         boolean toolsAvailable = mBootstrapReady && mActiveSession != null;
         if (mTerminalToolButton != null) mTerminalToolButton.setEnabled(toolsAvailable);
         if (mDisplayToolButton != null) mDisplayToolButton.setEnabled(toolsAvailable);
@@ -6739,18 +8001,28 @@ public final class OringutanActivity extends AppCompatActivity
     private void updateSendButtonState() {
         if (mSendButton == null || mSendButtonShowsStop == mPromptRunning) return;
         mSendButtonShowsStop = mPromptRunning;
-        int icon = mPromptRunning ? R.drawable.ic_stop : R.drawable.ic_send;
-        String description = mPromptRunning ? "Stop response" : getString(R.string.oringutan_send);
-        mSendButton.animate().cancel();
-        mSendButton.animate().alpha(0.25f).scaleX(0.82f).scaleY(0.82f).setDuration(70)
-            .withEndAction(() -> {
-                setThemedIcon(mSendButton, icon, description);
-                mSendButton.setImageTintList(ColorStateList.valueOf(ui().composerSend.text));
-                mSendButton.setContentDescription(description);
-                mSendButton.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(110)
-                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.8f))
-                    .start();
-            }).start();
+        String description = mPromptRunning ? "Send guidance" : getString(R.string.oringutan_send);
+        mSendButton.setContentDescription(description);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            mSendButton.setTooltipText(description);
+        if (mStopButton == null) return;
+        mStopButton.animate().cancel();
+        if (mPromptRunning) {
+            mStopButton.setAlpha(0f);
+            mStopButton.setScaleX(0.84f);
+            mStopButton.setScaleY(0.84f);
+            mStopButton.setVisibility(View.VISIBLE);
+            mStopButton.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(150)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.8f)).start();
+        } else {
+            mStopButton.animate().alpha(0f).scaleX(0.84f).scaleY(0.84f).setDuration(110)
+                .withEndAction(() -> {
+                    mStopButton.setVisibility(View.GONE);
+                    mStopButton.setAlpha(1f);
+                    mStopButton.setScaleX(1f);
+                    mStopButton.setScaleY(1f);
+                }).start();
+        }
     }
 
     private void updateComposerTools() {
@@ -6847,6 +8119,19 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void animateModeView(View view) {
         view.setAlpha(0f);
+        if (mMode == MODE_SETTINGS && mSettingsTransitionDirection != 0) {
+            view.setTranslationX(dp(24) * mSettingsTransitionDirection);
+            view.setTranslationY(0f);
+            mSettingsTransitionDirection = 0;
+            view.animate()
+                .alpha(1f)
+                .translationX(0f)
+                .setDuration(190)
+                .setInterpolator(surfaceInterpolator())
+                .start();
+            return;
+        }
+        view.setTranslationX(0f);
         view.setTranslationY(mMode == MODE_DISPLAY ? dp(18) : dp(10));
         if (mMode == MODE_DISPLAY) {
             view.setScaleX(0.985f);
@@ -6879,12 +8164,24 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void updateAppChromeForMode() {
-        boolean visible = mMode != MODE_DISPLAY;
-        if (mDrawerLayout != null)
-            mDrawerLayout.setVisibility(visible ? View.VISIBLE : View.GONE);
-        animateChromeVisibility(mHeaderView, visible, -dp(8));
-        animateChromeVisibility(mComposerView, visible, dp(14));
-        setDisplayFullscreen(!visible);
+        boolean display = mMode == MODE_DISPLAY;
+        boolean settings = mMode == MODE_SETTINGS;
+        boolean standardChrome = !display && !settings;
+        if (mDrawerLayout != null) {
+            mDrawerLayout.setVisibility(display ? View.GONE : View.VISIBLE);
+            boolean historyOpen = mChatDrawer != null
+                && mDrawerLayout.isDrawerOpen(mChatDrawer);
+            mDrawerLayout.setDrawerLockMode(
+                settings || display || !historyOpen
+                    ? DrawerLayout.LOCK_MODE_LOCKED_CLOSED
+                    : DrawerLayout.LOCK_MODE_UNLOCKED,
+                GravityCompat.START);
+        }
+        if (mChatSafeAreaMask != null)
+            mChatSafeAreaMask.setVisibility(display ? View.GONE : View.VISIBLE);
+        animateChromeVisibility(mHeaderView, standardChrome, -dp(8));
+        animateChromeVisibility(mComposerView, standardChrome, dp(14));
+        setDisplayFullscreen(display);
     }
 
     private void setDisplayFullscreen(boolean fullscreen) {
@@ -6926,12 +8223,12 @@ public final class OringutanActivity extends AppCompatActivity
             boolean chatImeVisible = ime.bottom > 0 && mMode == MODE_CHAT;
             mChatInsetLeft = Math.max(systemBars.left,
                 Math.max(mandatoryGestures.left, cutout.left));
-            mChatInsetTop = Math.max(systemBars.top,
-                Math.max(mandatoryGestures.top, cutout.top));
+            mChatInsetTop = OminalDisplayGeometry.fullscreenTopInset(
+                dp(8), cutout.top);
             mChatInsetRight = Math.max(systemBars.right,
                 Math.max(mandatoryGestures.right, cutout.right));
-            mChatInsetBottom = Math.max(ime.bottom, Math.max(systemBars.bottom,
-                Math.max(mandatoryGestures.bottom, cutout.bottom)));
+            mChatInsetBottom = OminalDisplayGeometry.interactiveBottomInset(
+                systemBars.bottom, mandatoryGestures.bottom, cutout.bottom, ime.bottom);
             if (mDrawerLayout != null) {
                 mDrawerLayout.post(() -> {
                     applyChatViewportInsets();
@@ -6996,12 +8293,23 @@ public final class OringutanActivity extends AppCompatActivity
         int top = OminalDisplayGeometry.remainingInset(mChatInsetTop, excludedTop);
         int right = OminalDisplayGeometry.remainingInset(mChatInsetRight, excludedRight);
         int bottom = OminalDisplayGeometry.remainingInset(mChatInsetBottom, excludedBottom);
+        updateChatSafeAreaMask(top);
         if (params.leftMargin == left && params.topMargin == top
             && params.rightMargin == right && params.bottomMargin == bottom) {
             return;
         }
         params.setMargins(left, top, right, bottom);
         mDrawerLayout.setLayoutParams(params);
+    }
+
+    private void updateChatSafeAreaMask(int topInset) {
+        if (mChatSafeAreaMask == null) return;
+        ViewGroup.LayoutParams params = mChatSafeAreaMask.getLayoutParams();
+        int height = Math.max(0, topInset);
+        if (params.height != height) {
+            params.height = height;
+            mChatSafeAreaMask.setLayoutParams(params);
+        }
     }
 
     private int navigationBarHeightFallback() {
@@ -7066,7 +8374,8 @@ public final class OringutanActivity extends AppCompatActivity
             .setDuration(140)
             .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
             .withEndAction(() -> {
-                if (mMode == MODE_DISPLAY) view.setVisibility(View.GONE);
+                if (mMode == MODE_DISPLAY || mMode == MODE_SETTINGS)
+                    view.setVisibility(View.GONE);
                 view.setAlpha(1f);
                 view.setTranslationY(0f);
             })
@@ -7175,15 +8484,10 @@ public final class OringutanActivity extends AppCompatActivity
         return button;
     }
 
-    private void styleAccountButton() {
-        if (mAccountButton == null) return;
-        String harnessId = mActiveSession == null
-            ? OminalHarnessRegistry.DEFAULT_HARNESS_ID : mActiveSession.harnessId;
-        OminalAgentHarness harness = OminalHarnessRegistry.activeOrDefault(harnessId);
-        boolean signedIn = OminalHarnessTerminal.CODEX_ID.equals(harnessId) && mCodexSignedIn;
-        styleHeaderButton(mAccountButton, signedIn);
-        mAccountButton.setContentDescription(
-            OminalHarnessRegistry.resolvedDisplayName(harness));
+    private void styleSettingsButton() {
+        if (mSettingsButton == null) return;
+        styleHeaderButton(mSettingsButton, false);
+        mSettingsButton.setContentDescription("Settings");
     }
 
     private boolean isLoloModeEnabled() {
@@ -8049,14 +9353,14 @@ public final class OringutanActivity extends AppCompatActivity
         }
 
         static UiSpec light(BrandSkin skin) {
-            int canvas = Color.rgb(248, 248, 250);
+            int canvas = Color.rgb(244, 250, 251);
             int panel = Color.WHITE;
-            int panelSoft = Color.rgb(242, 242, 247);
-            int ink = Color.rgb(17, 17, 18);
-            int muted = Color.rgb(99, 99, 104);
-            int accent = Color.BLACK;
-            int accentDark = Color.WHITE;
-            int border = Color.rgb(209, 209, 214);
+            int panelSoft = Color.rgb(232, 245, 247);
+            int ink = Color.rgb(16, 33, 38);
+            int muted = Color.rgb(93, 116, 122);
+            int accent = Color.rgb(8, 145, 178);
+            int accentDark = Color.rgb(236, 254, 255);
+            int border = Color.rgb(197, 221, 226);
             int dark = Color.WHITE;
             int onDark = ink;
             int onDarkMuted = muted;
@@ -8079,11 +9383,11 @@ public final class OringutanActivity extends AppCompatActivity
             SurfaceSpec composerInput = new SurfaceSpec(panel, border, ink, 16);
             SurfaceSpec composerIcon =
                 new SurfaceSpec(Color.TRANSPARENT, Color.TRANSPARENT, ink, 10);
-            SurfaceSpec composerSend = new SurfaceSpec(Color.BLACK, Color.BLACK, Color.WHITE, 12);
-            SurfaceSpec buttonPrimary = new SurfaceSpec(Color.BLACK, Color.BLACK, Color.WHITE, 8);
+            SurfaceSpec composerSend = new SurfaceSpec(accent, accent, Color.WHITE, 12);
+            SurfaceSpec buttonPrimary = new SurfaceSpec(accent, accent, Color.WHITE, 8);
             SurfaceSpec buttonSecondary = new SurfaceSpec(panel, border, ink, 8);
             SurfaceSpec modeButton = new SurfaceSpec(panel, border, ink, 8);
-            SurfaceSpec modeButtonActive = new SurfaceSpec(Color.BLACK, Color.BLACK, Color.WHITE, 8);
+            SurfaceSpec modeButtonActive = new SurfaceSpec(accent, accent, Color.WHITE, 8);
             SurfaceSpec terminalBlock =
                 new SurfaceSpec(Color.BLACK, Color.rgb(58, 58, 58), Color.WHITE, 6);
             SurfaceSpec displayHome =
@@ -8140,15 +9444,15 @@ public final class OringutanActivity extends AppCompatActivity
             SurfaceSpec composerIcon = SurfaceSpec.fromProperties(properties, "surface.composerIcon",
                 new SurfaceSpec(Color.TRANSPARENT, Color.TRANSPARENT, ink, 10));
             SurfaceSpec composerSend = SurfaceSpec.fromProperties(properties, "surface.composerSend",
-                new SurfaceSpec(Color.WHITE, Color.WHITE, Color.BLACK, 12));
+                new SurfaceSpec(accent, accent, accentDark, 12));
             SurfaceSpec buttonPrimary = SurfaceSpec.fromProperties(properties, "surface.buttonPrimary",
-                new SurfaceSpec(Color.WHITE, Color.WHITE, Color.BLACK, 8));
+                new SurfaceSpec(accent, accent, accentDark, 8));
             SurfaceSpec buttonSecondary = SurfaceSpec.fromProperties(properties, "surface.buttonSecondary",
                 new SurfaceSpec(Color.BLACK, border, ink, 8));
             SurfaceSpec modeButton = SurfaceSpec.fromProperties(properties, "surface.modeButton",
                 new SurfaceSpec(Color.BLACK, border, ink, 8));
             SurfaceSpec modeButtonActive = SurfaceSpec.fromProperties(properties, "surface.modeButtonActive",
-                new SurfaceSpec(Color.WHITE, Color.WHITE, Color.BLACK, 8));
+                new SurfaceSpec(accent, accent, accentDark, 8));
             SurfaceSpec terminalBlock = SurfaceSpec.fromProperties(properties, "surface.terminalBlock",
                 new SurfaceSpec(Color.BLACK, border, ink, 6));
             SurfaceSpec displayHome = SurfaceSpec.fromProperties(properties, "surface.displayHome",
@@ -8402,13 +9706,23 @@ public final class OringutanActivity extends AppCompatActivity
         }
     }
 
+    private static Bitmap sGirLogo;
+
+    private static synchronized Bitmap girLogo(Context context) {
+        if (sGirLogo == null) {
+            sGirLogo = BitmapFactory.decodeResource(
+                context.getResources(), R.drawable.gir_final_logo_white);
+        }
+        return sGirLogo;
+    }
+
     private static final class SetupMarkView extends View {
-        private static final long ENTRANCE_DURATION_MS = 620L;
-        private static final long MINIMUM_VISIBLE_MS = 560L;
-        private static final long EXIT_DURATION_MS = 220L;
-        private static final long FLOW_DURATION_MS = 5200L;
-        private static final float ENTRANCE_SCALE = 0.72f;
-        private static final float EXIT_SCALE = 1.08f;
+        private static final long ENTRANCE_DURATION_MS = 360L;
+        private static final long MINIMUM_VISIBLE_MS = 420L;
+        private static final long EXIT_DURATION_MS = 180L;
+        private static final long FLOW_DURATION_MS = 2800L;
+        private static final float ENTRANCE_SCALE = 1f;
+        private static final float EXIT_SCALE = 1.025f;
 
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
             | Paint.DITHER_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -8428,13 +9742,10 @@ public final class OringutanActivity extends AppCompatActivity
                 if (!isAttachedToWindow() || entranceStartedAt < 0L || exitStartedAt >= 0L) return;
                 float progress = elapsedFraction(entranceStartedAt, ENTRANCE_DURATION_MS);
                 float eased = 1f - (float) Math.pow(1f - progress, 4);
-                float settle = (float) Math.sin(progress * Math.PI) * 0.035f;
-                setAlpha(Math.min(1f, progress / 0.52f));
-                float scale = ENTRANCE_SCALE + ((1f - ENTRANCE_SCALE) * eased)
-                    + (settle * eased);
+                setAlpha(1f);
+                float scale = ENTRANCE_SCALE + ((1f - ENTRANCE_SCALE) * eased);
                 setScaleX(scale);
                 setScaleY(scale);
-                setRotation(-8f * (1f - eased));
                 motionPhase = progress * 0.16f;
                 invalidate();
                 if (progress < 1f) {
@@ -8442,7 +9753,6 @@ public final class OringutanActivity extends AppCompatActivity
                 } else {
                     setScaleX(1f);
                     setScaleY(1f);
-                    setRotation(0f);
                     spinStartedAt = android.os.SystemClock.uptimeMillis();
                     postOnAnimation(runSpinFrame);
                 }
@@ -8455,11 +9765,12 @@ public final class OringutanActivity extends AppCompatActivity
                 if (!isAttachedToWindow() || spinStartedAt < 0L || exitStartedAt >= 0L) return;
                 long elapsed = android.os.SystemClock.uptimeMillis() - spinStartedAt;
                 float progress = (elapsed % FLOW_DURATION_MS) / (float) FLOW_DURATION_MS;
-                motionPhase = (0.16f + progress) % 1f;
-                setScaleX(1f);
-                setScaleY(1f);
+                float pulse = (float) Math.sin(progress * Math.PI * 2f);
+                float scale = 1f + (pulse * 0.006f);
+                motionPhase = 0f;
+                setScaleX(scale);
+                setScaleY(scale);
                 setAlpha(1f);
-                invalidate();
                 postOnAnimation(this);
             }
         };
@@ -8505,16 +9816,13 @@ public final class OringutanActivity extends AppCompatActivity
 
         SetupMarkView(Context context) {
             super(context);
-            logo = BitmapFactory.decodeResource(
-                context.getResources(), R.drawable.gir_final_logo_white);
+            logo = girLogo(context);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) setForceDarkAllowed(false);
             setAlpha(0f);
             setScaleX(ENTRANCE_SCALE);
             setScaleY(ENTRANCE_SCALE);
             paint.setDither(true);
             paint.setFilterBitmap(true);
-            paint.setColorFilter(new android.graphics.PorterDuffColorFilter(
-                Color.WHITE, android.graphics.PorterDuff.Mode.SRC_IN));
             setCameraDistance(8000f * getResources().getDisplayMetrics().density);
         }
 
@@ -8563,48 +9871,23 @@ public final class OringutanActivity extends AppCompatActivity
             return Math.min(1f, elapsed / (float) durationMs);
         }
 
-        private void drawLogoArm(Canvas canvas, RectF bounds, float centerX, float centerY,
-                                 int horizontal, int vertical, float distance,
-                                 float foldDegrees) {
-            float overlap = Math.max(1f, bounds.width() * 0.01f);
-            float clipLeft = horizontal < 0 ? bounds.left : centerX - overlap;
-            float clipRight = horizontal < 0 ? centerX + overlap : bounds.right;
-            float clipTop = vertical < 0 ? bounds.top : centerY - overlap;
-            float clipBottom = vertical < 0 ? centerY + overlap : bounds.bottom;
-
-            canvas.save();
-            canvas.translate(horizontal * distance, vertical * distance);
-            canvas.rotate(foldDegrees, centerX, centerY);
-            canvas.clipRect(clipLeft, clipTop, clipRight, clipBottom);
-            canvas.drawBitmap(logo, null, bounds, paint);
-            canvas.restore();
-        }
-
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             if (logo != null) {
                 float size = Math.min(getWidth(), getHeight());
-                float left = (getWidth() - size) / 2f;
-                float top = (getHeight() - size) / 2f;
-                float inset = size * 0.02f;
-                RectF bounds = new RectF(left + inset, top + inset,
-                    left + size - inset, top + size - inset);
-                float centerX = bounds.centerX();
-                float centerY = bounds.centerY();
-                float spread = 0.5f
-                    - (0.5f * (float) Math.cos(motionPhase * Math.PI * 2f));
-                float easedSpread = spread * spread * (3f - (2f * spread));
-                float distance = size * 0.042f * easedSpread;
-                float fold = 7.2f * easedSpread;
-
-                canvas.save();
-                canvas.rotate(motionPhase * 360f, centerX, centerY);
-                drawLogoArm(canvas, bounds, centerX, centerY, -1, -1, distance, -fold);
-                drawLogoArm(canvas, bounds, centerX, centerY, 1, -1, distance, fold);
-                drawLogoArm(canvas, bounds, centerX, centerY, 1, 1, distance, -fold);
-                drawLogoArm(canvas, bounds, centerX, centerY, -1, 1, distance, fold);
-                canvas.restore();
+                float centerX = getWidth() / 2f;
+                float centerY = getHeight() / 2f;
+                float logoSize = size * 0.92f;
+                RectF bounds = new RectF(
+                    centerX - logoSize / 2f, centerY - logoSize / 2f,
+                    centerX + logoSize / 2f, centerY + logoSize / 2f);
+                paint.setStyle(Paint.Style.FILL);
+                paint.setAlpha(255);
+                paint.setXfermode(null);
+                paint.setColorFilter(null);
+                canvas.drawBitmap(logo, null, bounds, paint);
+                paint.setColorFilter(null);
                 return;
             }
 
@@ -8859,19 +10142,19 @@ public final class OringutanActivity extends AppCompatActivity
             }
         }
 
-        void setMedia(ChatSession session, List<OminalChatMedia.Item> items) {
-            renderMediaItems(media, session, items);
+        void setMedia(ChatSession session, ChatMessage message,
+                      List<OminalChatMedia.Item> items) {
+            renderMediaItems(media, session, message, items);
         }
     }
 
     private static final class WorkPulseView extends View {
-        private static Bitmap sLogo;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Bitmap logo;
-        private final android.graphics.ColorFilter idleFilter;
-        private final android.graphics.ColorFilter activeFilter;
+        private final int idleColor;
+        private final int activeColor;
         private boolean running;
-        private long rotationStartedAt;
+        private long animationStartedAt;
         private final Runnable tick = new Runnable() {
             @Override
             public void run() {
@@ -8883,27 +10166,18 @@ public final class OringutanActivity extends AppCompatActivity
 
         WorkPulseView(Context context, int idleColor, int activeColor) {
             super(context);
-            logo = sharedLogo(context);
-            idleFilter = new android.graphics.PorterDuffColorFilter(
-                idleColor, android.graphics.PorterDuff.Mode.SRC_IN);
-            activeFilter = new android.graphics.PorterDuffColorFilter(
-                activeColor, android.graphics.PorterDuff.Mode.SRC_IN);
+            this.idleColor = idleColor;
+            this.activeColor = activeColor;
+            logo = girLogo(context);
             paint.setDither(true);
             paint.setFilterBitmap(true);
-        }
-
-        private static synchronized Bitmap sharedLogo(Context context) {
-            if (sLogo == null)
-                sLogo = BitmapFactory.decodeResource(
-                    context.getApplicationContext().getResources(), R.drawable.gir_final_logo);
-            return sLogo;
         }
 
         void setRunning(boolean value) {
             if (running == value) return;
             running = value;
             removeCallbacks(tick);
-            rotationStartedAt = SystemClock.uptimeMillis();
+            animationStartedAt = SystemClock.uptimeMillis();
             if (running) postOnAnimation(tick);
             invalidate();
         }
@@ -8911,30 +10185,28 @@ public final class OringutanActivity extends AppCompatActivity
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            if (logo == null || getWidth() <= 0 || getHeight() <= 0) return;
+            if (getWidth() <= 0 || getHeight() <= 0) return;
             float size = Math.min(getWidth(), getHeight());
-            float inset = Math.max(1f, size * 0.08f);
-            RectF bounds = new RectF(
-                (getWidth() - size) / 2f + inset,
-                (getHeight() - size) / 2f + inset,
-                (getWidth() + size) / 2f - inset,
-                (getHeight() + size) / 2f - inset);
-            paint.setColorFilter(running ? activeFilter : idleFilter);
-            paint.setAlpha(running ? 255 : 150);
-            if (!running) {
-                canvas.drawBitmap(logo, null, bounds, paint);
-                return;
-            }
-
-            float phase = ((SystemClock.uptimeMillis() - rotationStartedAt) % 1800L) / 1800f;
-            float centerX = bounds.centerX();
-            float centerY = bounds.centerY();
-
+            float centerX = getWidth() / 2f;
+            float centerY = getHeight() / 2f;
+            if (logo == null) return;
+            float phase = running
+                ? ((SystemClock.uptimeMillis() - animationStartedAt) % 2400L) / 2400f
+                : 0f;
+            float logoSize = size * 0.82f;
+            RectF bounds = new RectF(centerX - logoSize / 2f, centerY - logoSize / 2f,
+                centerX + logoSize / 2f, centerY + logoSize / 2f);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setXfermode(null);
+            paint.setAlpha(running ? 255 : 136);
+            paint.setColorFilter(null);
             canvas.save();
             canvas.rotate(phase * 360f, centerX, centerY);
-            paint.setAlpha(255);
             canvas.drawBitmap(logo, null, bounds, paint);
             canvas.restore();
+            paint.setAlpha(255);
+            paint.setColorFilter(null);
+            paint.setXfermode(null);
         }
 
         @Override

@@ -3,14 +3,14 @@
   <desc id="desc">The same four-arm GIR spiral drawn as a loose double-pass sketch.</desc>
   <defs>
     <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f2f3f5" />
-      <stop offset="1" stop-color="#ff4d8d" />
+      <stop offset="0" stop-color="#67e8f9" />
+      <stop offset="1" stop-color="#22d3ee" />
     </linearGradient>
     <path id="arm" d="M128 128V54H194V120H154V82H180" />
     <path id="arm-loose" d="M126 129C127 104 126 79 127 53C149 54 173 53 196 55C195 77 196 100 195 122C180 120 168 122 152 121C153 107 151 94 153 80C164 82 173 80 183 82" />
   </defs>
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <g stroke="#f2f3f5" stroke-width="9" opacity=".88">
+    <g stroke="#ecfeff" stroke-width="9" opacity=".92">
       <use href="#arm" />
       <use href="#arm" transform="rotate(90 128 128)" />
       <use href="#arm" transform="rotate(180 128 128)" />

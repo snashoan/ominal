@@ -20,6 +20,7 @@ import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -70,6 +71,7 @@ final class OminalInteractionSheet {
         final boolean selected;
         final boolean enabled;
         final boolean danger;
+        final int iconRes;
 
         Row(@NonNull String id, @NonNull String title) {
             this(id, title, "", "", false, true, false);
@@ -77,6 +79,12 @@ final class OminalInteractionSheet {
 
         Row(@NonNull String id, @NonNull String title, @Nullable String detail,
             @Nullable String trailing, boolean selected, boolean enabled, boolean danger) {
+            this(id, title, detail, trailing, selected, enabled, danger, 0);
+        }
+
+        Row(@NonNull String id, @NonNull String title, @Nullable String detail,
+            @Nullable String trailing, boolean selected, boolean enabled, boolean danger,
+            int iconRes) {
             this.id = id;
             this.title = title;
             this.detail = detail == null ? "" : detail;
@@ -84,6 +92,7 @@ final class OminalInteractionSheet {
             this.selected = selected;
             this.enabled = enabled;
             this.danger = danger;
+            this.iconRes = iconRes;
         }
     }
 
@@ -106,10 +115,28 @@ final class OminalInteractionSheet {
                                   @NonNull Listener listener) {
         BottomSheetDialog dialog = createDialog(activity, theme);
         LinearLayout content = createContent(activity, theme, title, subtitle);
+
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(false);
+        scroll.setClipToPadding(false);
+        scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        LinearLayout sectionList = new LinearLayout(activity);
+        sectionList.setOrientation(LinearLayout.VERTICAL);
         for (Section section : sections) {
-            addSection(activity, content, theme, section, dialog, listener);
+            addSection(activity, sectionList, theme, section, dialog, listener);
         }
-        addBottomSpace(activity, content);
+        addBottomSpace(activity, sectionList);
+        scroll.addView(sectionList, new ScrollView.LayoutParams(
+            ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+
+        int rowCount = 0;
+        for (Section section : sections) rowCount += section.rows.size();
+        int estimatedHeight = dp(activity, 24 + (sections.size() * 34) + (rowCount * 60));
+        int screenLimit = Math.round(
+            activity.getResources().getDisplayMetrics().heightPixels * 0.60f);
+        int listHeight = Math.min(estimatedHeight, Math.min(dp(activity, 560), screenLimit));
+        content.addView(scroll, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, Math.max(dp(activity, 120), listHeight)));
         dialog.setContentView(content);
         prepareOnShow(dialog, theme);
         dialog.show();
@@ -259,12 +286,11 @@ final class OminalInteractionSheet {
                                   BottomSheetDialog dialog, Listener listener) {
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(dp(context, 10), dp(context, 8), dp(context, 10), dp(context, 5));
+        row.setPadding(dp(context, 10), dp(context, 7), dp(context, 10), dp(context, 4));
         row.setMinimumHeight(dp(context, value.detail.isEmpty() ? 50 : 58));
         row.setEnabled(value.enabled);
         row.setAlpha(value.enabled ? 1f : 0.45f);
-        row.setBackground(ripple(context, theme,
-            value.selected ? theme.surfaceRaised : Color.TRANSPARENT, 14));
+        row.setBackground(ripple(context, theme, Color.TRANSPARENT, 12));
         row.setContentDescription(value.title
             + (value.detail.isEmpty() ? "" : ", " + value.detail)
             + (value.selected ? ", selected" : ""));
@@ -273,6 +299,19 @@ final class OminalInteractionSheet {
         content.setOrientation(LinearLayout.HORIZONTAL);
         content.setGravity(Gravity.CENTER_VERTICAL);
         content.setPadding(dp(context, 4), 0, dp(context, 2), 0);
+
+        if (value.iconRes != 0) {
+            ImageView icon = new ImageView(context);
+            icon.setImageResource(value.iconRes);
+            icon.setImageTintList(ColorStateList.valueOf(
+                value.danger ? Color.rgb(255, 69, 58) : theme.muted));
+            icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            icon.setPadding(dp(context, 5), dp(context, 5), dp(context, 5), dp(context, 5));
+            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(
+                dp(context, 34), dp(context, 34));
+            iconParams.setMargins(0, 0, dp(context, 8), 0);
+            content.addView(icon, iconParams);
+        }
 
         LinearLayout labels = new LinearLayout(context);
         labels.setOrientation(LinearLayout.VERTICAL);
@@ -325,11 +364,11 @@ final class OminalInteractionSheet {
 
         View selected = new View(context);
         selected.setBackground(roundRect(context,
-            value.selected ? theme.accent : Color.TRANSPARENT,
+            value.selected ? theme.accent : theme.border,
             Color.TRANSPARENT, 2));
         LinearLayout.LayoutParams selectedParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 2));
-        selectedParams.setMargins(dp(context, 4), dp(context, 4), dp(context, 4), 0);
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(context, value.selected ? 2 : 1));
+        selectedParams.setMargins(dp(context, 4), dp(context, 5), dp(context, 4), 0);
         row.addView(selected, selectedParams);
 
         row.setOnClickListener(view -> {

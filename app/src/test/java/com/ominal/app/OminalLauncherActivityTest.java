@@ -25,7 +25,7 @@ public class OminalLauncherActivityTest {
             .resume()
             .visible()
             .get();
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(240));
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400));
 
         Intent launched = shadowOf(activity).getNextStartedActivity();
         assertEquals(OringutanActivity.class.getName(), launched.getComponent().getClassName());

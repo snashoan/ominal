@@ -70,6 +70,35 @@ public class OminalHarnessManifestTest {
         OminalHarnessManifest.fromJson(manifest);
     }
 
+    @Test
+    public void acceptsProviderNeutralMonopotAdapter() throws Exception {
+        JSONObject manifest = validManifest();
+        manifest.put("harness", "custom-provider");
+        manifest.put("identity", new JSONObject()
+            .put("name", "Custom provider")
+            .put("publisher", "User configured")
+            .put("provider", "custom"));
+        manifest.put("transport", new JSONObject()
+            .put("outputFormat", "monopot-jsonl")
+            .put("adapterCommand", "my-monopot-adapter")
+            .put("id", "stdio.custom"));
+
+        OminalHarnessManifest parsed = OminalHarnessManifest.fromJson(manifest);
+
+        assertEquals("my-monopot-adapter", parsed.adapterCommand);
+        assertEquals("stdio.custom", parsed.transportId);
+        assertEquals("custom", parsed.providerId);
+    }
+
+    @Test(expected = JSONException.class)
+    public void rejectsAdapterCommandWithShellSyntax() throws Exception {
+        JSONObject manifest = validManifest();
+        manifest.getJSONObject("transport")
+            .put("outputFormat", "monopot-jsonl")
+            .put("adapterCommand", "adapter --unsafe");
+        OminalHarnessManifest.fromJson(manifest);
+    }
+
     private static JSONObject validManifest() throws Exception {
         return new JSONObject()
             .put("schemaVersion", 1)

@@ -7,11 +7,11 @@ HARNESS="${1:-}"
 ACTION="${2:-}"
 
 case "$HARNESS" in
-    claude-code|antigravity) ;;
-    *)
-        printf 'Unsupported chat harness: %s\n' "$HARNESS" >&2
+    ''|-*|*-|*[!a-z0-9-]*)
+        printf 'Invalid chat harness: %s\n' "$HARNESS" >&2
         exit 64
         ;;
+    *) ;;
 esac
 
 if [ ! -x "$RUNNER" ]; then
@@ -25,6 +25,19 @@ case "$ACTION" in
             set -eu
             harness="$1"
             manifest="/root/.ominal/harness-capabilities/${harness}.json"
+            if [ "$harness" != "claude-code" ] && [ "$harness" != "antigravity" ]; then
+                python3 -c '\''
+import json, re, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+transport = data.get("transport") or {}
+command = transport.get("adapterCommand", "")
+if data.get("harness") != sys.argv[2] or transport.get("outputFormat") != "monopot-jsonl":
+    raise SystemExit(65)
+if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", command):
+    raise SystemExit(65)
+'\'' "$manifest" "$harness"
+                exit 0
+            fi
             ominal-harness-discover "$harness" "$manifest"
         ' ominal "$HARNESS"
         ;;
@@ -119,6 +132,36 @@ case "$ACTION" in
 
 ${prompt}"
                     exec "$@" "$payload" < /dev/null
+                    ;;
+                *)
+                    if [ ! -s "$manifest" ]; then
+                        printf "%s\n" "No runtime adapter is registered for ${harness}." >&2
+                        exit 69
+                    fi
+                    adapter="$(python3 -c '\''
+import json, re, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+transport = data.get("transport") or {}
+command = transport.get("adapterCommand", "")
+if data.get("harness") != sys.argv[2] or transport.get("outputFormat") != "monopot-jsonl":
+    raise SystemExit(65)
+if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", command):
+    raise SystemExit(65)
+print(command)
+'\'' "$manifest" "$harness")"
+                    if ! command -v "$adapter" >/dev/null 2>&1; then
+                        printf "Runtime adapter not found: %s\n" "$adapter" >&2
+                        exit 69
+                    fi
+                    exec "$adapter" turn \
+                        --protocol monopot/1 \
+                        --harness "$harness" \
+                        --workspace "$cwd" \
+                        --thread "$thread_id" \
+                        --prompt-file "$prompt_file" \
+                        --instructions-file "$instructions_file" \
+                        --model "$model_id" \
+                        --effort "$effort_id" < /dev/null
                     ;;
             esac
         ' ominal "$HARNESS" "$GUEST_CWD" "$THREAD_ID" \

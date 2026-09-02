@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -35,7 +36,10 @@ public final class OminalHarnessManifest {
         Pattern.compile("--[a-zA-Z0-9][a-zA-Z0-9-]{0,63}");
     private static final Pattern COMMAND =
         Pattern.compile("/[a-z][a-z0-9._-]{0,63}");
-    private static final Set<String> OUTPUT_FORMATS = setOf("text", "json", "stream-json");
+    private static final Pattern ADAPTER_COMMAND =
+        Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,127}");
+    private static final Set<String> OUTPUT_FORMATS =
+        setOf("text", "json", "stream-json", "monopot-jsonl");
     private static final Set<String> COMMAND_TYPES = setOf(
         "command", "model", "effort", "agent", "account", "session", "plugin");
 
@@ -66,7 +70,10 @@ public final class OminalHarnessManifest {
     @NonNull public final String binaryVersion;
     @NonNull public final String displayName;
     @NonNull public final String publisher;
+    @NonNull public final String providerId;
     @NonNull public final String outputFormat;
+    @NonNull public final String adapterCommand;
+    @NonNull public final String transportId;
     @NonNull public final String resumeFlag;
     @NonNull public final String modelFlag;
     @NonNull public final String effortFlag;
@@ -79,7 +86,10 @@ public final class OminalHarnessManifest {
                                   @NonNull String binaryVersion,
                                   @NonNull String displayName,
                                   @NonNull String publisher,
+                                  @NonNull String providerId,
                                   @NonNull String outputFormat,
+                                  @NonNull String adapterCommand,
+                                  @NonNull String transportId,
                                   @NonNull String resumeFlag,
                                   @NonNull String modelFlag,
                                   @NonNull String effortFlag,
@@ -91,7 +101,10 @@ public final class OminalHarnessManifest {
         this.binaryVersion = binaryVersion;
         this.displayName = displayName;
         this.publisher = publisher;
+        this.providerId = providerId;
         this.outputFormat = outputFormat;
+        this.adapterCommand = adapterCommand;
+        this.transportId = transportId;
         this.resumeFlag = resumeFlag;
         this.modelFlag = modelFlag;
         this.effortFlag = effortFlag;
@@ -116,12 +129,22 @@ public final class OminalHarnessManifest {
             : optionalSafeText(identity, "name", 80);
         String publisher = identity == null ? ""
             : optionalSafeText(identity, "publisher", 120);
+        String providerId = identity == null ? harnessId
+            : optionalSafeText(identity, "provider", 80);
+        if (providerId.isEmpty()) providerId = harnessId;
 
         JSONObject transport = object.getJSONObject("transport");
         String outputFormat = transport.optString("outputFormat", "text")
             .trim().toLowerCase(Locale.ROOT);
         if (!OUTPUT_FORMATS.contains(outputFormat))
             throw new JSONException("Unsupported output format");
+        String adapterCommand = optionalAdapterCommand(
+            transport.optString("adapterCommand", ""));
+        String transportId = optionalSafeText(transport, "id", 120);
+        if (transportId.isEmpty()) transportId = adapterCommand.isEmpty()
+            ? outputFormat : "monopot-stdio:" + adapterCommand;
+        if (!adapterCommand.isEmpty() && !"monopot-jsonl".equals(outputFormat))
+            throw new JSONException("Runtime adapters must emit monopot-jsonl");
         String resumeFlag = optionalFlag(transport.optString("resumeFlag", ""),
             "resumeFlag");
         String modelFlag = optionalFlag(transport.optString("modelFlag", ""),
@@ -139,7 +162,7 @@ public final class OminalHarnessManifest {
         List<Model> models = parseModels(object.optJSONArray("models"));
         List<Command> commands = parseCommands(object.optJSONArray("commands"));
         return new OminalHarnessManifest(harnessId, binaryVersion, displayName, publisher,
-            outputFormat,
+            providerId, outputFormat, adapterCommand, transportId,
             resumeFlag, modelFlag, effortFlag, autonomyFlag, autonomyEnabled,
             models, commands);
     }
@@ -158,6 +181,22 @@ public final class OminalHarnessManifest {
                 "Ignoring invalid harness manifest for " + requestedHarnessId, e);
             return null;
         }
+    }
+
+    @NonNull
+    public static List<OminalHarnessManifest> installed() {
+        File directory = manifestFile("placeholder").getParentFile();
+        File[] files = directory == null ? null : directory.listFiles((parent, name) ->
+            name.endsWith(".json") && name.length() > 5);
+        if (files == null || files.length == 0) return Collections.emptyList();
+        Arrays.sort(files, (left, right) -> left.getName().compareTo(right.getName()));
+        ArrayList<OminalHarnessManifest> manifests = new ArrayList<>();
+        for (File file : files) {
+            String name = file.getName();
+            OminalHarnessManifest manifest = load(name.substring(0, name.length() - 5));
+            if (manifest != null) manifests.add(manifest);
+        }
+        return Collections.unmodifiableList(manifests);
     }
 
     @NonNull
@@ -228,6 +267,14 @@ public final class OminalHarnessManifest {
         String flag = value == null ? "" : value.trim();
         if (flag.isEmpty()) return "";
         return requirePattern(flag, field, FLAG);
+    }
+
+    private static String optionalAdapterCommand(String value) throws JSONException {
+        String command = value == null ? "" : value.trim();
+        if (command.isEmpty()) return "";
+        if (!ADAPTER_COMMAND.matcher(command).matches())
+            throw new JSONException("Invalid adapter command");
+        return command;
     }
 
     private static String optionalSafeText(JSONObject object, String field, int maxLength)

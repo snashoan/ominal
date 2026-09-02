@@ -106,6 +106,20 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
     }
 
     @Override
+    public synchronized boolean steer(@NonNull String message) {
+        String guidance = message.trim();
+        TerminalSession terminal = mTerminalSession;
+        if (mActiveTurn == null || guidance.isEmpty() || terminal == null
+            || !terminal.isRunning() || terminal.getEmulator() == null) {
+            return false;
+        }
+        terminal.getEmulator().paste(guidance);
+        terminal.write("\r");
+        mActiveTurn.listener.onStatus("Applying your update");
+        return true;
+    }
+
+    @Override
     public synchronized void shutdown() {
         mGeneration++;
         mActiveTurn = null;

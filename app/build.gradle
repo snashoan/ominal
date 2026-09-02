@@ -94,15 +94,22 @@ android {
     dependencies {
         implementation "androidx.annotation:annotation:1.9.0"
         implementation "androidx.core:core:1.13.1"
+        implementation "androidx.core:core-splashscreen:1.2.0"
         implementation "androidx.drawerlayout:drawerlayout:1.2.0"
         implementation "androidx.preference:preference:1.2.1"
         implementation "androidx.viewpager:viewpager:1.0.0"
         implementation "com.google.android.material:material:1.12.0"
         implementation "com.google.guava:guava:24.1-jre"
         implementation "io.noties.markwon:core:$markwonVersion"
+        implementation "io.noties.markwon:ext-latex:$markwonVersion"
         implementation "io.noties.markwon:ext-strikethrough:$markwonVersion"
+        implementation "io.noties.markwon:inline-parser:$markwonVersion"
         implementation "io.noties.markwon:linkify:$markwonVersion"
         implementation "io.noties.markwon:recycler:$markwonVersion"
+        implementation("io.noties.markwon:syntax-highlight:$markwonVersion") {
+            exclude group: "org.jetbrains", module: "annotations-java5"
+        }
+        annotationProcessor "io.noties:prism4j-bundler:2.0.0"
         implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
 
         implementation project(":terminal-view")

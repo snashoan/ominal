@@ -44,6 +44,17 @@ public final class OminalDisplayGeometry {
         return Math.max(0, imeBottom - Math.max(0, navigationBottom));
     }
 
+    public static int fullscreenTopInset(int minimumInset, int cutoutTop) {
+        return Math.max(Math.max(0, minimumInset), Math.max(0, cutoutTop));
+    }
+
+    public static int interactiveBottomInset(int systemBottom, int gestureBottom,
+                                               int cutoutBottom, int imeBottom) {
+        return Math.max(Math.max(0, imeBottom),
+            Math.max(Math.max(0, systemBottom),
+                Math.max(Math.max(0, gestureBottom), Math.max(0, cutoutBottom))));
+    }
+
     public static int unconsumedSystemInset(int systemBottom, int windowHeight,
                                              int decorHeight) {
         int alreadyExcluded = Math.max(0, windowHeight - Math.max(0, decorHeight));

@@ -1,0 +1,1 @@
+Improved runtime recovery and automatic repair after interrupted setup. Refined chat input focus, keyboard insets, solid header geometry, fullscreen display masking, working states, message formatting, harness controls, and startup presentation.

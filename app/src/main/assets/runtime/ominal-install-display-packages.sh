@@ -18,6 +18,28 @@ if [ ! -x "$RUNNER" ]; then
     printf 'Ominal PRoot launcher is missing: %s\n' "$RUNNER" >&2
     exit 69
 fi
+
+# Package configuration can be interrupted when Android stops the app during an
+# upgrade. Repair that state even when the display-package marker is present;
+# otherwise the marker fast path leaves every subsequent launch stuck in setup.
+if ! "$RUNNER" /bin/bash -lc 'test -z "$(dpkg --audit)" && apt-get -o Debug::NoLocking=1 check >/dev/null'; then
+"$RUNNER" /bin/bash -lc '
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+export TZ=Etc/UTC
+if [ ! -x /usr/sbin/policy-rc.d ]; then
+    printf "#!/bin/sh\nexit 101\n" > /usr/sbin/policy-rc.d
+    chmod 755 /usr/sbin/policy-rc.d
+fi
+if ! dpkg --configure -a; then
+    apt-get -o Acquire::Retries=5 -o Acquire::ForceIPv4=true -o Dpkg::Use-Pty=0 -f install -y
+    dpkg --configure -a
+fi
+test -z "$(dpkg --audit)"
+apt-get -o Debug::NoLocking=1 check >/dev/null
+'
+fi
+
 if [ ! -f "$UPGRADE_MARKER" ] || ! "$RUNNER" /bin/bash -lc 'for command_name in Xvfb x11vnc websockify jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes dbus-run-session xdotool wmctrl scrot xdpyinfo xrdb xclip file yad xdg-mime update-desktop-database; do command -v "$command_name" >/dev/null || exit 1; done; test -d /usr/share/novnc || test -d /usr/share/noVNC'; then
 "$RUNNER" /bin/bash -lc '
 set -eu

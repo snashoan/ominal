@@ -8,7 +8,7 @@ import java.util.List;
 
 /** Builds the non-secret runtime context exposed to the active coding agent. */
 public final class OminalRuntimeContract {
-    public static final int SCHEMA_VERSION = 6;
+    public static final int SCHEMA_VERSION = 7;
 
     private OminalRuntimeContract() {}
 
@@ -31,7 +31,8 @@ public final class OminalRuntimeContract {
                                 boolean loloModeEnabled) throws JSONException {
         return create(sessionId, title, workspacePath, attachments, display, displayRenderer,
             displayVisible, displayReady, displayReady ? "ready_idle" : "off", harness,
-            signedIn, eventLogPath, threadId, loloModeEnabled);
+            signedIn, eventLogPath, threadId, loloModeEnabled,
+            OminalUserProfile.empty(), workspacePath + "/.ominal/monopot/monopot.jsonl");
     }
 
     public static String create(String sessionId, String title, String workspacePath,
@@ -41,7 +42,22 @@ public final class OminalRuntimeContract {
                                 OminalAgentHarness harness, boolean signedIn,
                                 String eventLogPath, String threadId,
                                 boolean loloModeEnabled) throws JSONException {
+        return create(sessionId, title, workspacePath, attachments, display, displayRenderer,
+            displayVisible, displayReady, displayState, harness, signedIn, eventLogPath,
+            threadId, loloModeEnabled, OminalUserProfile.empty(),
+            workspacePath + "/.ominal/monopot/monopot.jsonl");
+    }
+
+    public static String create(String sessionId, String title, String workspacePath,
+                                List<String> attachments, OminalDisplayGeometry display,
+                                String displayRenderer, boolean displayVisible,
+                                boolean displayReady, String displayState,
+                                OminalAgentHarness harness, boolean signedIn,
+                                String eventLogPath, String threadId,
+                                boolean loloModeEnabled, OminalUserProfile profile,
+                                String monopotEventLogPath) throws JSONException {
         if (harness == null) throw new IllegalArgumentException("harness is required");
+        if (profile == null) profile = OminalUserProfile.empty();
         JSONObject root = new JSONObject();
         root.put("schemaVersion", SCHEMA_VERSION);
 
@@ -94,6 +110,17 @@ public final class OminalRuntimeContract {
         agent.put("eventSchemaVersion", OminalAgentEventLog.SCHEMA_VERSION);
         root.put("agent", agent);
 
+        JSONObject monopot = new JSONObject();
+        monopot.put("protocol", MonopotEvent.PROTOCOL);
+        monopot.put("transport", "local-jsonl-stdio");
+        monopot.put("networkService", false);
+        monopot.put("eventLog", monopotEventLogPath == null ? "" : monopotEventLogPath);
+        monopot.put("adapterManifestDirectory", "/root/.ominal/harness-capabilities");
+        monopot.put("adapterOutput", "jsonl");
+        root.put("monopot", monopot);
+
+        root.put("profile", profile.toJson());
+
         JSONArray tools = new JSONArray();
         tools.put(new JSONObject()
             .put("name", "ominal-screen")
@@ -141,6 +168,8 @@ public final class OminalRuntimeContract {
             .put("workspaceReadWrite", true)
             .put("displayControl", true)
             .put("uiAppearanceControl", true)
+            .put("sharedProfileContext", !profile.isEmpty())
+            .put("monopotRuntimeAccess", true)
             .put("requestUserInput", true)
             .put("androidBridge", loloModeEnabled));
         return root.toString(2);

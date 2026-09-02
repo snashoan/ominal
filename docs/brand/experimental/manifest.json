@@ -1,6 +1,12 @@
 {
   "name": "GIR experimental logo variants",
-  "version": "experimental-3",
+  "version": "selected-sketch-white-1",
+  "selection": {
+    "primary": "gir-experiment-sketch-line.svg",
+    "loading": "gir-experiment-sketch-line.svg",
+    "markColor": "#ffffff",
+    "interfaceAccent": "#22d3ee"
+  },
   "reference": "../gir-prod-logo-white.png",
   "variants": [
     {

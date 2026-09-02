@@ -85,6 +85,11 @@ public interface OminalAgentTransport {
 
     boolean submit(@NonNull TurnRequest request, @NonNull Listener listener);
 
+    /** Adds user guidance to the active turn when the harness supports live steering. */
+    default boolean steer(@NonNull String message) {
+        return false;
+    }
+
     /** Stops only the active turn while preserving any reusable harness session state. */
     boolean cancel();
 

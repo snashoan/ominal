@@ -4,7 +4,8 @@ set -eu
 PREFIX="${OMINAL_PREFIX:-/data/data/com.ominal/files/usr}"
 HOME="${OMINAL_HOME:-/data/data/com.ominal/files/home}"
 RUNTIME_ROOT="${OMINAL_RUNTIME_ROOT:-$HOME/.ominal/runtime}"
-RUNTIME_VERSION="ominal-ubuntu-24.04.4-node-24.18.0-codex-0.144.6-desktop-xfce-v4"
+RUNTIME_ARCH="${OMINAL_RUNTIME_ARCH:-arm64}"
+RUNTIME_VERSION="ominal-ubuntu-24.04.4-${RUNTIME_ARCH}-node-24.18.0-codex-0.144.6-desktop-xfce-v4"
 READY_FILE="$RUNTIME_ROOT/.ominal-runtime-ready"
 PREPARED_ROOTFS_VERSION="ominal-ubuntu-24.04.4-arm64-prepared-v3"
 
@@ -20,7 +21,7 @@ codex --version | grep -E "^codex-cli [0-9]+\.[0-9]+\.[0-9]+" >/dev/null
 verify_runtime() {
     "$PREFIX/bin/ominal-proot-run" /bin/bash -lc '
 set -eu
-test "$(dpkg --print-architecture)" = "arm64"
+test "$(dpkg --print-architecture)" = "${OMINAL_RUNTIME_ARCH:-arm64}"
 test -z "$(dpkg --audit)"
 test "$(node --version)" = "v24.18.0"
 test "$(command -v codex)" = "/root/.ominal/npm/bin/codex"

@@ -22,8 +22,8 @@ function Write-TransparentIcon([int]$Size, [string]$Destination) {
         $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
         $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
 
-        $outlineMargin = [int][Math]::Round($Size * 10 / 108)
-        $markMargin = [int][Math]::Round($Size * 12 / 108)
+        $outlineMargin = [int][Math]::Round($Size * 8 / 108)
+        $markMargin = [int][Math]::Round($Size * 10 / 108)
         $graphics.DrawImage($blackMark, $outlineMargin, $outlineMargin,
             $Size - (2 * $outlineMargin), $Size - (2 * $outlineMargin))
         $graphics.DrawImage($whiteMark, $markMargin, $markMargin,

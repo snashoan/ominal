@@ -163,8 +163,8 @@ public final class OminalService extends Service implements AppShell.AppShellCli
             }
         }
 
-        // If this service really do get killed, there is no point restarting it automatically - let the user do on next
-        // start of {@link Term):
+        // Active work is protected by the foreground service and wake lock. If Android still
+        // kills this process, persisted agent state reports the interruption on the next launch.
         return Service.START_NOT_STICKY;
     }
 
@@ -801,7 +801,8 @@ public final class OminalService extends Service implements AppShell.AppShellCli
         Resources res = getResources();
 
         // Set pending intent to be launched when notification is clicked
-        Intent notificationIntent = OminalActivity.newInstance(this);
+        Intent notificationIntent = new Intent(this, OringutanActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent contentIntent = PendingIntent.getActivity(this, 0, notificationIntent,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
@@ -809,36 +810,36 @@ public final class OminalService extends Service implements AppShell.AppShellCli
         // Set notification text
         int sessionCount = getOminalSessionsSize();
         int taskCount = mShellManager.mOminalTasks.size();
-        String notificationText = sessionCount + " session" + (sessionCount == 1 ? "" : "s");
-        if (taskCount > 0) {
-            notificationText += ", " + taskCount + " task" + (taskCount == 1 ? "" : "s");
-        }
-
         final boolean wakeLockHeld = mWakeLock != null;
-        if (wakeLockHeld) notificationText += " (wake lock held)";
-
-
-        // Set notification priority
-        // If holding a wake or wifi lock consider the notification of high priority since it's using power,
-        // otherwise use a low priority
-        int priority = (wakeLockHeld) ? Notification.PRIORITY_HIGH : Notification.PRIORITY_LOW;
+        String notificationText;
+        if (wakeLockHeld) {
+            notificationText = "Working in the background";
+        } else if (taskCount > 0) {
+            notificationText = taskCount + " background task" + (taskCount == 1 ? "" : "s");
+        } else {
+            notificationText = sessionCount + " terminal session" + (sessionCount == 1 ? "" : "s")
+                + " ready";
+        }
 
 
         // Build the notification
         Notification.Builder builder =  NotificationUtils.geNotificationBuilder(this,
-            OminalConstants.OMINAL_APP_NOTIFICATION_CHANNEL_ID, priority,
-            OminalConstants.OMINAL_APP_NAME, notificationText, null,
+            OminalConstants.OMINAL_APP_NOTIFICATION_CHANNEL_ID, Notification.PRIORITY_LOW,
+            getString(R.string.application_name), notificationText, null,
             contentIntent, null, NotificationUtils.NOTIFICATION_MODE_SILENT);
         if (builder == null)  return null;
 
         // No need to show a timestamp:
         builder.setShowWhen(false);
+        builder.setOnlyAlertOnce(true);
+        builder.setCategory(Notification.CATEGORY_SERVICE);
+        builder.setVisibility(Notification.VISIBILITY_PRIVATE);
 
         // Set notification icon
         builder.setSmallIcon(R.drawable.ic_service_notification);
 
         // Set background color for small notification icon
-        builder.setColor(0xFF607D8B);
+        builder.setColor(0xFF22D3EE);
 
         // OminalSessions are always ongoing
         builder.setOngoing(true);
@@ -849,15 +850,6 @@ public final class OminalService extends Service implements AppShell.AppShellCli
         builder.addAction(android.R.drawable.ic_delete, res.getString(R.string.notification_action_exit),
             PendingIntent.getService(this, 0, exitIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
-
-
-        // Set Wakelock button actions
-        String newWakeAction = wakeLockHeld ? OMINAL_SERVICE.ACTION_WAKE_UNLOCK : OMINAL_SERVICE.ACTION_WAKE_LOCK;
-        Intent toggleWakeLockIntent = new Intent(this, OminalService.class).setAction(newWakeAction);
-        String actionTitle = res.getString(wakeLockHeld ? R.string.notification_action_wake_unlock : R.string.notification_action_wake_lock);
-        int actionIcon = wakeLockHeld ? android.R.drawable.ic_lock_idle_lock : android.R.drawable.ic_lock_lock;
-        builder.addAction(actionIcon, actionTitle, PendingIntent.getService(this, 0, toggleWakeLockIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
 
 
         return builder.build();

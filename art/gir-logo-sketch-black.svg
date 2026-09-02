@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <path id="arm" d="M128 128V54H194V120H154V82H180" />
+    <path id="arm-loose" d="M126 129C127 104 126 79 127 53C149 54 173 53 196 55C195 77 196 100 195 122C180 120 168 122 152 121C153 107 151 94 153 80C164 82 173 80 183 82" />
+  </defs>
+  <g fill="none" stroke="#050607" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke-width="9" opacity=".96">
+      <use href="#arm" />
+      <use href="#arm" transform="rotate(90 128 128)" />
+      <use href="#arm" transform="rotate(180 128 128)" />
+      <use href="#arm" transform="rotate(270 128 128)" />
+    </g>
+    <g stroke-width="3" opacity=".82">
+      <use href="#arm-loose" />
+      <use href="#arm-loose" transform="rotate(90 128 128)" />
+      <use href="#arm-loose" transform="rotate(180 128 128)" />
+      <use href="#arm-loose" transform="rotate(270 128 128)" />
+    </g>
+  </g>
+</svg>

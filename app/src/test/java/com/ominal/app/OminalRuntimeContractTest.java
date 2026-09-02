@@ -22,7 +22,7 @@ public class OminalRuntimeContractTest {
             false, true, true, "/root/workspace/.ominal/events.jsonl", "thread-1", false);
         JSONObject contract = new JSONObject(json);
 
-        assertEquals(6, contract.getInt("schemaVersion"));
+        assertEquals(7, contract.getInt("schemaVersion"));
         assertEquals("/root/workspace", contract.getJSONObject("session").getString("workspace"));
         assertEquals("native-x11-surface", contract.getJSONObject("display").getString("renderer"));
         assertEquals("absolute", contract.getJSONObject("display")
@@ -43,6 +43,11 @@ public class OminalRuntimeContractTest {
         assertFalse(contract.getJSONObject("android").getBoolean("enabled"));
         assertFalse(contract.getJSONObject("permissions").getBoolean("androidBridge"));
         assertTrue(contract.getJSONObject("permissions").getBoolean("uiAppearanceControl"));
+        assertTrue(contract.getJSONObject("permissions").getBoolean("monopotRuntimeAccess"));
+        assertFalse(contract.getJSONObject("permissions").getBoolean("sharedProfileContext"));
+        assertEquals("monopot/1", contract.getJSONObject("monopot").getString("protocol"));
+        assertFalse(contract.getJSONObject("monopot").getBoolean("networkService"));
+        assertFalse(contract.getJSONObject("profile").getBoolean("available"));
         assertEquals("GIR", contract.getJSONObject("ui").getString("publicName"));
         assertEquals("theme-list",
             contract.getJSONObject("ui").getString("appearanceControl"));
@@ -59,6 +64,27 @@ public class OminalRuntimeContractTest {
         assertEquals("attachments/spec.txt", contract.getJSONArray("attachments").getString(0));
         assertFalse(json.toLowerCase().contains("api_key"));
         assertFalse(json.toLowerCase().contains("access_token"));
+    }
+
+    @Test
+    public void sharesOneDeviceProfileAcrossRuntimeContracts() throws Exception {
+        OminalDisplayGeometry geometry = OminalDisplayGeometry.fromBounds(
+            1080, 2260, 1080, 2400, 440);
+        OminalUserProfile profile = new OminalUserProfile(
+            "Ada Lovelace", "Ada", "English", "Europe/London", "Analytical engines");
+        JSONObject contract = new JSONObject(OminalRuntimeContract.create(
+            "chat-3", "Profile task", "/root/workspace", Arrays.asList(), geometry,
+            "native-x11-surface", false, true, "ready_idle",
+            OminalHarnessRegistry.activeOrDefault("codex"), true,
+            "/root/workspace/.ominal/events.jsonl", "thread-3", false, profile,
+            "/root/workspace/.ominal/monopot/monopot.jsonl"));
+
+        assertTrue(contract.getJSONObject("profile").getBoolean("available"));
+        assertEquals("shared-across-runtimes",
+            contract.getJSONObject("profile").getString("scope"));
+        assertEquals("Ada", contract.getJSONObject("profile")
+            .getJSONObject("fields").getString("preferredName"));
+        assertTrue(contract.getJSONObject("permissions").getBoolean("sharedProfileContext"));
     }
 
     @Test

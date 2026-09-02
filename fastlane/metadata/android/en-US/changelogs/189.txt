@@ -1,0 +1,1 @@
+Unifies and enlarges GIR's white 02 mark across the app and privacy site. Adds a compact runtime-driven model selector, fixes interactive model discovery, and refreshes the privacy policy for GIR.

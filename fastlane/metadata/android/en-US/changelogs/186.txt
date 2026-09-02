@@ -1,0 +1,1 @@
+Introduces GIR's white Sketch identity across launcher, startup, setup, and active work. Refines cyan interaction accents, light and dark states, display activity, and desktop presentation.

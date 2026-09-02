@@ -1,21 +1,28 @@
 {
   "name": "GIR visual test assets",
-  "version": "prod-mirror-1",
-  "description": "Byte-for-byte copies of the GIR PNG resources referenced by the Android production code, plus browser-only motion review.",
+  "version": "prod-mirror-3-sketch-white",
+  "description": "Byte-for-byte copies of GIR's white Sketch production resources referenced by Android, plus archived motion experiments.",
   "assets": [
     {
-      "name": "GIR production base logo",
+      "name": "GIR black Sketch logo for light surfaces",
       "file": "gir-prod-logo.png",
       "source": "app/src/main/res/drawable-nodpi/gir_final_logo.png",
       "kind": "android-resource",
       "motion": "none"
     },
     {
-      "name": "GIR production white logo",
+      "name": "GIR white Sketch logo for dark surfaces",
       "file": "gir-prod-logo-white.png",
       "source": "app/src/main/res/drawable-nodpi/gir_final_logo_white.png",
       "kind": "android-resource",
-      "motion": "browser wrapper only"
+      "motion": "none"
+    },
+    {
+      "name": "GIR archived cyan Orbit experiment",
+      "file": "gir-prod-orbit.png",
+      "source": "docs/brand/experimental/gir-experiment-orbit-cut.svg",
+      "kind": "browser-reference",
+      "motion": "not used by Android"
     },
     {
       "name": "GIR launcher foreground",

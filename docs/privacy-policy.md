@@ -1,92 +1,90 @@
-# Monolith Privacy Policy
+# GIR Privacy Policy
 
-Effective: August 2, 2026
+Effective: August 27, 2026
 
-Monolith (`com.ominal`) is an independent Android project by snashoan. It
-provides a conversation interface for user-selected coding-agent harnesses and
-a Linux workspace.
+GIR (`com.ominal`) is independently developed and published by snashoan. It
+provides a conversation interface for user-selected intelligence runtimes, an
+app-private Linux workspace, and an in-app computer display.
 
 ## Data stored on the device
 
-Monolith may store the following inside its Android app-private storage:
+GIR may store the following inside Android app-private storage:
 
 - conversations, agent status, and execution receipts;
-- files copied into a conversation workspace through Android's system document picker;
-- Linux runtime files, installed command-line tools, and user-created workspace files;
-- interface preferences, including the theme configuration;
-- authentication material created by a selected agent harness during that harness's sign-in flow.
+- files imported into a conversation workspace through Android's system document picker;
+- Linux runtime files, installed tools, and user-created workspace files;
+- interface preferences, including theme configuration;
+- authentication material created by a selected runtime during its own sign-in flow.
 
-Monolith does not enable Android backup for this app-private data. Other apps
-cannot normally read it through Android's standard application sandbox.
+Android backup is disabled for GIR. Files deliberately exported through
+Android's system document interface are stored at the destination selected by
+the user and must be removed separately.
 
-## Connected agent providers
+## Connected intelligence providers
 
-Monolith does not operate an account system or a model backend. When the user
-selects and signs in to an external agent harness, that harness communicates
-directly with its provider. Prompts, conversation context, command output, and
-files the user asks the agent to inspect may be transmitted to that selected
-provider to produce a response. The provider's privacy policy and account terms
-govern its processing of that data.
+GIR does not operate an account system or model backend. A runtime selected by
+the user communicates directly with its provider. Prompts, conversation
+context, command output, and files the user asks the runtime to inspect may be
+transmitted to that provider to produce a response. The provider's privacy
+policy and account terms govern its processing.
 
-Provider passwords are not collected by Monolith. Authentication takes place
-through the provider's own browser or command-line sign-in flow. Resulting
-credentials remain in the app-private Linux environment unless the user or the
-provider's software exports them.
+GIR does not collect provider passwords. Authentication occurs through the
+provider's browser or command-line sign-in flow. Resulting credentials remain
+inside the app-private Linux environment unless the user or provider software
+exports them.
 
 ## Network and websites
 
-The app and its Linux environment may connect to the internet to:
+GIR and its Linux environment may access the internet to:
 
-- communicate with the agent provider selected by the user;
-- download or update user-selected command-line tools and Linux packages;
-- open websites requested by the user or agent in the browser.
+- communicate with the provider selected by the user;
+- download tools and package updates requested by the user;
+- open websites requested by the user or active runtime.
 
-Websites and external services can collect data under their own policies.
-Monolith does not control those services.
+Websites and external services process data under their own policies.
 
-## Permissions
+## Android permissions
 
-The Google Play build uses network access, network-state access, notifications,
+The Google Play build uses internet and network-state access, notifications,
 wake lock, vibration, and a foreground service for visible, user-started agent
-and shell sessions. It does not request all-files access, package-installation
-access, display-over-other-apps access, location, contacts, microphone, camera,
-or advertising identifiers.
+and shell sessions.
 
-Files are imported or exported through Android's system document interfaces,
-where the user chooses the file or destination.
+It does not request all-files access, package-installation access,
+display-over-other-apps access, location, contacts, microphone, camera, or
+advertising identifiers. File import and export use Android's system document
+interfaces, where the user chooses the file or destination.
 
-## Analytics, advertising, and developer servers
+## Analytics and advertising
 
-Monolith contains no advertising SDK, analytics SDK, or automatic developer
+GIR contains no advertising SDK, analytics SDK, or automatic developer
 telemetry. It does not automatically upload application logs or conversations
 to a server operated by snashoan.
 
 ## Retention and deletion
 
-Monolith does not create a Monolith account. Clearing the app's storage or
-uninstalling the app removes its app-private data. Files deliberately exported
-to shared storage must be removed separately by the user.
+GIR does not create a GIR account. Clearing GIR's app storage or uninstalling
+the app removes its app-private data. Files exported to shared storage must be
+removed separately.
 
-Deleting Monolith app data does not delete data already processed by an
-external agent provider. Provider-account and provider-data deletion requests
-must be made through that provider.
+Removing GIR data does not delete information already processed by an external
+provider. Provider-account and provider-data deletion requests must be made
+through that provider.
 
 ## Security
 
-Monolith relies on Android application isolation and stores its working data in
-app-private storage. Agent harnesses can execute commands and access files in
-the Monolith workspace, so users should only provide data they are comfortable
-sharing with the selected provider and should review sensitive or irreversible
-actions before approving them.
+GIR relies on Android application isolation and app-private storage. Selected
+runtimes can execute commands and access workspace files. Users should review
+sensitive or irreversible actions and only provide data they are comfortable
+sharing with the selected provider.
 
 ## Children
 
-Monolith is a developer tool and is not directed to children under 13.
+GIR is a general-purpose software tool and is not directed to children under 13.
 
 ## Changes
 
-This policy may be updated when the application's data handling changes. The
-effective date above identifies the current version.
+This policy may be updated when GIR's data handling changes. The effective date
+identifies the current version.
 
 ## Contact
 

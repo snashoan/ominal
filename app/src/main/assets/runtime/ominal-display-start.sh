@@ -14,6 +14,7 @@ DESKTOP_SESSION="${OMINAL_DESKTOP_SESSION:-xfce}"
 DISPLAY_DIR="$HOME/.ominal/display"
 DISPLAY_WORKDIR="${OMINAL_WORKDIR:-$HOME/workspace}"
 DISPLAY_READY_MARKER="$DISPLAY_DIR/ready"
+DISPLAY_HEARTBEAT="$DISPLAY_DIR/heartbeat"
 mkdir -p "$DISPLAY_DIR"
 
 case "$DESKTOP_SESSION" in
@@ -24,7 +25,7 @@ case "$DESKTOP_SESSION" in
     ;;
 esac
 
-host_session_version="ominal-display-host-v47-$DISPLAY_BACKEND-$DESKTOP_SESSION-$DISPLAY_GEOMETRY-$DISPLAY_DPI"
+host_session_version="ominal-display-host-v48-$DISPLAY_BACKEND-$DESKTOP_SESSION-$DISPLAY_GEOMETRY-$DISPLAY_DPI"
 host_session_marker="$DISPLAY_DIR/session-version"
 reset_host_session=0
 if [ "$(cat "$host_session_marker" 2>/dev/null || true)" != "$host_session_version" ]; then
@@ -49,6 +50,18 @@ elif [ "$DESKTOP_SESSION" = xfce ]; then
 elif [ "$DESKTOP_SESSION" = jwm ] && ! "$PREFIX/bin/pgrep" -x jwm >/dev/null 2>&1; then
   reset_host_session=1
 fi
+if [ "$reset_host_session" -eq 0 ]; then
+  heartbeat_value="$(cat "$DISPLAY_HEARTBEAT" 2>/dev/null || true)"
+  case "$heartbeat_value" in
+    ''|*[!0-9]*) reset_host_session=1 ;;
+    *)
+      heartbeat_age=$(( $(date +%s) - heartbeat_value ))
+      if [ "$heartbeat_age" -lt 0 ] || [ "$heartbeat_age" -gt 5 ]; then
+        reset_host_session=1
+      fi
+      ;;
+  esac
+fi
 if [ "$reset_host_session" -eq 0 ] && [ "$DISPLAY_BACKEND" != native ]; then
   for required_process in Xvfb x11vnc; do
     if ! "$PREFIX/bin/pgrep" -x "$required_process" >/dev/null 2>&1; then
@@ -63,7 +76,7 @@ if [ "$reset_host_session" -eq 0 ] && [ "$DISPLAY_BACKEND" != native ]; then
 fi
 
 if [ "$reset_host_session" -eq 1 ]; then
-  "$PREFIX/bin/rm" -f "$DISPLAY_READY_MARKER"
+  "$PREFIX/bin/rm" -f "$DISPLAY_READY_MARKER" "$DISPLAY_HEARTBEAT"
   display_tracer_pids="$("$PREFIX/bin/pgrep" -f "[p]root.*ominal-display-guest.sh" 2>/dev/null || true)"
   for pid in $display_tracer_pids; do
     "$PREFIX/bin/kill" -9 "$pid" 2>/dev/null || true
@@ -820,7 +833,9 @@ nohup "$PREFIX/bin/ominal-proot-run" /usr/bin/env \
 
     if [ "$desktop_ready" -eq 1 ]; then
       printf "%s" "$host_session_version" >"$DISPLAY_READY_MARKER"
+      printf '%s\n' "$(date +%s)" >"$DISPLAY_HEARTBEAT"
       while sleep 1; do
+        printf '%s\n' "$(date +%s)" >"$DISPLAY_HEARTBEAT"
         desktop_ready=1
         if [ "$DESKTOP_SESSION" = xfce ]; then
           for required_process in xfce4-session xfwm4 xfce4-panel xfdesktop; do
@@ -841,13 +856,13 @@ nohup "$PREFIX/bin/ominal-proot-run" /usr/bin/env \
           desktop_ready=0
         fi
         if [ "$desktop_ready" -eq 0 ]; then
-          "$PREFIX/bin/rm" -f "$DISPLAY_READY_MARKER"
+          "$PREFIX/bin/rm" -f "$DISPLAY_READY_MARKER" "$DISPLAY_HEARTBEAT"
           exit 1
         fi
       done
     fi
     sleep 0.1
   done
-  "$PREFIX/bin/rm" -f "$DISPLAY_READY_MARKER"
+  "$PREFIX/bin/rm" -f "$DISPLAY_READY_MARKER" "$DISPLAY_HEARTBEAT"
 ) >"$DISPLAY_DIR/health.log" 2>&1 &
 printf 'Ominal screen starting\n'

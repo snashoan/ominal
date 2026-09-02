@@ -1,8 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" role="img" aria-label="Monolith">
-  <g transform="translate(8.64 8.64) scale(.84)">
-    <path fill="none" stroke="#fff" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round"
-      d="M34 69.5C26.2 66.2 20.8 58.9 20.8 50.5C20.8 38.5 30.5 28.8 42.5 28.8C54.5 28.8 64.3 38.5 64.3 50.5C64.3 58.9 58.9 66.2 51 69.5"/>
-    <path fill="#fff"
-      d="M20.8 71.1H36.2V75.5H20.8ZM30.7 67.8H36.2V75.5H30.7ZM48.8 67.8H54.3V75.5H48.8ZM48.8 71.1H64.3V75.5H48.8ZM71.6 71.1H90.1V75.5H71.6Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">GIR</title>
+  <desc id="desc">Four-arm sketch spiral mark</desc>
+  <defs>
+    <path id="arm" d="M128 128V54H194V120H154V82H180" />
+    <path id="arm-loose" d="M126 129C127 104 126 79 127 53C149 54 173 53 196 55C195 77 196 100 195 122C180 120 168 122 152 121C153 107 151 94 153 80C164 82 173 80 183 82" />
+  </defs>
+  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke-width="9">
+      <use href="#arm" />
+      <use href="#arm" transform="rotate(90 128 128)" />
+      <use href="#arm" transform="rotate(180 128 128)" />
+      <use href="#arm" transform="rotate(270 128 128)" />
+    </g>
+    <g stroke-width="3">
+      <use href="#arm-loose" />
+      <use href="#arm-loose" transform="rotate(90 128 128)" />
+      <use href="#arm-loose" transform="rotate(180 128 128)" />
+      <use href="#arm-loose" transform="rotate(270 128 128)" />
+    </g>
   </g>
 </svg>

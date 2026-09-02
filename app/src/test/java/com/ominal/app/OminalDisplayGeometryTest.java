@@ -42,6 +42,18 @@ public class OminalDisplayGeometryTest {
     }
 
     @Test
+    public void fullscreenChatIgnoresHiddenStatusAndGestureBarsButKeepsCutoutSafety() {
+        assertEquals(8, OminalDisplayGeometry.fullscreenTopInset(8, 0));
+        assertEquals(24, OminalDisplayGeometry.fullscreenTopInset(8, 24));
+    }
+
+    @Test
+    public void keyboardInsetWinsWhileImeIsVisible() {
+        assertEquals(80, OminalDisplayGeometry.interactiveBottomInset(80, 44, 0, 0));
+        assertEquals(920, OminalDisplayGeometry.interactiveBottomInset(80, 44, 0, 920));
+    }
+
+    @Test
     public void appliesOnlySystemInsetNotAlreadyExcludedByDecor() {
         assertEquals(44, OminalDisplayGeometry.unconsumedSystemInset(44, 2340, 2340));
         assertEquals(0, OminalDisplayGeometry.unconsumedSystemInset(44, 2340, 2296));

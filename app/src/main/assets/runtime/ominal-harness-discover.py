@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -9,7 +10,7 @@ import tempfile
 
 
 SCHEMA_VERSION = 1
-DISCOVERY_REVISION = 4
+DISCOVERY_REVISION = 5
 MAX_EVIDENCE_CHARS = 65536
 SAFE_COMMAND = re.compile(r"^/[a-z][a-z0-9._-]{0,63}$")
 SAFE_FLAG = re.compile(r"^--[A-Za-z0-9][A-Za-z0-9-]{0,63}$")
@@ -17,6 +18,10 @@ SAFE_VALUE = re.compile(r"^[a-z][a-z0-9._-]{0,31}$")
 COMMAND_TYPES = {
     "command", "model", "effort", "agent", "account", "session", "plugin"
 }
+ANSI_SEQUENCE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
+MODEL_ROW = re.compile(
+    r"^([A-Za-z0-9][A-Za-z0-9._/+:-]{0,159})[ \t]{2,}(.{1,160})$"
+)
 
 
 def run(command, timeout=30):
@@ -33,6 +38,29 @@ def run(command, timeout=30):
         output = completed.stdout.strip()
         error = completed.stderr.strip()
         return completed.returncode, output, error
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return 70, "", str(error)
+
+
+def run_tty(command, timeout=30):
+    """Run an inspection command that insists on a terminal, without user input."""
+    script = shutil.which("script")
+    if not script:
+        return run(command, timeout)
+    environment = os.environ.copy()
+    environment.update({"TERM": "dumb", "NO_COLOR": "1"})
+    try:
+        completed = subprocess.run(
+            [script, "-q", "-e", "-c", shlex.join(command), "/dev/null"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+            check=False,
+            env=environment,
+        )
+        return completed.returncode, completed.stdout.strip(), completed.stderr.strip()
     except (OSError, subprocess.TimeoutExpired) as error:
         return 70, "", str(error)
 
@@ -68,6 +96,37 @@ def safe_text(value, limit):
         and 0 < len(value.strip()) <= limit
         and not any(ord(character) < 32 for character in value)
     )
+
+
+def clean_terminal_output(value):
+    value = ANSI_SEQUENCE.sub("", value.replace("\r", "\n"))
+    return "".join(
+        character for character in value
+        if character in "\n\t" or ord(character) >= 32
+    )
+
+
+def parse_model_evidence(value):
+    rows = []
+    seen = set()
+    for raw_line in clean_terminal_output(value).splitlines():
+        line = raw_line.strip()
+        match = MODEL_ROW.fullmatch(line)
+        if not match:
+            continue
+        model_id = match.group(1).strip()
+        label = match.group(2).strip()
+        if (
+            model_id in seen
+            or not safe_text(model_id, 160)
+            or not safe_text(label, 160)
+        ):
+            continue
+        rows.append((model_id, label))
+        seen.add(model_id)
+        if len(rows) >= 128:
+            break
+    return rows
 
 
 def verified_flag(help_text, flag):
@@ -171,12 +230,9 @@ def validate_candidate(candidate, harness, version, help_text, model_evidence):
 
     models = []
     seen_models = set()
-    for line in model_evidence.splitlines():
-        model_id = line.strip()
-        if not safe_text(model_id, 160) or any(character.isspace() for character in model_id):
-            continue
+    for model_id, evidence_label in parse_model_evidence(model_evidence):
         model = candidate_model_map.get(model_id, {})
-        label = model.get("label", model_id).strip()
+        label = model.get("label", evidence_label).strip()
         if (
             not safe_text(label, 160)
             or model_id in seen_models
@@ -341,8 +397,8 @@ def main():
     models = ""
     agents = ""
     if harness == "antigravity":
-        _, models, _ = run([binary, "models"], timeout=60)
-        _, agents, _ = run([binary, "agent"], timeout=60)
+        _, models, _ = run_tty([binary, "models"], timeout=60)
+        _, agents, _ = run_tty([binary, "agent"], timeout=60)
 
     prompt = setup_prompt(harness, version, help_text, models, agents)
     candidate = {}

@@ -2,8 +2,8 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      xmlns:xlink="http://www.w3.org/1999/xlink"
      viewBox="0 0 108 108">
-  <image x="10" y="10" width="88" height="88"
+  <image x="8" y="8" width="92" height="92"
          xlink:href="../app/src/main/res/drawable-nodpi/gir_final_logo.png" />
-  <image x="12" y="12" width="84" height="84"
+  <image x="10" y="10" width="88" height="88"
          xlink:href="../app/src/main/res/drawable-nodpi/gir_final_logo_white.png" />
 </svg>

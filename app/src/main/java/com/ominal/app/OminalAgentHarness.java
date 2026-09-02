@@ -14,7 +14,8 @@ public final class OminalAgentHarness {
     public enum AuthMode {
         BROWSER,
         DEVICE_CODE,
-        API_KEY
+        API_KEY,
+        RUNTIME
     }
 
     private final String mId;

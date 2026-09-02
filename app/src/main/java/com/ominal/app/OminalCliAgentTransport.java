@@ -63,8 +63,11 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
 
     public OminalCliAgentTransport(@NonNull Context context, @NonNull String hostChatRoot,
                                    @NonNull String harnessId) {
+        OminalHarnessManifest manifest = OminalHarnessManifest.load(harnessId);
+        boolean runtimeAdapter = manifest != null && !manifest.adapterCommand.isEmpty();
         if (!OminalHarnessTerminal.CLAUDE_CODE_ID.equals(harnessId)
-            && !OminalHarnessTerminal.ANTIGRAVITY_ID.equals(harnessId)) {
+            && !OminalHarnessTerminal.ANTIGRAVITY_ID.equals(harnessId)
+            && !runtimeAdapter) {
             throw new IllegalArgumentException("Unsupported CLI harness: " + harnessId);
         }
         mContext = context.getApplicationContext();
@@ -81,7 +84,9 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
     @NonNull
     @Override
     public String transportId() {
-        return "cli-stdio";
+        OminalHarnessManifest manifest = OminalHarnessManifest.load(mHarnessId);
+        return manifest == null || manifest.transportId.isEmpty()
+            ? "cli-stdio" : manifest.transportId;
     }
 
     @Override
@@ -179,6 +184,7 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
     }
 
     private void consumeEvent(ActiveTurn turn, JSONObject event) {
+        if (consumeMonopotEvent(turn, event)) return;
         String type = eventType(event);
         JSONObject body = eventBody(event, type);
         JSONObject conversation = event.optJSONObject("conversation");
@@ -255,6 +261,23 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
                 stringField(body, "response"), turn.response);
             turn.listener.onComplete(result, turn.usage);
         }
+    }
+
+    private boolean consumeMonopotEvent(ActiveTurn turn, JSONObject event) {
+        if (!MonopotEvent.PROTOCOL.equals(event.optString("protocol", ""))) return false;
+        String channel = event.optString("channel", "");
+        if (!MonopotEvent.isChannel(channel)) return true;
+        String state = event.optString("state", "");
+        if (MonopotEvent.CHANNEL_RESULT.equals(channel)) {
+            if ("completed".equals(state) || "done".equals(state)) state = "complete";
+            else if ("failed".equals(state)) state = "error";
+            if (!"complete".equals(state) && !"cancelled".equals(state)
+                && !"error".equals(state)) state = "complete";
+            turn.terminalEventReceived = true;
+        }
+        turn.listener.onEvent(new MonopotEvent.Draft(channel, state,
+            event.optString("summary", ""), event.optJSONObject("detail")));
+        return true;
     }
 
     private static void updateTrace(ActiveTurn turn, String type, String stepType,

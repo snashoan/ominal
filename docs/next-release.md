@@ -1,6 +1,43 @@
 # Next Release
 
-## v150-dev display checkpoint
+## v191 release candidate
+
+The v191 target consolidates the developer-alpha work since v150 into one
+verified release candidate:
+
+- History, Chat, and Computer form a spatial three-surface flow. Dragging tracks
+  the finger directly and settles with distance-aware 120-220 ms easing.
+- Each conversation keeps its own persistent harness process, workspace, event
+  log, model choice, queued turns, media, and execution receipts.
+- Codex and Antigravity remain first-class native harness integrations.
+- Validated runtime manifests can add provider-neutral Monopot stdio adapters
+  without changing Android source or replacing harness-native behavior.
+- A canonical provider-neutral profile stays on device and is projected into
+  every selected Linux runtime as shared context.
+- Chat renders Markdown, LaTeX, repaired Unicode, and syntax-highlighted fenced
+  code while keeping raw event and execution records verifiable.
+- Agent work survives activity backgrounding and surfaces completion or input
+  requests through notifications.
+- The runtime installer detects the device architecture and refuses an
+  incompatible bundled runtime instead of attempting a corrupt setup.
+
+Verified so far on Raphael (`Redmi K20 Pro`): unit tests, debug assembly,
+installation, warm relaunch, History-to-Chat navigation, Chat-to-Computer
+navigation, Settings/Profile visibility, and the private profile projection.
+
+Release gates completed on 2026-09-02: unit tests, debug and release lint,
+runtime contract checks, Play permission validation, target API 36 validation,
+signed bundled AAB generation, bundletool validation, signature verification,
+and English release notes.
+
+Publication artifact: `release/gir-0.121.22-v191-bundled.aab`
+
+SHA-256: `a19361ca86c6fea2c955f601d63694e7d34d820440477a450c830c8cada45e09`
+
+Device delivery and Play Console submission are operational steps outside the
+release build gate.
+
+## Archived v150-dev display checkpoint
 
 Verified on Raphael (`Redmi K20 Pro`, Android) on 2026-07-28:
 

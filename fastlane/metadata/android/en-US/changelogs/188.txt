@@ -1,0 +1,1 @@
+Replaces the account sheet with a full Settings destination and standard back navigation. Adds a consistent Lucide icon system for runtime, account, appearance, experimental access, terminal, and privacy controls.

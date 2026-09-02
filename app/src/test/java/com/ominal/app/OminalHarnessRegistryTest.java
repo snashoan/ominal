@@ -11,16 +11,15 @@ public class OminalHarnessRegistryTest {
     @Test
     public void registeredHarnessesAreSelectable() {
         assertTrue(OminalHarnessRegistry.isSelectable("codex"));
-        assertTrue(OminalHarnessRegistry.isSelectable("claude-code"));
         assertTrue(OminalHarnessRegistry.isSelectable("antigravity"));
+        assertFalse(OminalHarnessRegistry.isSelectable("claude-code"));
         assertFalse(OminalHarnessRegistry.isSelectable("missing"));
     }
 
     @Test
     public void validSelectionIsPreservedAndInvalidSelectionFallsBackToCodex() {
         assertEquals("codex", OminalHarnessRegistry.normalizeSelectedId(null));
-        assertEquals("claude-code",
-            OminalHarnessRegistry.normalizeSelectedId("claude-code"));
+        assertEquals("codex", OminalHarnessRegistry.normalizeSelectedId("claude-code"));
         assertEquals("antigravity",
             OminalHarnessRegistry.normalizeSelectedId("antigravity"));
         assertEquals("codex", OminalHarnessRegistry.normalizeSelectedId("missing"));

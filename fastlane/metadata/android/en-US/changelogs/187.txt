@@ -1,0 +1,1 @@
+Consolidates runtime, account, appearance, terminal, and privacy controls under a single neutral Settings menu. Keeps account state inside Settings instead of exposing it in the chat drawer.

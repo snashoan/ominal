@@ -3,7 +3,7 @@
 
     <style name="OminalAlertDialogStyle" parent="@android:style/Theme.Material.Light.Dialog.Alert">
         <!-- Seen in buttons on alert dialog: -->
-        <item name="android:colorAccent">#212121</item>
+        <item name="android:colorAccent">#0891B2</item>
     </style>
 
     <style name="OminalActivity.Drawer.ButtonBarStyle.Light" parent="@style/Widget.MaterialComponents.Button.TextButton">

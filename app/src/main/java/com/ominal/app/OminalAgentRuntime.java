@@ -295,6 +295,25 @@ public final class OminalAgentRuntime {
         return true;
     }
 
+    public boolean steer(@NonNull String sessionId, @NonNull String message) {
+        String guidance = message.trim();
+        if (guidance.isEmpty()) return false;
+        OminalAgentTransport transport;
+        synchronized (this) {
+            Snapshot active = mSnapshots.get(sessionId);
+            transport = mActiveTransports.get(sessionId);
+            if (active == null || !active.isRunning() || transport == null) return false;
+        }
+        if (!transport.steer(guidance)) return false;
+        try {
+            publishEvent(sessionId, new MonopotEvent.Draft(
+                MonopotEvent.CHANNEL_OPERATION, "started", "Applying your update",
+                new JSONObject().put("operation", "steer")));
+        } catch (JSONException ignored) {
+        }
+        return true;
+    }
+
     public synchronized boolean acknowledge(long revision) {
         String acknowledgedSession = null;
         for (Map.Entry<String, Snapshot> entry : mSnapshots.entrySet()) {
@@ -404,6 +423,8 @@ public final class OminalAgentRuntime {
                 System.currentTimeMillis());
             try {
                 MonopotEventLog.append(chatDirectory(sessionId), event);
+                MonopotEventLog.append(
+                    new File(workspaceDirectory(sessionId), ".ominal/monopot"), event);
             } catch (IOException e) {
                 Logger.logStackTraceWithMessage(LOG_TAG,
                     "Could not append Monopot event", e);
@@ -489,6 +510,11 @@ public final class OminalAgentRuntime {
                     updateRunning(event.chatId, null, event.summary, null, null, false);
                 break;
             case MonopotEvent.CHANNEL_INPUT_REQUEST:
+                if (mObservers.isEmpty()) {
+                    String inputDetail = event.summary.isEmpty()
+                        ? "Open GIR to continue the task." : event.summary;
+                    OminalAgentNotification.post(mContext, event.chatId, true, inputDetail);
+                }
             case MonopotEvent.CHANNEL_ARTIFACT:
                 if (!event.summary.isEmpty())
                     updateRunning(event.chatId, null, event.summary, null, null, false);
@@ -561,6 +587,13 @@ public final class OminalAgentRuntime {
         }
         setKeepAlive(false);
         notifyObservers(finished);
+        if (mObservers.isEmpty() && !finished.isCancelled()) {
+            boolean attention = finished.isError();
+            String detail = attention
+                ? "Open GIR to review the interrupted task."
+                : harnessName(finished.harnessId) + " finished in the background.";
+            OminalAgentNotification.post(mContext, sessionId, attention, detail);
+        }
         appendReceiptAsync(sessionId, stream, finished);
     }
 
@@ -769,8 +802,15 @@ public final class OminalAgentRuntime {
             }
             return transport;
         }
-        if (OminalHarnessTerminal.CLAUDE_CODE_ID.equals(harnessId)) {
-            return new OminalCliAgentTransport(mContext, mHostChatRoot, harnessId);
+        OminalHarnessManifest manifest = OminalHarnessManifest.load(harnessId);
+        if (manifest != null && !manifest.adapterCommand.isEmpty()) {
+            String key = sessionId + "\n" + harnessId;
+            OminalAgentTransport transport = mSessionTransports.get(key);
+            if (transport == null) {
+                transport = new OminalCliAgentTransport(mContext, mHostChatRoot, harnessId);
+                mSessionTransports.put(key, transport);
+            }
+            return transport;
         }
         return null;
     }
