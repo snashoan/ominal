@@ -1,6 +1,6 @@
 # Monopot runtime protocol
 
-Monopot is the provider-neutral event canvas between Monolith chat and a runtime
+Monopot is the provider-neutral event canvas between GIR chat and a runtime
 adapter. Android owns chat identity, ordering, rendering, and user consent. The
 runtime owns provider integration and may implement it with a CLI, a local
 process, a browser, or another transport.
@@ -20,17 +20,20 @@ Before each turn, an adapter can read these device-resident inputs:
   Monopot contract.
 - `/root/.ominal/profile.json`: the provider-neutral user profile. This is the
   canonical on-device copy made available consistently to selected runtimes.
+- `./.ominal/chats/archive.jsonl`: a protected snapshot of other non-incognito
+  conversations. Use `gir-chats list`, `gir-chats search`, or `gir-chats show`
+  to read it without loading unrelated history into every turn.
 - The prompt and developer-instruction files passed on the adapter command line.
 
-GIR does not add tools to a harness, replace its authentication flow, or alter
-its model behavior. An adapter may pass the supplied profile to its provider as
+GIR does not replace a harness's authentication flow or alter its model behavior.
+An adapter may pass the supplied profile to its provider as
 normal model context; GIR itself does not upload or synchronize the profile.
 
 ## Envelope
 
 Each JSONL event uses `protocol: "monopot/1"` and contains:
 
-- `chatId`: stable Monolith conversation identity.
+- `chatId`: stable GIR conversation identity.
 - `turnId`: correlation identity for one user turn.
 - `sequence`: monotonically increasing ordering within the turn.
 - `harnessId`: selected intelligence harness.
@@ -45,7 +48,7 @@ when it is absent.
 
 A user can install a runtime adapter named `web.chatgpt`. It receives the active
 chat turn, drives the user's authenticated web session, and emits normalized
-`message`, `operation`, `artifact`, `usage`, and `result` events. Monolith sees
+`message`, `operation`, `artifact`, `usage`, and `result` events. GIR sees
 only Monopot events:
 
 ```json
@@ -70,9 +73,16 @@ Android UI contract.
 
 ## Installable adapters
 
-A runtime can expose a custom harness by writing a validated manifest to
-`/root/.ominal/harness-capabilities/<harness>.json`. The host-visible projection
-lives under `$HOME/.ominal/harness-capabilities/`.
+A runtime exposes a custom harness by registering a self-contained local package:
+
+```text
+gir-harness register ./manifest.json --icon ./icon.webp
+```
+
+The canonical package is stored at
+`/root/.ominal/harness-registry/<harness>/manifest.json`. GIR observes this
+directory and makes a valid adapter available without an app restart. Legacy
+manifests under `/root/.ominal/harness-capabilities/` remain supported.
 
 ```json
 {
@@ -99,6 +109,23 @@ lives under `$HOME/.ominal/harness-capabilities/`.
   "commands": []
 }
 ```
+
+Optional PNG or WebP artwork can be declared without remote loading:
+
+```json
+{
+  "presentation": {
+    "icon": {
+      "file": "icon.webp",
+      "monochrome": "icon-monochrome.webp",
+      "sha256": "<sha256-of-icon.webp>"
+    }
+  }
+}
+```
+
+Artwork is filename constrained, size bounded, dimension checked, and decoded
+as a bitmap. Missing or invalid artwork falls back to GIR's neutral runtime icon.
 
 `adapterCommand` is a single executable basename resolved inside the Linux
 runtime. Shell fragments and embedded arguments are rejected. For a turn, GIR

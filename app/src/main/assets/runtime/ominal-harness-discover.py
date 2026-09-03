@@ -309,7 +309,7 @@ def setup_prompt(harness, version, help_text, models, agents):
         "models": models[:MAX_EVIDENCE_CHARS],
         "agents": agents[:MAX_EVIDENCE_CHARS],
     }
-    return """You are configuring your own chat integration inside Monolith.
+    return """You are configuring your own chat integration inside GIR.
 
 Using only the attached CLI inspection evidence, return one JSON object with:
 - schemaVersion: 1

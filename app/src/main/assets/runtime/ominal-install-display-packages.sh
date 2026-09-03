@@ -11,6 +11,8 @@ THEME_HELPER="$PREFIX/bin/ominal-theme-guest"
 DEVICE_HELPER="$PREFIX/bin/ominal-device-guest"
 PACKAGE_HELPER="$PREFIX/bin/ominal-package-guest"
 HARNESS_HOOK_HELPER="$PREFIX/bin/ominal-harness-hook"
+HARNESS_REGISTRY_HELPER="$PREFIX/bin/gir-harness"
+CHAT_ARCHIVE_HELPER="$PREFIX/bin/gir-chats"
 EXECUTABLE_HELPER="$PREFIX/bin/ominal-open-executable-guest"
 UPGRADE_MARKER="$ROOTFS/var/lib/ominal/base-upgrade-noble-v8"
 
@@ -133,6 +135,10 @@ if [ ! -f "$EXECUTABLE_HELPER" ]; then
     printf '%s\n' 'GIR executable approval is missing.' >&2
     exit 69
 fi
+if [ ! -f "$HARNESS_REGISTRY_HELPER" ] || [ ! -f "$CHAT_ARCHIVE_HELPER" ]; then
+    printf '%s\n' 'GIR runtime catalog controls are missing.' >&2
+    exit 69
+fi
 mkdir -p "$ROOTFS/usr/local/bin"
 /system/bin/cp "$SCREEN_HELPER" "$ROOTFS/usr/local/bin/ominal-screen"
 /system/bin/cp "$EVENT_HELPER" "$ROOTFS/usr/local/bin/ominal-event"
@@ -140,6 +146,8 @@ mkdir -p "$ROOTFS/usr/local/bin"
 /system/bin/cp "$DEVICE_HELPER" "$ROOTFS/usr/local/bin/ominal-device"
 /system/bin/cp "$PACKAGE_HELPER" "$ROOTFS/usr/local/bin/ominal-install"
 /system/bin/cp "$HARNESS_HOOK_HELPER" "$ROOTFS/usr/local/bin/ominal-harness-hook"
+/system/bin/cp "$HARNESS_REGISTRY_HELPER" "$ROOTFS/usr/local/bin/gir-harness"
+/system/bin/cp "$CHAT_ARCHIVE_HELPER" "$ROOTFS/usr/local/bin/gir-chats"
 /system/bin/cp "$EXECUTABLE_HELPER" "$ROOTFS/usr/local/bin/ominal-open-executable"
 /system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-screen"
 /system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-event"
@@ -147,5 +155,7 @@ mkdir -p "$ROOTFS/usr/local/bin"
 /system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-device"
 /system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-install"
 /system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-harness-hook"
+/system/bin/chmod 755 "$ROOTFS/usr/local/bin/gir-harness"
+/system/bin/chmod 755 "$ROOTFS/usr/local/bin/gir-chats"
 /system/bin/chmod 755 "$ROOTFS/usr/local/bin/ominal-open-executable"
-"$RUNNER" /bin/bash -lc 'command -v ominal-screen >/dev/null; command -v ominal-event >/dev/null; command -v ominal-theme >/dev/null; command -v ominal-device >/dev/null; command -v ominal-install >/dev/null; command -v ominal-harness-hook >/dev/null; command -v ominal-open-executable >/dev/null; ominal-screen --help >/dev/null'
+"$RUNNER" /bin/bash -lc 'command -v ominal-screen >/dev/null; command -v ominal-event >/dev/null; command -v ominal-theme >/dev/null; command -v ominal-device >/dev/null; command -v ominal-install >/dev/null; command -v ominal-harness-hook >/dev/null; command -v gir-harness >/dev/null; command -v gir-chats >/dev/null; command -v ominal-open-executable >/dev/null; ominal-screen --help >/dev/null'

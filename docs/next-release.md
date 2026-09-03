@@ -1,8 +1,8 @@
 # Next Release
 
-## v191 release candidate
+## v192 release candidate
 
-The v191 target consolidates the developer-alpha work since v150 into one
+The v192 target consolidates the developer-alpha work since v150 into one
 verified release candidate:
 
 - History, Chat, and Computer form a spatial three-surface flow. Dragging tracks
@@ -12,12 +12,21 @@ verified release candidate:
 - Codex and Antigravity remain first-class native harness integrations.
 - Validated runtime manifests can add provider-neutral Monopot stdio adapters
   without changing Android source or replacing harness-native behavior.
+- Harness packages can register themselves live through `gir-harness`, including
+  bounded local artwork, without an app restart or a hosted registry.
+- Every runtime identifies the public app as GIR while existing Ominal package
+  names, private paths, and manifests remain compatible.
+- Harnesses can query protected snapshots of prior non-incognito conversations
+  through `gir-chats`; source conversations remain read-only and the active chat
+  is never duplicated into its own context.
 - A canonical provider-neutral profile stays on device and is projected into
   every selected Linux runtime as shared context.
 - Chat renders Markdown, LaTeX, repaired Unicode, and syntax-highlighted fenced
   code while keeping raw event and execution records verifiable.
 - Agent work survives activity backgrounding and surfaces completion or input
   requests through notifications.
+- Silent harness waits emit an honest elapsed-time heartbeat, and GIR-owned text
+  entry and confirmation flows share one native interaction sheet.
 - The runtime installer detects the device architecture and refuses an
   incompatible bundled runtime instead of attempting a corrupt setup.
 
@@ -25,14 +34,14 @@ Verified so far on Raphael (`Redmi K20 Pro`): unit tests, debug assembly,
 installation, warm relaunch, History-to-Chat navigation, Chat-to-Computer
 navigation, Settings/Profile visibility, and the private profile projection.
 
-Release gates completed on 2026-09-02: unit tests, debug and release lint,
+Release gates completed on 2026-09-03: unit tests, debug and release lint,
 runtime contract checks, Play permission validation, target API 36 validation,
 signed bundled AAB generation, bundletool validation, signature verification,
 and English release notes.
 
-Publication artifact: `release/gir-0.121.22-v191-bundled.aab`
+Publication artifact: `release/gir-0.121.23-v192-bundled.aab`
 
-SHA-256: `a19361ca86c6fea2c955f601d63694e7d34d820440477a450c830c8cada45e09`
+SHA-256: `c22f94a8989599eb60fd858656a33fa9d6d57e06fe7dcb93c0fd04af97caf7a0`
 
 Device delivery and Play Console submission are operational steps outside the
 release build gate.

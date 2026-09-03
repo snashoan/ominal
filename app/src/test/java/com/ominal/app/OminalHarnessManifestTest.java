@@ -90,6 +90,28 @@ public class OminalHarnessManifestTest {
         assertEquals("custom", parsed.providerId);
     }
 
+    @Test
+    public void acceptsBoundedLocalPresentationArtwork() throws Exception {
+        String checksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        JSONObject manifest = validManifest().put("presentation", new JSONObject()
+            .put("icon", new JSONObject()
+                .put("file", "runtime.webp")
+                .put("monochrome", "runtime-mono.png")
+                .put("sha256", checksum)));
+
+        OminalHarnessManifest parsed = OminalHarnessManifest.fromJson(manifest);
+
+        assertEquals("runtime.webp", parsed.iconFileName);
+        assertEquals("runtime-mono.png", parsed.monochromeIconFileName);
+        assertEquals(checksum, parsed.iconSha256);
+    }
+
+    @Test(expected = JSONException.class)
+    public void rejectsIconPathTraversal() throws Exception {
+        OminalHarnessManifest.fromJson(validManifest().put("presentation", new JSONObject()
+            .put("icon", new JSONObject().put("file", "../icon.png"))));
+    }
+
     @Test(expected = JSONException.class)
     public void rejectsAdapterCommandWithShellSyntax() throws Exception {
         JSONObject manifest = validManifest();

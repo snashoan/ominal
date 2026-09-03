@@ -26,7 +26,7 @@ test -z "$(dpkg --audit)"
 test "$(node --version)" = "v24.18.0"
 test "$(command -v codex)" = "/root/.ominal/npm/bin/codex"
 codex --version | grep -E "^codex-cli [0-9]+\.[0-9]+\.[0-9]+" >/dev/null
-for command_name in Xvfb x11vnc websockify jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes dbus-run-session xdotool wmctrl scrot xdpyinfo xrdb xclip file yad xdg-mime update-desktop-database ominal-screen ominal-event ominal-theme ominal-device ominal-install ominal-open-executable; do command -v "$command_name" >/dev/null; done
+for command_name in Xvfb x11vnc websockify jwm xterm pcmanfm xfwrite firefox xfce4-settings-manager xfce4-session xfwm4 xfce4-panel xfdesktop thunar xfce4-terminal mousepad devilspie2 unclutter-xfixes dbus-run-session xdotool wmctrl scrot xdpyinfo xrdb xclip file yad xdg-mime update-desktop-database ominal-screen ominal-event ominal-theme ominal-device ominal-install gir-harness gir-chats ominal-open-executable; do command -v "$command_name" >/dev/null; done
 test -d /usr/share/novnc || test -d /usr/share/noVNC
 test -f /var/lib/ominal/base-upgrade-noble-v8
 for package_name in desktop-file-utils file libnss3 libnspr4 librsvg2-common shared-mime-info xdg-utils yad; do

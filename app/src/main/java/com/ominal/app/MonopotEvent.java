@@ -6,7 +6,7 @@ import androidx.annotation.Nullable;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-/** Provider-neutral event envelope used to project harness activity onto Monolith surfaces. */
+/** Provider-neutral event envelope used to project harness activity onto GIR surfaces. */
 public final class MonopotEvent {
     public static final String PROTOCOL = "monopot/1";
     public static final String CHANNEL_STATE = "state";

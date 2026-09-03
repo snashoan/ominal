@@ -22,7 +22,9 @@ public class OminalRuntimeContractTest {
             false, true, true, "/root/workspace/.ominal/events.jsonl", "thread-1", false);
         JSONObject contract = new JSONObject(json);
 
-        assertEquals(7, contract.getInt("schemaVersion"));
+        assertEquals(8, contract.getInt("schemaVersion"));
+        assertEquals("GIR", contract.getJSONObject("app").getString("name"));
+        assertEquals("Ominal", contract.getJSONObject("app").getString("internalName"));
         assertEquals("/root/workspace", contract.getJSONObject("session").getString("workspace"));
         assertEquals("native-x11-surface", contract.getJSONObject("display").getString("renderer"));
         assertEquals("absolute", contract.getJSONObject("display")
@@ -47,6 +49,12 @@ public class OminalRuntimeContractTest {
         assertFalse(contract.getJSONObject("permissions").getBoolean("sharedProfileContext"));
         assertEquals("monopot/1", contract.getJSONObject("monopot").getString("protocol"));
         assertFalse(contract.getJSONObject("monopot").getBoolean("networkService"));
+        assertEquals("/root/.ominal/harness-registry",
+            contract.getJSONObject("monopot").getString("harnessRegistryDirectory"));
+        assertEquals("read-only-snapshot",
+            contract.getJSONObject("conversationArchive").getString("access"));
+        assertTrue(contract.getJSONObject("permissions")
+            .getBoolean("conversationArchiveRead"));
         assertFalse(contract.getJSONObject("profile").getBoolean("available"));
         assertEquals("GIR", contract.getJSONObject("ui").getString("publicName"));
         assertEquals("theme-list",

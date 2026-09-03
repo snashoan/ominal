@@ -8,7 +8,7 @@ import java.util.List;
 
 /** Builds the non-secret runtime context exposed to the active coding agent. */
 public final class OminalRuntimeContract {
-    public static final int SCHEMA_VERSION = 7;
+    public static final int SCHEMA_VERSION = 8;
 
     private OminalRuntimeContract() {}
 
@@ -62,7 +62,8 @@ public final class OminalRuntimeContract {
         root.put("schemaVersion", SCHEMA_VERSION);
 
         JSONObject app = new JSONObject();
-        app.put("name", "Ominal");
+        app.put("name", "GIR");
+        app.put("internalName", "Ominal");
         app.put("package", "com.ominal");
         app.put("frontend", "chat");
         root.put("app", app);
@@ -115,9 +116,19 @@ public final class OminalRuntimeContract {
         monopot.put("transport", "local-jsonl-stdio");
         monopot.put("networkService", false);
         monopot.put("eventLog", monopotEventLogPath == null ? "" : monopotEventLogPath);
-        monopot.put("adapterManifestDirectory", "/root/.ominal/harness-capabilities");
+        monopot.put("harnessRegistryDirectory", "/root/.ominal/harness-registry");
+        monopot.put("legacyManifestDirectory", "/root/.ominal/harness-capabilities");
+        monopot.put("registrationCommand", "gir-harness register");
         monopot.put("adapterOutput", "jsonl");
         root.put("monopot", monopot);
+
+        root.put("conversationArchive", new JSONObject()
+            .put("path", workspacePath + "/.ominal/chats/archive.jsonl")
+            .put("command", "gir-chats")
+            .put("access", "read-only-snapshot")
+            .put("currentChatExcluded", true)
+            .put("incognitoExcluded", true)
+            .put("sourceMutable", false));
 
         root.put("profile", profile.toJson());
 
@@ -127,7 +138,7 @@ public final class OminalRuntimeContract {
             .put("purpose", "Inspect and control the shared Linux display"));
         tools.put(new JSONObject()
             .put("name", "ominal-event")
-            .put("purpose", "Send structured UI events to the Ominal app"));
+            .put("purpose", "Send structured UI events to GIR"));
         tools.put(new JSONObject()
             .put("name", "ominal-theme")
             .put("purpose", "Create, edit, activate, and inspect named custom UI themes"));
@@ -135,6 +146,12 @@ public final class OminalRuntimeContract {
             .put("name", "ominal-device")
             .put("purpose", "Open selected Android apps, links, and Settings")
             .put("available", loloModeEnabled));
+        tools.put(new JSONObject()
+            .put("name", "gir-chats")
+            .put("purpose", "Search or read protected snapshots of other conversations"));
+        tools.put(new JSONObject()
+            .put("name", "gir-harness")
+            .put("purpose", "Register a validated local Monopot harness package"));
         root.put("tools", tools);
 
         root.put("ui", new JSONObject()
@@ -169,6 +186,7 @@ public final class OminalRuntimeContract {
             .put("displayControl", true)
             .put("uiAppearanceControl", true)
             .put("sharedProfileContext", !profile.isEmpty())
+            .put("conversationArchiveRead", true)
             .put("monopotRuntimeAccess", true)
             .put("requestUserInput", true)
             .put("androidBridge", loloModeEnabled));

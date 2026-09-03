@@ -13,6 +13,7 @@ CODEX_HOME="${OMINAL_CODEX_HOME:-$HOME/.ominal/codex}"
 CLAUDE_HOME="${OMINAL_CLAUDE_HOME:-$HOME/.ominal/harnesses/claude}"
 ANTIGRAVITY_HOME="${OMINAL_ANTIGRAVITY_HOME:-$HOME/.ominal/harnesses/antigravity}"
 CAPABILITIES_HOME="${OMINAL_CAPABILITIES_HOME:-$HOME/.ominal/harness-capabilities}"
+HARNESS_REGISTRY_HOME="${GIR_HARNESS_REGISTRY_HOME:-$HOME/.ominal/harness-registry}"
 UI_THEME_HOME="${OMINAL_UI_THEME_HOME:-$HOME/.ominal/themes}"
 USER_PROFILE_FILE="${OMINAL_USER_PROFILE_FILE:-$HOME/.ominal/profile.json}"
 PROOT_ID="${OMINAL_PROOT_ID:-0:0}"
@@ -31,7 +32,7 @@ export PROOT_LOADER
 
 case "$PROOT_ID" in
     *[!0-9:]*|*:*:*|:|:*|*:)
-        printf 'Invalid Monolith Linux identity: %s\n' "$PROOT_ID" >&2
+        printf 'Invalid GIR Linux identity: %s\n' "$PROOT_ID" >&2
         exit 64
         ;;
     *:*) ;;
@@ -47,8 +48,10 @@ esac
 mkdir -p "$RUNTIME_ROOT/tmp" "$SHM_DIR" "$BRIDGE_DIR" "$ROOTFS/.l2s" "$WORKSPACE" \
     "$ROOTFS/root/workspace" "$ROOTFS/root/.codex" "$ROOTFS/root/.claude" \
     "$ROOTFS/root/.gemini" "$ROOTFS/root/.ominal/harness-capabilities" \
+    "$ROOTFS/root/.ominal/harness-registry" \
     "$ROOTFS/root/.ominal/themes" "$ROOTFS/root/.ominal" \
     "$CODEX_HOME" "$CLAUDE_HOME" "$ANTIGRAVITY_HOME" "$CAPABILITIES_HOME" \
+    "$HARNESS_REGISTRY_HOME" \
     "$UI_THEME_HOME"
 chmod 1777 "$SHM_DIR"
 chmod 700 "$BRIDGE_DIR"
@@ -163,6 +166,7 @@ exec "$PROOT_BIN" --link2symlink --sysvipc -i "$PROOT_ID" -r "$ROOTFS" \
     -b "$CODEX_HOME:/root/.codex" -b "$CLAUDE_HOME:/root/.claude" \
     -b "$ANTIGRAVITY_HOME:/root/.gemini" \
     -b "$CAPABILITIES_HOME:/root/.ominal/harness-capabilities" \
+    -b "$HARNESS_REGISTRY_HOME:/root/.ominal/harness-registry" \
     -b "$UI_THEME_HOME:/root/.ominal/themes" \
     -b "$USER_PROFILE_FILE:/root/.ominal/profile.json" \
     -b "$WORKSPACE:/root/workspace" \

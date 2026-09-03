@@ -32,7 +32,7 @@ esac
 case "$WORKSPACE" in
     "$HOME"|"$HOME"/*) ;;
     *)
-        printf 'Refusing harness workspace outside Monolith home: %s\n' "$WORKSPACE" >&2
+        printf 'Refusing harness workspace outside GIR home: %s\n' "$WORKSPACE" >&2
         exit 64
         ;;
 esac
@@ -45,7 +45,7 @@ case "$WORKSPACE" in
 esac
 
 if [ ! -x "$RUNNER" ]; then
-    printf 'Monolith Linux launcher is missing: %s\n' "$RUNNER" >&2
+    printf 'GIR Linux launcher is missing: %s\n' "$RUNNER" >&2
     exit 69
 fi
 

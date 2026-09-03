@@ -379,6 +379,7 @@ public final class OringutanActivity extends AppCompatActivity
     private SharedPreferences mPrefs;
     private OminalUserProfile mUserProfile = OminalUserProfile.empty();
     private OminalUrlRequestBridge mUrlRequestBridge;
+    private OminalHarnessCatalog mHarnessCatalog;
     private Uri mPendingInternalBrowserUrl;
     private ChatSession mActiveSession;
     private OminalAgentRuntime mAgentRuntime;
@@ -416,6 +417,7 @@ public final class OringutanActivity extends AppCompatActivity
     private boolean mCodexSessionExpired;
     private final LinkedHashSet<String> mHarnessDiscoveryInFlight = new LinkedHashSet<>();
     private final HashMap<String, String> mHarnessDiscoveryErrors = new HashMap<>();
+    private final HashMap<String, String> mConversationArchiveFingerprints = new HashMap<>();
     private boolean mReopenHarnessControlsAfterRefresh;
     private ConnectivityManager.NetworkCallback mRuntimeNetworkCallback;
     private long mHandledAgentRevision = -1;
@@ -476,6 +478,8 @@ public final class OringutanActivity extends AppCompatActivity
         getDelegate().setLocalNightMode(mPrefs.getBoolean(PREF_LIGHT_APPEARANCE, false)
             ? AppCompatDelegate.MODE_NIGHT_NO : AppCompatDelegate.MODE_NIGHT_YES);
         super.onCreate(savedInstanceState);
+        mHarnessCatalog = new OminalHarnessCatalog(this::onHarnessCatalogChanged);
+        mHarnessCatalog.start();
         if (savedInstanceState != null) {
             int restoredMode = savedInstanceState.getInt(STATE_MODE, MODE_CHAT);
             if (restoredMode == MODE_CHAT || restoredMode == MODE_TERMINAL
@@ -1048,6 +1052,7 @@ public final class OringutanActivity extends AppCompatActivity
     @Override
     protected void onResume() {
         super.onResume();
+        if (mHarnessCatalog != null) mHarnessCatalog.refresh();
         if (mUrlRequestBridge != null) mUrlRequestBridge.start();
         setDisplayFullscreen(mMode == MODE_DISPLAY);
         if (mMode == MODE_DISPLAY && mNativeDisplayView != null)
@@ -1089,6 +1094,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     @Override
     protected void onDestroy() {
+        if (mHarnessCatalog != null) mHarnessCatalog.stop();
         stopDisplayControlObserver();
         stopDisplayActivityObserver();
         stopAgentEventObserver();
@@ -1287,10 +1293,16 @@ public final class OringutanActivity extends AppCompatActivity
             String detail = OminalHarnessRegistry.resolvedPublisherName(harness);
             if (manifest != null && !manifest.binaryVersion.isEmpty())
                 detail += "  ·  " + manifest.binaryVersion;
-            OminalInteractionSheet.Row row = new OminalInteractionSheet.Row(
-                "account:" + harness.getId(), OminalHarnessRegistry.resolvedDisplayName(harness),
-                detail, active ? accountStateFor(harness.getId()) : "Switch",
-                active, true, false, R.drawable.ic_lucide_bot);
+            Drawable artwork = harnessArtwork(harness.getId(), false);
+            OminalInteractionSheet.Row row = artwork == null
+                ? new OminalInteractionSheet.Row("account:" + harness.getId(),
+                    OminalHarnessRegistry.resolvedDisplayName(harness), detail,
+                    active ? accountStateFor(harness.getId()) : "Switch",
+                    active, true, false, R.drawable.ic_lucide_bot)
+                : new OminalInteractionSheet.Row("account:" + harness.getId(),
+                    OminalHarnessRegistry.resolvedDisplayName(harness), detail,
+                    active ? accountStateFor(harness.getId()) : "Switch",
+                    active, true, false, artwork);
             (active ? activeRows : availableRows).add(row);
         }
 
@@ -1377,17 +1389,12 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void confirmClearUserProfile() {
-        AlertDialog confirmation = new AlertDialog.Builder(this)
-            .setTitle("Clear profile?")
-            .setMessage("The shared profile context will be removed from every runtime.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Clear", (ignored, which) -> {
+        OminalInteractionSheet.showConfirmation(this, interactionSheetTheme(),
+            "Clear profile?",
+            "The shared profile context will be removed from every runtime.",
+            "Clear", true, () -> {
                 if (saveUserProfile(OminalUserProfile.empty())) navigateBackFromSettings();
-            })
-            .create();
-        confirmation.show();
-        styleBlackDialog(confirmation);
-        confirmation.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(255, 69, 58));
+            });
     }
 
     private boolean saveUserProfile(OminalUserProfile profile) {
@@ -1487,15 +1494,9 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void showCodexLogoutConfirmation() {
-        AlertDialog dialog = new AlertDialog.Builder(this)
-            .setTitle("Log out of Codex?")
-            .setMessage("Chats and workspace files will remain on this device.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Log out", (ignored, which) -> performCodexLogout())
-            .create();
-        dialog.show();
-        styleBlackDialog(dialog);
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(255, 69, 58));
+        OminalInteractionSheet.showConfirmation(this, interactionSheetTheme(),
+            "Log out of Codex?", "Chats and workspace files will remain on this device.",
+            "Log out", true, this::performCodexLogout);
     }
 
     private void performCodexLogout() {
@@ -1841,6 +1842,10 @@ public final class OringutanActivity extends AppCompatActivity
                 new File(binDir, "ominal-harness-discover"));
             extractRuntimeTool("runtime/ominal-harness-hook.py",
                 new File(binDir, "ominal-harness-hook"));
+            extractRuntimeTool("runtime/gir-harness.py",
+                new File(binDir, "gir-harness"));
+            extractRuntimeTool("runtime/gir-chats.py",
+                new File(binDir, "gir-chats"));
             extractRuntimeTool("runtime/ominal-xdg-open-guest.sh",
                 new File(binDir, "ominal-xdg-open-guest"));
             extractRuntimeTool("runtime/ominal-open-executable.sh",
@@ -1901,6 +1906,10 @@ public final class OringutanActivity extends AppCompatActivity
                     new File(guestBin, "ominal-install"));
                 extractRuntimeTool("runtime/ominal-harness-hook.py",
                     new File(guestBin, "ominal-harness-hook"));
+                extractRuntimeTool("runtime/gir-harness.py",
+                    new File(guestBin, "gir-harness"));
+                extractRuntimeTool("runtime/gir-chats.py",
+                    new File(guestBin, "gir-chats"));
                 extractRuntimeTool("runtime/ominal-open-executable.sh",
                     new File(guestBin, "ominal-open-executable"));
             }
@@ -2379,7 +2388,7 @@ public final class OringutanActivity extends AppCompatActivity
     private String defaultUiPropertiesTemplate() {
         UiSpec spec = UiSpec.defaults(skin());
         StringBuilder builder = new StringBuilder();
-        builder.append("# Monolith custom appearance\n");
+        builder.append("# GIR custom appearance\n");
         builder.append("ui.version=").append(UI_CONFIG_VERSION).append('\n');
         builder.append("theme.id=custom\n");
         builder.append("theme.name=Custom\n");
@@ -2724,10 +2733,16 @@ public final class OringutanActivity extends AppCompatActivity
         ImageView icon = new ImageView(this);
         boolean antigravity = OminalHarnessTerminal.ANTIGRAVITY_ID.equals(runtimeId);
         boolean codex = OminalHarnessTerminal.CODEX_ID.equals(runtimeId);
-        icon.setImageResource(antigravity ? R.drawable.runtime_antigravity
-            : codex ? R.drawable.runtime_codex : R.drawable.ic_lucide_bot);
-        icon.setImageTintList(antigravity || codex ? null
-            : ColorStateList.valueOf(Color.rgb(220, 220, 220)));
+        Drawable artwork = harnessArtwork(runtimeId, false);
+        if (artwork != null) {
+            icon.setImageDrawable(artwork);
+            icon.setImageTintList(null);
+        } else {
+            icon.setImageResource(antigravity ? R.drawable.runtime_antigravity
+                : codex ? R.drawable.runtime_codex : R.drawable.ic_lucide_bot);
+            icon.setImageTintList(antigravity || codex ? null
+                : ColorStateList.valueOf(Color.rgb(220, 220, 220)));
+        }
         icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
         icon.setPadding(dp(5), dp(5), dp(5), dp(5));
         row.addView(icon, new LinearLayout.LayoutParams(dp(32), dp(32)));
@@ -3977,47 +3992,19 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void showRenameChatDialog(ChatSession session) {
-        EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setText(session.title);
-        input.setSelection(input.length());
-        input.setSelectAllOnFocus(true);
-        input.setTextColor(ui().ink);
-        input.setHintTextColor(ui().muted);
-        input.setBackground(makeSurfaceDrawable(ui().composerInput, true));
-        input.setPadding(dp(14), 0, dp(14), 0);
-
-        FrameLayout inputContainer = new FrameLayout(this);
-        inputContainer.setPadding(dp(22), dp(4), dp(22), 0);
-        inputContainer.addView(input, new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, dp(50)));
-
-        AlertDialog dialog = new AlertDialog.Builder(this)
-            .setTitle("Rename chat")
-            .setView(inputContainer)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Rename", null)
-            .create();
-        dialog.setOnShowListener(ignored -> {
-            styleBlackDialog(dialog);
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
-                String title = input.getText().toString().replace('\n', ' ').trim();
+        OminalInteractionSheet.showTextInput(this, interactionSheetTheme(), "Rename chat",
+            "Choose a name for this conversation.", session.title, "Rename", (title, input) -> {
                 if (title.isEmpty()) {
                     input.setError("Enter a name");
-                    return;
+                    return false;
                 }
                 if (title.length() > 80) title = title.substring(0, 80).trim();
                 session.title = title;
                 touchSession(session, true);
                 renderChatDrawer();
                 renderHeader();
-                dialog.dismiss();
+                return true;
             });
-            input.requestFocus();
-            dialog.getWindow().setSoftInputMode(
-                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
-        });
-        dialog.show();
     }
 
     private void togglePinned(ChatSession session) {
@@ -4030,18 +4017,12 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void showDeleteChatConfirmation(ChatSession session) {
         boolean temporary = session.incognito;
-        AlertDialog dialog = new AlertDialog.Builder(this)
-            .setTitle(temporary ? "Discard this chat?" : "Delete this chat?")
-            .setMessage(temporary
+        OminalInteractionSheet.showConfirmation(this, interactionSheetTheme(),
+            temporary ? "Discard this chat?" : "Delete this chat?",
+            temporary
                 ? "This temporary chat and its workspace will be removed."
-                : "Its messages, agent state, attachments, and workspace files will be removed from this device.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton(temporary ? "Discard" : "Delete",
-                (ignored, which) -> deleteSession(session))
-            .create();
-        dialog.show();
-        styleBlackDialog(dialog);
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(255, 69, 58));
+                : "Its messages, agent state, attachments, and workspace files will be removed from this device.",
+            temporary ? "Discard" : "Delete", true, () -> deleteSession(session));
     }
 
     private void deleteSession(ChatSession session) {
@@ -4063,6 +4044,7 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void destroySessionData(ChatSession session) {
         if (mAgentRuntime != null) mAgentRuntime.forgetSession(session.id);
+        mConversationArchiveFingerprints.remove(session.id);
         deleteRecursively(new File(session.rootPath));
         if (session.incognito)
             deleteRecursively(new File(getChatRootPath(), session.id));
@@ -5449,7 +5431,7 @@ public final class OringutanActivity extends AppCompatActivity
                 switchMode(MODE_DISPLAY);
                 return true;
             default:
-                // Slash commands not owned by Monolith belong to the active harness.
+                // Slash commands not owned by GIR belong to the active harness.
                 return false;
         }
     }
@@ -5620,10 +5602,18 @@ public final class OringutanActivity extends AppCompatActivity
         for (OminalAgentHarness harness : OminalHarnessRegistry.all()) {
             if (!harness.isAvailable()) continue;
             boolean selected = harness.getId().equals(mActiveSession.harnessId);
-            harnessRows.add(new OminalInteractionSheet.Row("harness:" + harness.getId(),
-                OminalHarnessRegistry.resolvedDisplayName(harness),
-                selected ? "Selected for this conversation" : "Use for this conversation",
-                "", selected, true, false, R.drawable.ic_lucide_bot));
+            Drawable artwork = harnessArtwork(harness.getId(), true);
+            if (artwork == null) {
+                harnessRows.add(new OminalInteractionSheet.Row("harness:" + harness.getId(),
+                    OminalHarnessRegistry.resolvedDisplayName(harness),
+                    selected ? "Selected for this conversation" : "Use for this conversation",
+                    "", selected, true, false, R.drawable.ic_lucide_bot));
+            } else {
+                harnessRows.add(new OminalInteractionSheet.Row("harness:" + harness.getId(),
+                    OminalHarnessRegistry.resolvedDisplayName(harness),
+                    selected ? "Selected for this conversation" : "Use for this conversation",
+                    "", selected, true, false, artwork));
+            }
         }
         sections.add(new OminalInteractionSheet.Section("Runtime", harnessRows));
 
@@ -5786,12 +5776,33 @@ public final class OringutanActivity extends AppCompatActivity
         refreshHarnessCapabilities(harnessId, false);
     }
 
+    private void onHarnessCatalogChanged() {
+        mHarnessDiscoveryErrors.keySet().removeIf(id ->
+            OminalHarnessManifest.load(id) == null);
+        if (mActiveSession != null) {
+            updateHarnessControls();
+            writeRuntimeContract(mActiveSession);
+        }
+        if (mMode == MODE_SETTINGS && mRootFrame != null) renderMode();
+    }
+
+    private Drawable harnessArtwork(String harnessId, boolean preferMonochrome) {
+        Drawable local = OminalHarnessIcon.load(getResources(),
+            OminalHarnessManifest.load(harnessId), preferMonochrome);
+        if (local != null) return local;
+        if (OminalHarnessTerminal.CODEX_ID.equals(harnessId))
+            return getDrawable(R.drawable.runtime_codex);
+        if (OminalHarnessTerminal.ANTIGRAVITY_ID.equals(harnessId))
+            return getDrawable(R.drawable.runtime_antigravity);
+        return null;
+    }
+
     private void refreshHarnessCapabilities(String harnessId, boolean force) {
         if (!mBootstrapReady || !mRuntimeReady
             || !OminalHarnessRegistry.isSelectable(harnessId)) {
             return;
         }
-        File manifestFile = OminalHarnessManifest.manifestFile(harnessId);
+        File manifestFile = OminalHarnessManifest.resolvedManifestFile(harnessId);
         long age = System.currentTimeMillis() - manifestFile.lastModified();
         if (!force && manifestFile.isFile() && age >= 0L
             && age < HARNESS_CATALOG_FRESHNESS_MS) {
@@ -6482,6 +6493,11 @@ public final class OringutanActivity extends AppCompatActivity
         environment.put("MONOPOT_PROTOCOL", MonopotEvent.PROTOCOL);
         if (session != null) {
             environment.put("OMINAL_AGENT_SESSION", session.id);
+            environment.put("GIR_APP_NAME", "GIR");
+            environment.put("GIR_RUNTIME_CONTRACT",
+                guestWorkspacePath(session) + "/.ominal/runtime.json");
+            environment.put("GIR_CHAT_ARCHIVE",
+                guestWorkspacePath(session) + "/.ominal/chats/archive.jsonl");
             environment.put("OMINAL_EVENT_LOG",
                 guestWorkspacePath(session) + "/.ominal/events.jsonl");
             environment.put("MONOPOT_EVENT_LOG",
@@ -6495,13 +6511,16 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private String buildAgentDeveloperInstructions() {
-        return "You are the selected intelligence harness inside Monolith, an Android computer. "
+        return "You are the selected intelligence harness inside GIR, an Android computer. "
             + "Use the current working directory for this chat's files and outputs. "
-            + "Read ./.ominal/runtime.json before acting; it is the authoritative Ominal runtime contract. "
+            + "Read ./.ominal/runtime.json before acting; it is GIR's authoritative runtime contract. "
             + "The profile section is the user's provider-neutral identity and preferences. Use it "
             + "consistently across runtime or model changes, but do not modify or expose it unnecessarily. "
             + "Monopot is a local JSONL execution contract, not a network service; do not replace or extend "
             + "the selected harness's native tools, authentication, or model behavior. "
+            + "Other non-incognito conversations are available only as a protected snapshot. Use "
+            + "`gir-chats search` or `gir-chats show` only when earlier conversation context is relevant; "
+            + "never imply that edits to the snapshot change the source chats. "
             + "The user's primary interface is chat and the Linux desktop stays hidden until needed. "
             + "A graphical desktop is available on DISPLAY=:20. Before GUI work run `ominal-screen wait 20`; "
             + "`ominal-screen status` is the authoritative readiness probe. Then take a screenshot before "
@@ -6515,7 +6534,7 @@ public final class OringutanActivity extends AppCompatActivity
             + "Theme reloads must not restart the harness. "
             + "Use `ominal-install` for Linux packages and downloaded .deb files; never use raw `dpkg -i`. "
             + "Put images, audio, video, or PDFs created for the user under ./"
-            + MEDIA_DIR_NAME + "; Monolith surfaces new and changed media inline in the chat. "
+            + MEDIA_DIR_NAME + "; GIR surfaces new and changed media inline in the chat. "
             + "Do not print protocol control markers in the chat response.";
     }
 
@@ -6655,7 +6674,7 @@ public final class OringutanActivity extends AppCompatActivity
         String handoff = conversationHandoff(session, turn.harnessId,
             turn.userMessageIndex);
         if (!handoff.isEmpty()) {
-            builder.append("Conversation context supplied by Monolith:\n")
+            builder.append("Conversation context supplied by GIR:\n")
                 .append(handoff)
                 .append("\n\nContinue this same conversation. Do not describe the handoff.\n\n");
         }
@@ -6734,6 +6753,12 @@ public final class OringutanActivity extends AppCompatActivity
         File runtimeDirectory = agentRuntimeDirectory(session);
         ensureDirectory(runtimeDirectory.getAbsolutePath());
         try {
+            writeConversationArchive(session);
+        } catch (IOException | JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG,
+                "Failed to write the GIR conversation snapshot", e);
+        }
+        try {
             String guestWorkspace = guestWorkspacePath(session);
             String selectedHarness = OminalHarnessRegistry.normalizeSelectedId(harnessId);
             OminalAgentHarness harness = OminalHarnessRegistry.activeOrDefault(selectedHarness);
@@ -6750,6 +6775,35 @@ public final class OringutanActivity extends AppCompatActivity
         } catch (IOException | JSONException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to write the Ominal runtime contract", e);
         }
+    }
+
+    private void writeConversationArchive(ChatSession activeSession)
+        throws IOException, JSONException {
+        StringBuilder fingerprint = new StringBuilder();
+        for (ChatSession session : mSessions) {
+            if (session == activeSession || session.incognito) continue;
+            fingerprint.append(session.id).append(':').append(session.updatedAt).append(':')
+                .append(session.messages.size()).append(';');
+        }
+        File archive = new File(agentRuntimeDirectory(activeSession), "chats/archive.jsonl");
+        String previous = mConversationArchiveFingerprints.get(activeSession.id);
+        if (archive.isFile() && fingerprint.toString().equals(previous)) return;
+
+        ArrayList<OminalConversationArchive.Conversation> conversations = new ArrayList<>();
+        for (ChatSession session : mSessions) {
+            if (session == activeSession || session.incognito) continue;
+            ArrayList<OminalConversationArchive.Message> messages = new ArrayList<>();
+            for (ChatMessage message : session.messages) {
+                if (!"user".equals(message.role) && !"assistant".equals(message.role)) continue;
+                if (TextUtils.isEmpty(message.text)) continue;
+                messages.add(new OminalConversationArchive.Message(
+                    message.role, message.text, message.timestamp));
+            }
+            conversations.add(new OminalConversationArchive.Conversation(session.id,
+                session.title, session.createdAt, session.updatedAt, messages));
+        }
+        OminalConversationArchive.write(archive, conversations);
+        mConversationArchiveFingerprints.put(activeSession.id, fingerprint.toString());
     }
 
     private List<String> attachmentPaths(ChatSession session) {
@@ -7101,15 +7155,10 @@ public final class OringutanActivity extends AppCompatActivity
 
     private void showDeleteMessageConfirmation(ChatSession session, ChatMessage message) {
         if (!canEditConversation(session)) return;
-        AlertDialog dialog = new AlertDialog.Builder(this)
-            .setTitle("Delete this message?")
-            .setMessage("It will be removed from this chat and future conversation context.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Delete", (ignored, which) -> deleteMessage(session, message))
-            .create();
-        dialog.show();
-        styleBlackDialog(dialog);
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(255, 69, 58));
+        OminalInteractionSheet.showConfirmation(this, interactionSheetTheme(),
+            "Delete this message?",
+            "It will be removed from this chat and future conversation context.",
+            "Delete", true, () -> deleteMessage(session, message));
     }
 
     private boolean canEditConversation(ChatSession session) {
@@ -7161,16 +7210,10 @@ public final class OringutanActivity extends AppCompatActivity
     private void showRemoveMediaConfirmation(ChatSession session, ChatMessage message,
                                              OminalChatMedia.Item item) {
         if (!canEditConversation(session)) return;
-        AlertDialog dialog = new AlertDialog.Builder(this)
-            .setTitle("Remove " + item.name + "?")
-            .setMessage("It will be removed from this chat. The workspace file will remain.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Remove",
-                (ignored, which) -> removeMediaFromMessage(session, message, item))
-            .create();
-        dialog.show();
-        styleBlackDialog(dialog);
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(255, 69, 58));
+        OminalInteractionSheet.showConfirmation(this, interactionSheetTheme(),
+            "Remove " + item.name + "?",
+            "It will be removed from this chat. The workspace file will remain.",
+            "Remove", true, () -> removeMediaFromMessage(session, message, item));
     }
 
     private void removeMediaFromMessage(ChatSession session, ChatMessage message,
@@ -8855,14 +8898,10 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private void showLoloEnableConfirmation(Runnable onEnabled) {
-        AlertDialog dialog = new AlertDialog.Builder(this)
-            .setTitle("Enable Lolo mode?")
-            .setMessage("Codex will be able to open Android apps, links, and Settings while GIR is running. Android permissions still apply.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Enable", (ignored, which) -> onEnabled.run())
-            .create();
-        dialog.show();
-        styleBlackDialog(dialog);
+        OminalInteractionSheet.showConfirmation(this, interactionSheetTheme(),
+            "Enable Lolo mode?",
+            "Codex will be able to open Android apps, links, and Settings while GIR is running. Android permissions still apply.",
+            "Enable", false, onEnabled);
     }
 
     private TextView dialogTitle(String text) {

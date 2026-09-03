@@ -1,0 +1,1 @@
+Adds live local harness registration with validated package icons, protected on-demand access to prior non-incognito chats, clearer runtime waiting states, and consistent native rename and confirmation sheets. GIR now identifies itself consistently to every runtime while preserving existing local manifests and internal paths.

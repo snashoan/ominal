@@ -1,6 +1,9 @@
 package com.ominal.app;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -31,6 +34,7 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
         OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/ominal-harness-chat";
     private static final Pattern ANSI_ESCAPE =
         Pattern.compile("\\u001B(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\u0007]*(?:\\u0007|\\u001B\\\\))");
+    private static final long HEARTBEAT_INTERVAL_MS = 5_000L;
 
     private static final class ActiveTurn {
         final TurnRequest request;
@@ -45,6 +49,8 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
         String response = "";
         TokenUsage usage;
         boolean terminalEventReceived;
+        final long startedAt = SystemClock.elapsedRealtime();
+        long lastSignalAt = startedAt;
 
         ActiveTurn(TurnRequest request, Listener listener, File promptFile, File instructionsFile) {
             this.request = request;
@@ -57,6 +63,7 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
     private final Context mContext;
     private final String mHostChatRoot;
     private final String mHarnessId;
+    private final Handler mHeartbeatHandler = new Handler(Looper.getMainLooper());
     private AppShell mShell;
     private ActiveTurn mActiveTurn;
     private int mGeneration;
@@ -110,7 +117,7 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
             mActiveTurn = new ActiveTurn(request, listener, promptFile, instructionsFile);
         } catch (IOException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Could not stage harness request", e);
-            listener.onError("Monolith could not prepare that request.");
+            listener.onError("GIR could not prepare that request.");
             return false;
         }
 
@@ -141,12 +148,14 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
             line -> onStdoutLine(generation, line),
             line -> onStderrLine(generation, line), false);
         if (mShell == null) failTurn("Could not start " + harnessName(mHarnessId) + ".");
+        else scheduleHeartbeat(generation);
     }
 
     private synchronized void onStdoutLine(int generation, String line) {
         if (generation != mGeneration || line == null) return;
         ActiveTurn turn = mActiveTurn;
         if (turn == null || line.trim().isEmpty()) return;
+        turn.lastSignalAt = SystemClock.elapsedRealtime();
         try {
             consumeEvent(turn, new JSONObject(line));
         } catch (JSONException e) {
@@ -157,7 +166,10 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
 
     private synchronized void onStderrLine(int generation, String line) {
         if (generation != mGeneration || line == null || line.trim().isEmpty()) return;
-        if (mActiveTurn != null) mActiveTurn.stderr.append(line).append('\n');
+        if (mActiveTurn != null) {
+            mActiveTurn.lastSignalAt = SystemClock.elapsedRealtime();
+            mActiveTurn.stderr.append(line).append('\n');
+        }
     }
 
     private synchronized void onProcessExited(int generation, AppShell shell) {
@@ -485,6 +497,7 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
     }
 
     private synchronized void clearTurn() {
+        mHeartbeatHandler.removeCallbacksAndMessages(null);
         ActiveTurn turn = mActiveTurn;
         mActiveTurn = null;
         if (turn == null) return;
@@ -510,6 +523,22 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
         mShell = null;
         if (shell != null) shell.kill();
         clearTurn();
+    }
+
+    private void scheduleHeartbeat(int generation) {
+        mHeartbeatHandler.postDelayed(() -> emitHeartbeat(generation), HEARTBEAT_INTERVAL_MS);
+    }
+
+    private synchronized void emitHeartbeat(int generation) {
+        ActiveTurn turn = mActiveTurn;
+        if (generation != mGeneration || turn == null || mShell == null) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - turn.lastSignalAt >= HEARTBEAT_INTERVAL_MS - 250L) {
+            long seconds = Math.max(1L, (now - turn.startedAt) / 1000L);
+            turn.listener.onStatus("Waiting for " + harnessName(mHarnessId)
+                + "  ·  " + seconds + "s");
+        }
+        scheduleHeartbeat(generation);
     }
 
     private static String cleanError(String value) {

@@ -17,7 +17,7 @@ esac
 
 bridge_dir="${OMINAL_BRIDGE_DIR:-/run/ominal}"
 if [ ! -d "$bridge_dir" ] || [ ! -w "$bridge_dir" ]; then
-    printf '%s\n' 'The Monolith browser bridge is unavailable.' >&2
+    printf '%s\n' 'The GIR browser bridge is unavailable.' >&2
     exit 69
 fi
 
@@ -26,4 +26,4 @@ partial="$request.part"
 umask 077
 printf '%s\n' "$url" > "$partial"
 mv "$partial" "$request"
-printf '%s\n' 'Choose where to open the sign-in link in Monolith.'
+printf '%s\n' 'Choose where to open the sign-in link in GIR.'

@@ -15,7 +15,7 @@ case "$HARNESS" in
 esac
 
 if [ ! -x "$RUNNER" ]; then
-    printf '%s\n' 'Monolith Linux launcher is not ready.' >&2
+    printf '%s\n' 'GIR Linux launcher is not ready.' >&2
     exit 69
 fi
 
@@ -24,7 +24,8 @@ case "$ACTION" in
         OMINAL_PROOT_ID=1000:1000 exec "$RUNNER" /bin/bash -lc '
             set -eu
             harness="$1"
-            manifest="/root/.ominal/harness-capabilities/${harness}.json"
+            manifest="/root/.ominal/harness-registry/${harness}/manifest.json"
+            [ -s "$manifest" ] || manifest="/root/.ominal/harness-capabilities/${harness}.json"
             if [ "$harness" != "claude-code" ] && [ "$harness" != "antigravity" ]; then
                 python3 -c '\''
 import json, re, sys
@@ -66,7 +67,8 @@ if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", command):
                 git init --quiet
             fi
             prompt="$(cat "$prompt_file")"
-            manifest="/root/.ominal/harness-capabilities/${harness}.json"
+            manifest="/root/.ominal/harness-registry/${harness}/manifest.json"
+            [ -s "$manifest" ] || manifest="/root/.ominal/harness-capabilities/${harness}.json"
 
             if command -v ominal-harness-discover >/dev/null 2>&1; then
                 if [ ! -s "$manifest" ]; then

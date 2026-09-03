@@ -72,6 +72,7 @@ final class OminalInteractionSheet {
         final boolean enabled;
         final boolean danger;
         final int iconRes;
+        @Nullable final Drawable icon;
 
         Row(@NonNull String id, @NonNull String title) {
             this(id, title, "", "", false, true, false);
@@ -85,6 +86,18 @@ final class OminalInteractionSheet {
         Row(@NonNull String id, @NonNull String title, @Nullable String detail,
             @Nullable String trailing, boolean selected, boolean enabled, boolean danger,
             int iconRes) {
+            this(id, title, detail, trailing, selected, enabled, danger, iconRes, null);
+        }
+
+        Row(@NonNull String id, @NonNull String title, @Nullable String detail,
+            @Nullable String trailing, boolean selected, boolean enabled, boolean danger,
+            @Nullable Drawable icon) {
+            this(id, title, detail, trailing, selected, enabled, danger, 0, icon);
+        }
+
+        private Row(@NonNull String id, @NonNull String title, @Nullable String detail,
+            @Nullable String trailing, boolean selected, boolean enabled, boolean danger,
+            int iconRes, @Nullable Drawable icon) {
             this.id = id;
             this.title = title;
             this.detail = detail == null ? "" : detail;
@@ -93,6 +106,7 @@ final class OminalInteractionSheet {
             this.enabled = enabled;
             this.danger = danger;
             this.iconRes = iconRes;
+            this.icon = icon;
         }
     }
 
@@ -192,6 +206,85 @@ final class OminalInteractionSheet {
         }
 
         addBottomSpace(activity, content);
+        dialog.setContentView(content);
+        prepareOnShow(dialog, theme);
+        dialog.show();
+        animateContent(content);
+        return dialog;
+    }
+
+    interface TextListener {
+        boolean onSubmit(@NonNull String value, @NonNull EditText input);
+    }
+
+    static BottomSheetDialog showTextInput(@NonNull Activity activity, @NonNull Theme theme,
+                                           @NonNull String title, @Nullable String subtitle,
+                                           @Nullable String initialValue,
+                                           @NonNull String actionLabel,
+                                           @NonNull TextListener listener) {
+        BottomSheetDialog dialog = createDialog(activity, theme);
+        LinearLayout content = createContent(activity, theme, title, subtitle);
+        EditText input = createSearch(activity, theme);
+        input.setHint("");
+        input.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        input.setSelectAllOnFocus(true);
+        input.setText(initialValue == null ? "" : initialValue);
+        input.setSelection(input.length());
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(activity, 50));
+        inputParams.setMargins(dp(activity, 20), dp(activity, 18), dp(activity, 20),
+            dp(activity, 12));
+        content.addView(input, inputParams);
+
+        TextView action = createAction(activity, theme, actionLabel, false);
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(activity, 50));
+        actionParams.setMargins(dp(activity, 20), 0, dp(activity, 20), dp(activity, 24));
+        content.addView(action, actionParams);
+        View.OnClickListener submit = view -> {
+            String value = input.getText().toString().replace('\n', ' ').trim();
+            if (listener.onSubmit(value, input)) dialog.dismiss();
+        };
+        action.setOnClickListener(submit);
+        input.setOnEditorActionListener((view, actionId, event) -> {
+            if (actionId != EditorInfo.IME_ACTION_DONE) return false;
+            submit.onClick(view);
+            return true;
+        });
+
+        dialog.setContentView(content);
+        prepareOnShow(dialog, theme);
+        dialog.setOnShowListener(ignored -> {
+            prepareExpandedSheet(dialog);
+            input.requestFocus();
+            if (dialog.getWindow() != null) dialog.getWindow().setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                    | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        });
+        dialog.show();
+        animateContent(content);
+        return dialog;
+    }
+
+    static BottomSheetDialog showConfirmation(@NonNull Activity activity,
+                                               @NonNull Theme theme,
+                                               @NonNull String title,
+                                               @NonNull String message,
+                                               @NonNull String actionLabel,
+                                               boolean danger,
+                                               @NonNull Runnable action) {
+        BottomSheetDialog dialog = createDialog(activity, theme);
+        LinearLayout content = createContent(activity, theme, title, message);
+        TextView confirm = createAction(activity, theme, actionLabel, danger);
+        LinearLayout.LayoutParams confirmParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(activity, 50));
+        confirmParams.setMargins(dp(activity, 20), dp(activity, 20), dp(activity, 20),
+            dp(activity, 24));
+        content.addView(confirm, confirmParams);
+        confirm.setOnClickListener(view -> {
+            dialog.dismiss();
+            action.run();
+        });
         dialog.setContentView(content);
         prepareOnShow(dialog, theme);
         dialog.show();
@@ -300,11 +393,15 @@ final class OminalInteractionSheet {
         content.setGravity(Gravity.CENTER_VERTICAL);
         content.setPadding(dp(context, 4), 0, dp(context, 2), 0);
 
-        if (value.iconRes != 0) {
+        if (value.iconRes != 0 || value.icon != null) {
             ImageView icon = new ImageView(context);
-            icon.setImageResource(value.iconRes);
-            icon.setImageTintList(ColorStateList.valueOf(
-                value.danger ? Color.rgb(255, 69, 58) : theme.muted));
+            if (value.icon != null) {
+                icon.setImageDrawable(value.icon);
+            } else {
+                icon.setImageResource(value.iconRes);
+                icon.setImageTintList(ColorStateList.valueOf(
+                    value.danger ? Color.rgb(255, 69, 58) : theme.muted));
+            }
             icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
             icon.setPadding(dp(context, 5), dp(context, 5), dp(context, 5), dp(context, 5));
             LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(
@@ -395,6 +492,20 @@ final class OminalInteractionSheet {
         return search;
     }
 
+    private static TextView createAction(Context context, Theme theme, String label,
+                                         boolean danger) {
+        TextView action = new TextView(context);
+        action.setText(label);
+        action.setTextColor(danger ? Color.rgb(255, 69, 58) : theme.onAccent);
+        action.setTextSize(15);
+        action.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        action.setGravity(Gravity.CENTER);
+        action.setIncludeFontPadding(false);
+        action.setBackground(ripple(context, theme,
+            danger ? theme.surfaceRaised : theme.accent, 14));
+        return action;
+    }
+
     private static void renderFilteredChoices(Context context, LinearLayout list, Theme theme,
                                               List<Row> choices, String query,
                                               BottomSheetDialog dialog, Listener listener) {
@@ -429,18 +540,20 @@ final class OminalInteractionSheet {
     }
 
     private static void prepareOnShow(BottomSheetDialog dialog, Theme theme) {
-        dialog.setOnShowListener(ignored -> {
-            FrameLayout bottomSheet = dialog.findViewById(
-                com.google.android.material.R.id.design_bottom_sheet);
-            if (bottomSheet == null) return;
-            bottomSheet.setBackgroundColor(Color.TRANSPARENT);
-            ViewGroup.LayoutParams rawParams = bottomSheet.getLayoutParams();
-            rawParams.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-            bottomSheet.setLayoutParams(rawParams);
-            BottomSheetBehavior<FrameLayout> behavior = BottomSheetBehavior.from(bottomSheet);
-            behavior.setSkipCollapsed(true);
-            behavior.setState(BottomSheetBehavior.STATE_EXPANDED);
-        });
+        dialog.setOnShowListener(ignored -> prepareExpandedSheet(dialog));
+    }
+
+    private static void prepareExpandedSheet(BottomSheetDialog dialog) {
+        FrameLayout bottomSheet = dialog.findViewById(
+            com.google.android.material.R.id.design_bottom_sheet);
+        if (bottomSheet == null) return;
+        bottomSheet.setBackgroundColor(Color.TRANSPARENT);
+        ViewGroup.LayoutParams rawParams = bottomSheet.getLayoutParams();
+        rawParams.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+        bottomSheet.setLayoutParams(rawParams);
+        BottomSheetBehavior<FrameLayout> behavior = BottomSheetBehavior.from(bottomSheet);
+        behavior.setSkipCollapsed(true);
+        behavior.setState(BottomSheetBehavior.STATE_EXPANDED);
     }
 
     private static void animateContent(View content) {

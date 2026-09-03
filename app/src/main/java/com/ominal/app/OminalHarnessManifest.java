@@ -14,6 +14,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -38,6 +40,10 @@ public final class OminalHarnessManifest {
         Pattern.compile("/[a-z][a-z0-9._-]{0,63}");
     private static final Pattern ADAPTER_COMMAND =
         Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,127}");
+    private static final Pattern ICON_FILE =
+        Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.(?:png|webp)",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern SHA256 = Pattern.compile("[a-fA-F0-9]{64}");
     private static final Set<String> OUTPUT_FORMATS =
         setOf("text", "json", "stream-json", "monopot-jsonl");
     private static final Set<String> COMMAND_TYPES = setOf(
@@ -81,6 +87,10 @@ public final class OminalHarnessManifest {
     public final boolean autonomyEnabledByDefault;
     @NonNull public final List<Model> models;
     @NonNull public final List<Command> commands;
+    @NonNull public final String iconFileName;
+    @NonNull public final String monochromeIconFileName;
+    @NonNull public final String iconSha256;
+    @Nullable private final File sourceFile;
 
     private OminalHarnessManifest(@NonNull String harnessId,
                                   @NonNull String binaryVersion,
@@ -96,7 +106,11 @@ public final class OminalHarnessManifest {
                                   @NonNull String autonomyFlag,
                                   boolean autonomyEnabledByDefault,
                                   @NonNull List<Model> models,
-                                  @NonNull List<Command> commands) {
+                                  @NonNull List<Command> commands,
+                                  @NonNull String iconFileName,
+                                  @NonNull String monochromeIconFileName,
+                                  @NonNull String iconSha256,
+                                  @Nullable File sourceFile) {
         this.harnessId = harnessId;
         this.binaryVersion = binaryVersion;
         this.displayName = displayName;
@@ -112,10 +126,21 @@ public final class OminalHarnessManifest {
         this.autonomyEnabledByDefault = autonomyEnabledByDefault;
         this.models = Collections.unmodifiableList(models);
         this.commands = Collections.unmodifiableList(commands);
+        this.iconFileName = iconFileName;
+        this.monochromeIconFileName = monochromeIconFileName;
+        this.iconSha256 = iconSha256;
+        this.sourceFile = sourceFile;
     }
 
     @NonNull
     static OminalHarnessManifest fromJson(@NonNull JSONObject object) throws JSONException {
+        return fromJson(object, null);
+    }
+
+    @NonNull
+    private static OminalHarnessManifest fromJson(@NonNull JSONObject object,
+                                                   @Nullable File sourceFile)
+        throws JSONException {
         if (object.getInt("schemaVersion") != SCHEMA_VERSION)
             throw new JSONException("Unsupported harness manifest schema");
 
@@ -161,20 +186,26 @@ public final class OminalHarnessManifest {
 
         List<Model> models = parseModels(object.optJSONArray("models"));
         List<Command> commands = parseCommands(object.optJSONArray("commands"));
+        JSONObject presentation = object.optJSONObject("presentation");
+        JSONObject icon = presentation == null ? null : presentation.optJSONObject("icon");
+        String iconFileName = optionalIconFile(icon, "file");
+        String monochromeIconFileName = optionalIconFile(icon, "monochrome");
+        String iconSha256 = optionalSha256(icon, "sha256");
         return new OminalHarnessManifest(harnessId, binaryVersion, displayName, publisher,
             providerId, outputFormat, adapterCommand, transportId,
             resumeFlag, modelFlag, effortFlag, autonomyFlag, autonomyEnabled,
-            models, commands);
+            models, commands, iconFileName, monochromeIconFileName, iconSha256, sourceFile);
     }
 
     @Nullable
     public static OminalHarnessManifest load(@NonNull String requestedHarnessId) {
         if (!HARNESS_ID.matcher(requestedHarnessId).matches()) return null;
-        File file = manifestFile(requestedHarnessId);
+        File file = packageManifestFile(requestedHarnessId);
+        if (!file.isFile()) file = manifestFile(requestedHarnessId);
         if (!file.isFile() || file.length() <= 0 || file.length() > MAX_FILE_BYTES) return null;
         try {
             String json = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-            OminalHarnessManifest manifest = fromJson(new JSONObject(json));
+            OminalHarnessManifest manifest = fromJson(new JSONObject(json), file);
             return requestedHarnessId.equals(manifest.harnessId) ? manifest : null;
         } catch (IOException | JSONException | RuntimeException e) {
             Logger.logStackTraceWithMessage(LOG_TAG,
@@ -185,15 +216,32 @@ public final class OminalHarnessManifest {
 
     @NonNull
     public static List<OminalHarnessManifest> installed() {
-        File directory = manifestFile("placeholder").getParentFile();
-        File[] files = directory == null ? null : directory.listFiles((parent, name) ->
+        LinkedHashSet<String> harnessIds = new LinkedHashSet<>();
+        File packageDirectory = registryDirectory();
+        File[] packages = packageDirectory.listFiles(File::isDirectory);
+        if (packages != null) {
+            Arrays.sort(packages, (left, right) -> left.getName().compareTo(right.getName()));
+            for (File directory : packages) {
+                if (HARNESS_ID.matcher(directory.getName()).matches()
+                    && new File(directory, "manifest.json").isFile()) {
+                    harnessIds.add(directory.getName());
+                }
+            }
+        }
+        File directory = legacyDirectory();
+        File[] files = directory.listFiles((parent, name) ->
             name.endsWith(".json") && name.length() > 5);
-        if (files == null || files.length == 0) return Collections.emptyList();
-        Arrays.sort(files, (left, right) -> left.getName().compareTo(right.getName()));
+        if (files != null) {
+            Arrays.sort(files, (left, right) -> left.getName().compareTo(right.getName()));
+            for (File file : files) {
+                String name = file.getName();
+                harnessIds.add(name.substring(0, name.length() - 5));
+            }
+        }
+        if (harnessIds.isEmpty()) return Collections.emptyList();
         ArrayList<OminalHarnessManifest> manifests = new ArrayList<>();
-        for (File file : files) {
-            String name = file.getName();
-            OminalHarnessManifest manifest = load(name.substring(0, name.length() - 5));
+        for (String harnessId : harnessIds) {
+            OminalHarnessManifest manifest = load(harnessId);
             if (manifest != null) manifests.add(manifest);
         }
         return Collections.unmodifiableList(manifests);
@@ -208,8 +256,43 @@ public final class OminalHarnessManifest {
 
     @NonNull
     static File manifestFile(@NonNull String harnessId) {
+        return new File(legacyDirectory(), harnessId + ".json");
+    }
+
+    @NonNull
+    static File packageManifestFile(@NonNull String harnessId) {
+        return new File(new File(registryDirectory(), harnessId), "manifest.json");
+    }
+
+    @NonNull
+    static File resolvedManifestFile(@NonNull String harnessId) {
+        File packaged = packageManifestFile(harnessId);
+        return packaged.isFile() ? packaged : manifestFile(harnessId);
+    }
+
+    @NonNull
+    static File registryDirectory() {
         return new File(OminalConstants.OMINAL_HOME_DIR_PATH,
-            ".ominal/harness-capabilities/" + harnessId + ".json");
+            ".ominal/harness-registry");
+    }
+
+    @NonNull
+    static File legacyDirectory() {
+        return new File(OminalConstants.OMINAL_HOME_DIR_PATH,
+            ".ominal/harness-capabilities");
+    }
+
+    @Nullable
+    public File iconFile(boolean preferMonochrome) {
+        if (sourceFile == null) return null;
+        String requested = preferMonochrome && !monochromeIconFileName.isEmpty()
+            ? monochromeIconFileName : iconFileName;
+        if (requested.isEmpty()) return null;
+        File file = new File(sourceFile.getParentFile(), requested);
+        if (!file.isFile() || file.length() <= 0 || file.length() > MAX_FILE_BYTES) return null;
+        if (!iconSha256.isEmpty() && requested.equals(iconFileName)
+            && !iconSha256.equals(sha256(file))) return null;
+        return file;
     }
 
     @NonNull
@@ -277,6 +360,26 @@ public final class OminalHarnessManifest {
         return command;
     }
 
+    private static String optionalIconFile(@Nullable JSONObject icon, String field)
+        throws JSONException {
+        if (icon == null || !icon.has(field) || icon.isNull(field)) return "";
+        String file = icon.optString(field, "").trim();
+        if (file.isEmpty()) return "";
+        if (!ICON_FILE.matcher(file).matches())
+            throw new JSONException("Invalid harness icon " + field);
+        return file;
+    }
+
+    private static String optionalSha256(@Nullable JSONObject icon, String field)
+        throws JSONException {
+        if (icon == null || !icon.has(field) || icon.isNull(field)) return "";
+        String digest = icon.optString(field, "").trim();
+        if (digest.isEmpty()) return "";
+        if (!SHA256.matcher(digest).matches())
+            throw new JSONException("Invalid harness icon checksum");
+        return digest.toLowerCase(Locale.ROOT);
+    }
+
     private static String optionalSafeText(JSONObject object, String field, int maxLength)
         throws JSONException {
         if (!object.has(field) || object.isNull(field)) return "";
@@ -313,5 +416,18 @@ public final class OminalHarnessManifest {
         LinkedHashSet<String> set = new LinkedHashSet<>();
         Collections.addAll(set, values);
         return Collections.unmodifiableSet(set);
+    }
+
+    private static String sha256(File file) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = Files.readAllBytes(file.toPath());
+            byte[] value = digest.digest(bytes);
+            StringBuilder encoded = new StringBuilder(value.length * 2);
+            for (byte current : value) encoded.append(String.format(Locale.ROOT, "%02x", current));
+            return encoded.toString();
+        } catch (IOException | NoSuchAlgorithmException e) {
+            return "";
+        }
     }
 }
