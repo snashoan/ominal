@@ -37,6 +37,15 @@ public final class OminalHarnessTerminal {
                                        @Nullable String workingDirectory,
                                        @Nullable String modelId, @Nullable String effortId,
                                        @Nullable String initialPrompt) {
+        configureIntent(intent, harnessId, workingDirectory, modelId, effortId,
+            initialPrompt, "");
+    }
+
+    public static void configureIntent(@NonNull Intent intent, @NonNull String harnessId,
+                                       @Nullable String workingDirectory,
+                                       @Nullable String modelId, @Nullable String effortId,
+                                       @Nullable String initialPrompt,
+                                       @Nullable String savedThreadId) {
         if (!isSupported(harnessId))
             throw new IllegalArgumentException("Unsupported harness: " + harnessId);
 
@@ -44,7 +53,12 @@ public final class OminalHarnessTerminal {
         java.util.ArrayList<String> arguments = new java.util.ArrayList<>();
         arguments.add(harnessId);
         arguments.add(workspace);
-        if (ANTIGRAVITY_ID.equals(harnessId)) {
+        if (CODEX_ID.equals(harnessId)) {
+            if (savedThreadId != null && !savedThreadId.trim().isEmpty()) {
+                arguments.add("--resume");
+                arguments.add(savedThreadId.trim());
+            }
+        } else if (ANTIGRAVITY_ID.equals(harnessId)) {
             if (modelId != null && !modelId.trim().isEmpty()) {
                 arguments.add("--model");
                 arguments.add(modelId.trim());
@@ -57,6 +71,10 @@ public final class OminalHarnessTerminal {
                 arguments.add("--prompt-interactive");
                 arguments.add(initialPrompt);
             }
+        } else if (!CLAUDE_CODE_ID.equals(harnessId)) {
+            addOption(arguments, "--resume", savedThreadId);
+            addOption(arguments, "--model", modelId);
+            addOption(arguments, "--effort", effortId);
         }
         intent.setData(UriUtils.getFileUri(EXECUTABLE_PATH));
         intent.putExtra(OMINAL_SERVICE.EXTRA_ARGUMENTS, arguments.toArray(new String[0]));
@@ -73,8 +91,18 @@ public final class OminalHarnessTerminal {
     }
 
     public static boolean isSupported(@Nullable String harnessId) {
-        return CODEX_ID.equals(harnessId)
+        if (CODEX_ID.equals(harnessId)
             || CLAUDE_CODE_ID.equals(harnessId)
-            || ANTIGRAVITY_ID.equals(harnessId);
+            || ANTIGRAVITY_ID.equals(harnessId)) return true;
+        if (harnessId == null) return false;
+        OminalHarnessManifest manifest = OminalHarnessManifest.load(harnessId);
+        return manifest != null && !manifest.terminalCommand.isEmpty();
+    }
+
+    private static void addOption(@NonNull java.util.ArrayList<String> arguments,
+                                  @NonNull String option, @Nullable String value) {
+        if (value == null || value.trim().isEmpty()) return;
+        arguments.add(option);
+        arguments.add(value.trim());
     }
 }

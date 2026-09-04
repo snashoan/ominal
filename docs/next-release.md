@@ -1,5 +1,38 @@
 # Next Release
 
+## v193 release candidate
+
+The v193 target tightens the engineering workflow without turning the chat into
+an IDE:
+
+- Codex app-server processes start in the selected chat's exact workspace and
+  resume the saved thread when handed to the interactive terminal.
+- Monopot Activity converts verified command actions and paths into readable
+  engineering updates while retaining raw command output for inspection.
+- Reasoning-only events stay out of the execution log.
+- Markdown code blocks use a dedicated monospace surface with syntax highlighting,
+  and existing math and Unicode normalization remain enabled.
+- Registered harnesses may declare a validated interactive terminal command,
+  without adding provider-specific Android code.
+- Codex model discovery falls back to Codex's own model cache when live discovery
+  is unavailable.
+- Healthy runtimes skip installation work during warm restarts.
+- Adaptive and legacy launcher resources share the same high-contrast GIR mark.
+
+Release gates completed on 2026-09-04: 104 unit tests, release lint with zero
+errors, shell syntax checks, runtime contract checks, Play permission
+validation, target API 36 validation, signed APK and bundled AAB generation,
+bundletool validation, signature verification, and English release notes.
+
+Publication artifact: `release/gir-0.121.24-v193-bundled.aab`
+
+SHA-256: `e38161c1758c9f8824df36f3c10515acd0e7ad3220ae3a621053f3f3c8c0d674`
+
+The local upload-key APK cannot replace an installation signed by Google Play.
+Device verification for this release must use the Play-distributed artifact or
+a separately installed development application ID; existing app data must not
+be removed to bypass that signing boundary.
+
 ## v192 release candidate
 
 The v192 target consolidates the developer-alpha work since v150 into one

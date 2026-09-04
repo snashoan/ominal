@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -36,6 +37,7 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
     private static final long EVENT_POLL_MS = 180L;
     private static final long TRANSCRIPT_RETRY_MS = 120L;
     private static final int TRANSCRIPT_READ_ATTEMPTS = 8;
+    private static final long HEARTBEAT_INTERVAL_MS = 5_000L;
 
     private final Context mContext;
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
@@ -90,7 +92,8 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
         }
         int generation = ++mGeneration;
         mActiveTurn = new ActiveTurn(generation, request, listener, mEventFile.length());
-        listener.onStatus("Opening Antigravity");
+        listener.onStatus(mActiveTurn.narrator.started("Opening Antigravity"));
+        scheduleHeartbeat(mActiveTurn);
         mMainHandler.post(() -> ensureTerminal(generation, System.currentTimeMillis()));
         return true;
     }
@@ -115,7 +118,8 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
         }
         terminal.getEmulator().paste(guidance);
         terminal.write("\r");
-        mActiveTurn.listener.onStatus("Applying your update");
+        mActiveTurn.listener.onStatus(
+            mActiveTurn.narrator.started("Applying your update"));
         return true;
     }
 
@@ -149,7 +153,7 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
         if (terminal.getEmulator() == null)
             terminal.updateSize(100, 36, 8, 16);
         if (turn.promptInjectedAtLaunch) {
-            turn.listener.onStatus("Planning next action");
+            turn.listener.onStatus(turn.narrator.started("Planning next action"));
             startEventMonitor(generation);
         } else {
             mMainHandler.postDelayed(() -> sendPrompt(generation), 100L);
@@ -204,7 +208,7 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
 
         emulator.paste(promptFor(turn.request));
         terminal.write("\r");
-        turn.listener.onStatus("Planning next action");
+        turn.listener.onStatus(turn.narrator.started("Planning next action"));
         startEventMonitor(generation);
     }
 
@@ -252,7 +256,7 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
             mTerminalSession = null;
             listener = turn.listener;
         }
-        listener.onStatus("Reconnecting Antigravity");
+        listener.onStatus(turnStatus(generation, "Reconnecting Antigravity"));
         mMainHandler.postDelayed(
             () -> ensureTerminal(generation, System.currentTimeMillis()),
             SESSION_RECOVERY_DELAY_MS);
@@ -276,6 +280,7 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
     }
 
     private void processEvent(ActiveTurn turn, JSONObject event) {
+        turn.lastSignalAt = SystemClock.elapsedRealtime();
         String hook = event.optString("hook", "");
         JSONObject payload = event.optJSONObject("payload");
         if (payload == null) payload = new JSONObject();
@@ -300,11 +305,12 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
             case "PreInvocation":
                 itemId = "invocation-" + step;
                 traceChanged = turn.trace.itemStarted(itemId, "reasoning");
-                turn.listener.onStatus("Planning next action");
+                turn.listener.onStatus(turn.narrator.started("Planning next action"));
                 break;
             case "PostInvocation":
                 itemId = "invocation-" + step;
                 traceChanged = turn.trace.itemCompleted(itemId, "reasoning");
+                turn.listener.onStatus(turn.narrator.completed("Planning next action"));
                 break;
             case "PreToolUse":
                 JSONObject toolCall = payload.optJSONObject("toolCall");
@@ -313,13 +319,16 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
                 itemId = "tool-" + step;
                 traceChanged = turn.trace.itemStarted(itemId, activity);
                 String label = OminalAgentTrace.labelForType(activity);
-                if (!label.isEmpty()) turn.listener.onStatus(label);
                 emitToolEvent(turn, "started", label, payload);
+                if (!label.isEmpty())
+                    turn.listener.onStatus(turn.narrator.started(label));
                 break;
             case "PostToolUse":
                 itemId = "tool-" + step;
                 traceChanged = turn.trace.itemCompleted(itemId, "");
                 emitToolEvent(turn, "completed", "", payload);
+                String completed = turn.narrator.completed("");
+                if (!completed.isEmpty()) turn.listener.onStatus(completed);
                 break;
             case "Stop":
                 if (!payload.optBoolean("fullyIdle", true)) break;
@@ -459,11 +468,34 @@ public final class OminalPersistentAgyTransport implements OminalAgentTransport 
         return mActiveTurn != null && mActiveTurn.generation == generation ? mActiveTurn : null;
     }
 
+    @NonNull
+    private synchronized String turnStatus(int generation, @NonNull String fallback) {
+        ActiveTurn turn = activeTurn(generation);
+        return turn == null ? fallback : turn.narrator.started(fallback);
+    }
+
+    private void scheduleHeartbeat(@NonNull ActiveTurn turn) {
+        mMainHandler.postDelayed(() -> emitHeartbeat(turn), HEARTBEAT_INTERVAL_MS);
+    }
+
+    private synchronized void emitHeartbeat(@NonNull ActiveTurn turn) {
+        if (mActiveTurn != turn) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - turn.lastSignalAt >= HEARTBEAT_INTERVAL_MS - 250L) {
+            long seconds = Math.max(1L, (now - turn.startedAt) / 1000L);
+            turn.listener.onStatus(turn.narrator.waiting("Antigravity", seconds));
+        }
+        scheduleHeartbeat(turn);
+    }
+
     private static final class ActiveTurn {
         final int generation;
         final TurnRequest request;
         final Listener listener;
         final OminalAgentTrace trace = new OminalAgentTrace();
+        final OminalActivityNarrator narrator = new OminalActivityNarrator();
+        final long startedAt = SystemClock.elapsedRealtime();
+        long lastSignalAt = startedAt;
         long eventOffset;
         boolean launchRequested;
         boolean promptInjectedAtLaunch;

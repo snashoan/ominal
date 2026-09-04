@@ -292,6 +292,56 @@ final class OminalInteractionSheet {
         return dialog;
     }
 
+    static BottomSheetDialog showReadOnlyText(@NonNull Activity activity,
+                                              @NonNull Theme theme,
+                                              @NonNull String title,
+                                              @Nullable String subtitle,
+                                              @NonNull String text,
+                                              @NonNull String actionLabel,
+                                              @NonNull Runnable action) {
+        BottomSheetDialog dialog = createDialog(activity, theme);
+        LinearLayout content = createContent(activity, theme, title, subtitle);
+
+        TextView body = new TextView(activity);
+        body.setText(text);
+        body.setTextColor(theme.text);
+        body.setTextSize(12.5f);
+        body.setTypeface(Typeface.MONOSPACE);
+        body.setTextIsSelectable(true);
+        body.setHorizontallyScrolling(false);
+        body.setLineSpacing(0, 1.12f);
+        body.setPadding(dp(activity, 16), dp(activity, 14), dp(activity, 16),
+            dp(activity, 14));
+        body.setBackground(roundRect(activity, theme.surfaceRaised, theme.border, 12));
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(false);
+        scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        scroll.addView(body, new ScrollView.LayoutParams(
+            ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            Math.min(dp(activity, 430), Math.round(
+                activity.getResources().getDisplayMetrics().heightPixels * 0.48f)));
+        scrollParams.setMargins(dp(activity, 20), dp(activity, 16), dp(activity, 20),
+            dp(activity, 12));
+        content.addView(scroll, scrollParams);
+
+        TextView actionView = createAction(activity, theme, actionLabel, false);
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(activity, 50));
+        actionParams.setMargins(dp(activity, 20), 0, dp(activity, 20), dp(activity, 24));
+        content.addView(actionView, actionParams);
+        actionView.setOnClickListener(view -> {
+            action.run();
+            dialog.dismiss();
+        });
+        dialog.setContentView(content);
+        prepareOnShow(dialog, theme);
+        dialog.show();
+        animateContent(content);
+        return dialog;
+    }
+
     private static BottomSheetDialog createDialog(Activity activity, Theme theme) {
         BottomSheetDialog dialog = new BottomSheetDialog(activity);
         dialog.setDismissWithAnimation(true);

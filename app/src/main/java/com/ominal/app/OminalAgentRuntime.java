@@ -796,7 +796,7 @@ public final class OminalAgentRuntime {
             OminalAgentTransport transport = mSessionTransports.get(key);
             if (transport == null) {
                 transport = OminalHarnessTerminal.CODEX_ID.equals(harnessId)
-                    ? new OminalCodexAppServer(mContext, mHostChatRoot)
+                    ? new OminalCodexAppServer(mContext, mHostChatRoot, sessionId)
                     : new OminalPersistentAgyTransport(mContext, mHostChatRoot, sessionId);
                 mSessionTransports.put(key, transport);
             }

@@ -13,11 +13,11 @@ else
 fi
 
 case "$HARNESS" in
-    codex|claude-code|antigravity) ;;
-    *)
+    ''|-*|*-|*[!a-z0-9-]*)
         printf 'Unsupported intelligence harness: %s\n' "$HARNESS" >&2
         exit 64
         ;;
+    *) ;;
 esac
 
 case "$WORKSPACE" in
@@ -64,8 +64,11 @@ case "$HARNESS" in
                 printf "\nCodex will handle sign-in in this terminal.\n\n"
                 codex login --device-auth || exec /bin/bash --login
             fi
+            if [ "${1:-}" = "--resume" ] && [ -n "${2:-}" ]; then
+                exec codex resume "$2"
+            fi
             exec codex
-        '
+        ' ominal "$@"
         ;;
     claude-code)
         exec "$RUNNER" /bin/bash --login -c '
@@ -130,5 +133,88 @@ case "$HARNESS" in
             fi
             exec agy --dangerously-skip-permissions "$@"
         ' ominal "$@"
+        ;;
+    *)
+        RESUME_ID=""
+        MODEL_ID=""
+        EFFORT_ID=""
+        while [ "$#" -gt 0 ]; do
+            if [ "$#" -lt 2 ]; then
+                printf 'Missing value for harness terminal option: %s\n' "$1" >&2
+                exit 64
+            fi
+            case "$1" in
+                --resume) RESUME_ID="$2" ;;
+                --model) MODEL_ID="$2" ;;
+                --effort) EFFORT_ID="$2" ;;
+                *)
+                    printf 'Unsupported harness terminal option: %s\n' "$1" >&2
+                    exit 64
+                    ;;
+            esac
+            shift 2
+        done
+        exec "$RUNNER" /bin/bash --login -c '
+            set -eu
+            harness="$1"
+            resume_id="$2"
+            model_id="$3"
+            effort_id="$4"
+            manifest="/root/.ominal/harness-registry/${harness}/manifest.json"
+            [ -s "$manifest" ] || manifest="/root/.ominal/harness-capabilities/${harness}.json"
+            if [ ! -s "$manifest" ]; then
+                printf "No registered terminal contract for %s.\n" "$harness" >&2
+                exec /bin/bash --login
+            fi
+            mapfile -t spec < <(python3 -c '\''
+import json, re, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+transport = data.get("transport") or {}
+autonomy = data.get("autonomy") or {}
+executable = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+flag = re.compile(r"--[A-Za-z0-9][A-Za-z0-9-]{0,63}\Z")
+if data.get("harness") != sys.argv[2]:
+    raise SystemExit(65)
+terminal = str(transport.get("terminalCommand", ""))
+values = [
+    terminal,
+    str(transport.get("resumeFlag", "")),
+    str(transport.get("modelFlag", "")),
+    str(transport.get("effortFlag", "")),
+    str(autonomy.get("flag", "")),
+    "1" if autonomy.get("enabledByDefault") else "0",
+]
+if not executable.fullmatch(terminal):
+    raise SystemExit(65)
+if any(value and not flag.fullmatch(value) for value in values[1:5]):
+    raise SystemExit(65)
+print("\n".join(values))
+'\'' "$manifest" "$harness") || exit 65
+            terminal="${spec[0]:-}"
+            resume_flag="${spec[1]:-}"
+            model_flag="${spec[2]:-}"
+            effort_flag="${spec[3]:-}"
+            autonomy_flag="${spec[4]:-}"
+            autonomy_default="${spec[5]:-0}"
+            if ! command -v "$terminal" >/dev/null 2>&1; then
+                printf "Harness terminal not found: %s\n" "$terminal" >&2
+                exec /bin/bash --login
+            fi
+            cd /root/workspace
+            set -- "$terminal"
+            if [ -n "$resume_id" ] && [ -n "$resume_flag" ]; then
+                set -- "$@" "$resume_flag" "$resume_id"
+            fi
+            if [ -n "$model_id" ] && [ -n "$model_flag" ]; then
+                set -- "$@" "$model_flag" "$model_id"
+            fi
+            if [ -n "$effort_id" ] && [ -n "$effort_flag" ]; then
+                set -- "$@" "$effort_flag" "$effort_id"
+            fi
+            if [ "$autonomy_default" = 1 ] && [ -n "$autonomy_flag" ]; then
+                set -- "$@" "$autonomy_flag"
+            fi
+            exec "$@"
+        ' ominal "$HARNESS" "$RESUME_ID" "$MODEL_ID" "$EFFORT_ID"
         ;;
 esac

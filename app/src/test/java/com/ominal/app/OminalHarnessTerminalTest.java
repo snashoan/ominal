@@ -55,6 +55,20 @@ public class OminalHarnessTerminalTest {
     }
 
     @Test
+    public void resumesCodexThreadInTheChatWorkspace() {
+        Intent intent = new Intent();
+        String workspace = HOME + "/.ominal/chats/chat-3/workspace";
+
+        OminalHarnessTerminal.configureIntent(intent,
+            OminalHarnessTerminal.CODEX_ID, workspace, "", "", "", "thread-123");
+
+        assertArrayEquals(new String[]{
+                "codex", workspace, "--resume", "thread-123"
+            },
+            intent.getStringArrayExtra(OMINAL_SERVICE.EXTRA_ARGUMENTS));
+    }
+
+    @Test
     public void rejectsUnknownHarnessBeforeItReachesTheShell() {
         assertThrows(IllegalArgumentException.class,
             () -> OminalHarnessTerminal.configureIntent(

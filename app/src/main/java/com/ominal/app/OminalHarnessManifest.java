@@ -79,6 +79,7 @@ public final class OminalHarnessManifest {
     @NonNull public final String providerId;
     @NonNull public final String outputFormat;
     @NonNull public final String adapterCommand;
+    @NonNull public final String terminalCommand;
     @NonNull public final String transportId;
     @NonNull public final String resumeFlag;
     @NonNull public final String modelFlag;
@@ -99,6 +100,7 @@ public final class OminalHarnessManifest {
                                   @NonNull String providerId,
                                   @NonNull String outputFormat,
                                   @NonNull String adapterCommand,
+                                  @NonNull String terminalCommand,
                                   @NonNull String transportId,
                                   @NonNull String resumeFlag,
                                   @NonNull String modelFlag,
@@ -118,6 +120,7 @@ public final class OminalHarnessManifest {
         this.providerId = providerId;
         this.outputFormat = outputFormat;
         this.adapterCommand = adapterCommand;
+        this.terminalCommand = terminalCommand;
         this.transportId = transportId;
         this.resumeFlag = resumeFlag;
         this.modelFlag = modelFlag;
@@ -165,6 +168,8 @@ public final class OminalHarnessManifest {
             throw new JSONException("Unsupported output format");
         String adapterCommand = optionalAdapterCommand(
             transport.optString("adapterCommand", ""));
+        String terminalCommand = optionalAdapterCommand(
+            transport.optString("terminalCommand", ""));
         String transportId = optionalSafeText(transport, "id", 120);
         if (transportId.isEmpty()) transportId = adapterCommand.isEmpty()
             ? outputFormat : "monopot-stdio:" + adapterCommand;
@@ -192,7 +197,7 @@ public final class OminalHarnessManifest {
         String monochromeIconFileName = optionalIconFile(icon, "monochrome");
         String iconSha256 = optionalSha256(icon, "sha256");
         return new OminalHarnessManifest(harnessId, binaryVersion, displayName, publisher,
-            providerId, outputFormat, adapterCommand, transportId,
+            providerId, outputFormat, adapterCommand, terminalCommand, transportId,
             resumeFlag, modelFlag, effortFlag, autonomyFlag, autonomyEnabled,
             models, commands, iconFileName, monochromeIconFileName, iconSha256, sourceFile);
     }

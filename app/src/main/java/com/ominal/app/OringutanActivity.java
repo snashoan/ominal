@@ -101,7 +101,9 @@ import com.ominal.shared.runtime.shell.command.environment.OminalShellEnvironmen
 import com.ominal.x11.LorieView;
 import com.ominal.x11.OminalNativeDisplay;
 
+import io.noties.markwon.AbstractMarkwonPlugin;
 import io.noties.markwon.Markwon;
+import io.noties.markwon.core.MarkwonTheme;
 import io.noties.markwon.ext.latex.JLatexMathPlugin;
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin;
 import io.noties.markwon.syntax.Prism4jThemeDarkula;
@@ -489,14 +491,6 @@ public final class OringutanActivity extends AppCompatActivity
             mSettingsRoute = normalizeSettingsRoute(
                 savedInstanceState.getString(STATE_SETTINGS_ROUTE, SETTINGS_ROOT));
         }
-        float chatTextSize = 16f * getResources().getDisplayMetrics().scaledDensity;
-        Prism4j prism4j = new Prism4j(new OminalPrismGrammarLocator());
-        mMarkwon = Markwon.builder(this)
-            .usePlugin(MarkwonInlineParserPlugin.create())
-            .usePlugin(JLatexMathPlugin.create(chatTextSize, builder ->
-                builder.blocksEnabled(true).blocksLegacy(false).inlinesEnabled(true)))
-            .usePlugin(SyntaxHighlightPlugin.create(prism4j, Prism4jThemeDarkula.create()))
-            .build();
         configureBackNavigation();
         if (!usesNativeDisplay()
             && (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0)
@@ -506,6 +500,7 @@ public final class OringutanActivity extends AppCompatActivity
         mSkin = BRAND_SKINS[0];
         ensureDefaultUiProperties();
         mUi = loadUiSpec();
+        initializeMarkdownRenderer();
         applySystemBars();
         registerRuntimeNetworkObserver();
         mUrlRequestBridge = new OminalUrlRequestBridge(this);
@@ -5817,7 +5812,8 @@ public final class OringutanActivity extends AppCompatActivity
         if (OminalHarnessTerminal.CODEX_ID.equals(harnessId)) {
             ChatSession session = mActiveSession;
             boolean started = session != null && mAgentRuntime != null
-                && mAgentRuntime.refreshCodexCapabilities(session.id, codexServerEnvironment(),
+                && mAgentRuntime.refreshCodexCapabilities(session.id,
+                    codexServerEnvironment(session),
                     new OminalCodexAppServer.CapabilityListener() {
                         @Override
                         public void onReady() {
@@ -6380,7 +6376,7 @@ public final class OringutanActivity extends AppCompatActivity
             mActiveAgentTurnView = addAgentTurn(
                 snapshot.status.isEmpty() ? "Working" : snapshot.status, false);
         }
-        mActiveAgentTurnView.status = snapshot.status;
+        mActiveAgentTurnView.setStatus(snapshot.status);
         mActiveAgentTurnView.usage = snapshot.usage;
         mActiveAgentTurnView.trace = snapshot.trace;
         mActiveAgentTurnView.running = snapshot.isRunning();
@@ -6492,6 +6488,7 @@ public final class OringutanActivity extends AppCompatActivity
         environment.put("OMINAL_USER_PROFILE", OminalUserProfileStore.RUNTIME_PATH);
         environment.put("MONOPOT_PROTOCOL", MonopotEvent.PROTOCOL);
         if (session != null) {
+            environment.put("OMINAL_WORKDIR", session.workspacePath);
             environment.put("OMINAL_AGENT_SESSION", session.id);
             environment.put("GIR_APP_NAME", "GIR");
             environment.put("GIR_RUNTIME_CONTRACT",
@@ -6507,7 +6504,7 @@ public final class OringutanActivity extends AppCompatActivity
     }
 
     private String guestWorkspacePath(ChatSession session) {
-        return "/root/workspace/" + session.id + "/workspace";
+        return "/root/workspace";
     }
 
     private String buildAgentDeveloperInstructions() {
@@ -6975,9 +6972,21 @@ public final class OringutanActivity extends AppCompatActivity
 
         Intent executeIntent = new Intent(OMINAL_SERVICE.ACTION_SERVICE_EXECUTE);
         executeIntent.setClass(this, OminalService.class);
+        String savedThreadId = mActiveSession.threadId(harnessId);
+        if (OminalHarnessTerminal.CODEX_ID.equals(harnessId)
+            && !savedThreadId.isEmpty() && mAgentRuntime != null) {
+            OminalAgentRuntime.Snapshot snapshot = mAgentRuntime.snapshot(mActiveSession.id);
+            if (snapshot.isRunning()) {
+                setPairingBusy(false, "");
+                addTransientSystemMessage(
+                    "Stop the current response before opening its Codex terminal.");
+                return;
+            }
+            mAgentRuntime.releaseSessionTransport(mActiveSession.id);
+        }
         OminalHarnessTerminal.configureIntent(
             executeIntent, harnessId, mActiveSession.workspacePath,
-            mActiveSession.modelId(), mActiveSession.effortId());
+            mActiveSession.modelId(), mActiveSession.effortId(), "", savedThreadId);
         executeIntent.putExtra(
             OMINAL_SERVICE.EXTRA_RUNNER, ExecutionCommand.Runner.TERMINAL_SESSION.getName());
         executeIntent.putExtra(OMINAL_SERVICE.EXTRA_SHELL_NAME,
@@ -7651,9 +7660,102 @@ public final class OringutanActivity extends AppCompatActivity
             view.expanded = !view.expanded;
             renderAgentTurnStatus(view);
         });
+        workSurface.setOnLongClickListener(ignored -> {
+            ignored.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            showLatestExecutionLog(mActiveSession);
+            return true;
+        });
         workSurface.setContentDescription("Work and token usage");
         renderAgentTurnStatus(view);
         return view;
+    }
+
+    private void showLatestExecutionLog(ChatSession session) {
+        if (session == null) return;
+        List<MonopotEvent> events;
+        try {
+            events = MonopotEventLog.read(new File(session.rootPath));
+        } catch (IOException error) {
+            Toast.makeText(this, "The work log could not be opened", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (events.isEmpty()) {
+            Toast.makeText(this, "No recorded work yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String turnId = events.get(events.size() - 1).turnId;
+        ArrayList<MonopotEvent> operations = new ArrayList<>();
+        for (MonopotEvent event : events) {
+            if (!turnId.equals(event.turnId)
+                || !MonopotEvent.CHANNEL_OPERATION.equals(event.channel)) continue;
+            if (OminalEngineeringTrace.isVisible(event)
+                && ("completed".equals(event.state) || "failed".equals(event.state))) {
+                operations.add(event);
+            }
+        }
+        if (operations.isEmpty()) {
+            for (MonopotEvent event : events) {
+                if (turnId.equals(event.turnId)
+                    && OminalEngineeringTrace.isVisible(event)) {
+                    operations.add(event);
+                }
+            }
+        }
+        if (operations.isEmpty()) {
+            Toast.makeText(this, "No command or tool events in this turn",
+                Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        ArrayList<OminalInteractionSheet.Row> rows = new ArrayList<>();
+        for (int index = 0; index < operations.size(); index++) {
+            MonopotEvent event = operations.get(index);
+            JSONObject item = OminalEngineeringTrace.item(event);
+            String command = item.optString("command", "").trim();
+            String detail = command.isEmpty() ? event.state : singleLineExcerpt(command, 112);
+            String trailing = item.has("exitCode")
+                && !item.isNull("exitCode") ? "exit " + item.optInt("exitCode") : "";
+            rows.add(new OminalInteractionSheet.Row(Integer.toString(index),
+                OminalEngineeringTrace.eventLabel(event),
+                detail, trailing, false, true, false));
+        }
+        OminalInteractionSheet.showChoices(this, interactionSheetTheme(), "Work log",
+            "Verified operations from the latest turn. Long-press the work indicator to return here.",
+            rows, selected -> {
+                int index;
+                try {
+                    index = Integer.parseInt(selected);
+                } catch (NumberFormatException error) {
+                    return;
+                }
+                if (index < 0 || index >= operations.size()) return;
+                showExecutionEvent(operations.get(index));
+            });
+    }
+
+    private void showExecutionEvent(MonopotEvent event) {
+        JSONObject item = OminalEngineeringTrace.item(event);
+        String command = item.optString("command", "").trim();
+        String cwd = item.optString("cwd", "").trim();
+        String output = item.optString("aggregatedOutput", "").trim();
+        StringBuilder text = new StringBuilder();
+        if (!cwd.isEmpty()) text.append("cwd  ").append(cwd).append("\n\n");
+        if (!command.isEmpty()) text.append("$ ").append(command).append("\n");
+        if (!output.isEmpty()) text.append("\n").append(output);
+        if (item.has("exitCode") && !item.isNull("exitCode"))
+            text.append("\n\nexit ").append(item.optInt("exitCode"));
+        if (text.length() == 0) text.append(event.detail.toString());
+        String body = text.toString();
+        OminalInteractionSheet.showReadOnlyText(this, interactionSheetTheme(),
+            OminalEngineeringTrace.eventLabel(event),
+            event.state, body, "Copy", () -> copyToClipboard("Work log", body));
+    }
+
+    private static String singleLineExcerpt(String value, int maximumLength) {
+        String text = value == null ? "" : value.replace('\n', ' ').replace('\r', ' ')
+            .trim().replaceAll("\\s+", " ");
+        if (text.length() <= maximumLength) return text;
+        return text.substring(0, Math.max(1, maximumLength - 3)).trim() + "...";
     }
 
     private void renderAgentTurnStatus(AgentTurnView view) {
@@ -7661,7 +7763,7 @@ public final class OringutanActivity extends AppCompatActivity
         boolean hasTrace = view.trace != null && !view.trace.isEmpty();
         String total = tokenUsageTotal(view.usage);
         String activity = hasTrace ? workTraceSummary(view.trace) : "";
-        String visibleStatus = view.running && !activity.isEmpty() ? activity : view.status;
+        String visibleStatus = !view.status.isEmpty() ? view.status : activity;
         if (visibleStatus.isEmpty()) view.detail.setText(total);
         else if (total.isEmpty()) view.detail.setText(visibleStatus);
         else view.detail.setText(visibleStatus + "  /  " + total);
@@ -7690,6 +7792,39 @@ public final class OringutanActivity extends AppCompatActivity
         String text = OminalChatText.forDisplay(markdown);
         if (mMarkwon == null) target.setText(text);
         else mMarkwon.setMarkdown(target, text);
+    }
+
+    private void initializeMarkdownRenderer() {
+        UiSpec ui = ui();
+        float density = getResources().getDisplayMetrics().scaledDensity;
+        float chatTextSize = 16f * density;
+        int codeTextSize = Math.round(14f * density);
+        Typeface monospace = Typeface.create("monospace", Typeface.NORMAL);
+        Prism4j prism4j = new Prism4j(new OminalPrismGrammarLocator());
+        mMarkwon = Markwon.builder(this)
+            .usePlugin(new AbstractMarkwonPlugin() {
+                @Override
+                public void configureTheme(@NonNull MarkwonTheme.Builder builder) {
+                    builder
+                        .linkColor(ui.accent)
+                        .isLinkUnderlined(false)
+                        .blockMargin(dp(12))
+                        .codeTextColor(ui.ink)
+                        .codeBackgroundColor(ui.panelSoft)
+                        .codeTypeface(monospace)
+                        .codeTextSize(codeTextSize)
+                        .codeBlockTextColor(Color.rgb(240, 241, 243))
+                        .codeBlockBackgroundColor(Color.rgb(20, 21, 24))
+                        .codeBlockTypeface(monospace)
+                        .codeBlockTextSize(codeTextSize)
+                        .codeBlockMargin(dp(12));
+                }
+            })
+            .usePlugin(MarkwonInlineParserPlugin.create())
+            .usePlugin(JLatexMathPlugin.create(chatTextSize, builder ->
+                builder.blocksEnabled(true).blocksLegacy(false).inlinesEnabled(true)))
+            .usePlugin(SyntaxHighlightPlugin.create(prism4j, Prism4jThemeDarkula.create()))
+            .build();
     }
 
     private void renderAgentTrace(AgentTurnView view) {
@@ -10161,6 +10296,20 @@ public final class OringutanActivity extends AppCompatActivity
             this.meter = meter;
             this.status = status == null ? "" : status;
             this.running = !this.status.isEmpty();
+        }
+
+        void setStatus(String value) {
+            String next = value == null ? "" : value;
+            if (next.equals(status)) return;
+            status = next;
+            if (!detail.isAttachedToWindow()) return;
+            detail.animate().cancel();
+            detail.setAlpha(0.55f);
+            detail.animate()
+                .alpha(1f)
+                .setDuration(140L)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
+                .start();
         }
 
         void setMessage(String value) {

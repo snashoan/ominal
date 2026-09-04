@@ -81,11 +81,13 @@ public class OminalHarnessManifestTest {
         manifest.put("transport", new JSONObject()
             .put("outputFormat", "monopot-jsonl")
             .put("adapterCommand", "my-monopot-adapter")
+            .put("terminalCommand", "my-harness")
             .put("id", "stdio.custom"));
 
         OminalHarnessManifest parsed = OminalHarnessManifest.fromJson(manifest);
 
         assertEquals("my-monopot-adapter", parsed.adapterCommand);
+        assertEquals("my-harness", parsed.terminalCommand);
         assertEquals("stdio.custom", parsed.transportId);
         assertEquals("custom", parsed.providerId);
     }
@@ -118,6 +120,14 @@ public class OminalHarnessManifestTest {
         manifest.getJSONObject("transport")
             .put("outputFormat", "monopot-jsonl")
             .put("adapterCommand", "adapter --unsafe");
+        OminalHarnessManifest.fromJson(manifest);
+    }
+
+    @Test(expected = JSONException.class)
+    public void rejectsTerminalCommandWithShellSyntax() throws Exception {
+        JSONObject manifest = validManifest();
+        manifest.getJSONObject("transport")
+            .put("terminalCommand", "runtime --unsafe");
         OminalHarnessManifest.fromJson(manifest);
     }
 

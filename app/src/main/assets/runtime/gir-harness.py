@@ -29,10 +29,13 @@ def load_manifest(path):
     harness = str(manifest.get("harness", ""))
     transport = manifest.get("transport") or {}
     adapter = str(transport.get("adapterCommand", ""))
+    terminal = str(transport.get("terminalCommand", ""))
     if manifest.get("schemaVersion") != 1 or not HARNESS_ID.fullmatch(harness):
         raise SystemExit("Manifest has an invalid schema or harness id.")
     if transport.get("outputFormat") != "monopot-jsonl" or not ADAPTER.fullmatch(adapter):
         raise SystemExit("Manifest must declare a safe monopot-jsonl adapter command.")
+    if terminal and not ADAPTER.fullmatch(terminal):
+        raise SystemExit("Manifest terminalCommand must be a simple executable name.")
     return manifest
 
 

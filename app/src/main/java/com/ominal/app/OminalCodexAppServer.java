@@ -3,6 +3,7 @@ package com.ominal.app;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -22,6 +23,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -36,6 +38,7 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
     static final String AUTHENTICATION_REQUIRED_MESSAGE =
         "Your Codex session expired. Sign in again to continue.";
     private static final String APP_SERVER_COMMAND = "exec codex app-server --listen stdio://";
+    private static final long HEARTBEAT_INTERVAL_MS = 5_000L;
 
     private interface ResponseHandler {
         void onResult(JSONObject result);
@@ -53,6 +56,9 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
         final StringBuilder response = new StringBuilder();
         final Map<String, String> itemPhases = new HashMap<>();
         final OminalAgentTrace trace = new OminalAgentTrace();
+        final OminalActivityNarrator narrator = new OminalActivityNarrator();
+        final long startedAt = SystemClock.elapsedRealtime();
+        long lastSignalAt = startedAt;
         String threadId = "";
         String turnId = "";
         String lastAgentMessage = "";
@@ -65,11 +71,12 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
     }
 
     private final Context mContext;
-    private final String mHostChatRoot;
+    private final String mSessionId;
+    private final String mHostWorkspace;
     private final Map<Integer, ResponseHandler> mPendingRequests = new LinkedHashMap<>();
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
-    private final Runnable mCapabilityTimeout = () ->
-        failCapability("Codex model discovery timed out. Try again when the network is stable.");
+    private final Runnable mCapabilityTimeout = () -> finishCapabilityFromCacheOrFail(
+        "Codex model discovery timed out. Try again when the network is stable.");
     private AppShell mShell;
     private ActiveTurn mActiveTurn;
     private CapabilityListener mCapabilityListener;
@@ -79,9 +86,12 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
     private boolean mInitialized;
     private boolean mStopping;
 
-    public OminalCodexAppServer(@NonNull Context context, @NonNull String hostChatRoot) {
+    public OminalCodexAppServer(@NonNull Context context, @NonNull String hostChatRoot,
+                                @NonNull String sessionId) {
         mContext = context.getApplicationContext();
-        mHostChatRoot = hostChatRoot;
+        mSessionId = sessionId;
+        mHostWorkspace = new File(new File(hostChatRoot, sessionId), "workspace")
+            .getAbsolutePath();
     }
 
     @NonNull
@@ -102,6 +112,7 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
         mStopping = false;
         mActiveTurn = new ActiveTurn(request, listener);
         listener.onStatus(mInitialized ? "Opening chat" : "Starting Codex");
+        scheduleHeartbeat(mActiveTurn);
         if (mInitialized && mShell != null) {
             openThread();
         } else {
@@ -154,13 +165,15 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
                 @Override
                 public void onResult(JSONObject result) {
                     ActiveTurn current = mActiveTurn;
-                    if (current != null) current.listener.onStatus("Applying your update");
+                    if (current != null)
+                        current.listener.onStatus(current.narrator.started("Applying your update"));
                 }
 
                 @Override
                 public void onError(String error) {
                     ActiveTurn current = mActiveTurn;
-                    if (current != null) current.listener.onStatus("Continuing current work");
+                    if (current != null)
+                        current.listener.onStatus(current.narrator.current("Continuing current work"));
                 }
             });
             return true;
@@ -200,9 +213,14 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
         mNextRequestId = 1;
         final int generation = ++mGeneration;
 
+        File workspace = new File(mHostWorkspace);
+        if (!workspace.isDirectory() && !workspace.mkdirs()) {
+            failAll("The chat workspace could not be created.");
+            return;
+        }
         ExecutionCommand command = new ExecutionCommand(-1,
             OminalConstants.OMINAL_BIN_PREFIX_DIR_PATH + "/sh",
-            new String[]{"-lc", APP_SERVER_COMMAND}, null, mHostChatRoot,
+            new String[]{"-lc", APP_SERVER_COMMAND}, null, mHostWorkspace,
             ExecutionCommand.Runner.APP_SHELL.getName(), false);
         command.commandLabel = "Codex app server";
 
@@ -229,6 +247,7 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
 
     private synchronized void onStdoutLine(int generation, String line) {
         if (generation != mGeneration || line == null || line.trim().isEmpty()) return;
+        if (mActiveTurn != null) mActiveTurn.lastSignalAt = SystemClock.elapsedRealtime();
         try {
             handleMessage(new JSONObject(line));
         } catch (JSONException e) {
@@ -238,6 +257,7 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
 
     private synchronized void onStderrLine(int generation, String line) {
         if (generation != mGeneration || line == null || line.trim().isEmpty()) return;
+        if (mActiveTurn != null) mActiveTurn.lastSignalAt = SystemClock.elapsedRealtime();
         Logger.logWarn(LOG_TAG, "Codex app server: " + line);
         if (isAuthenticationError(line)) failAll(AUTHENTICATION_REQUIRED_MESSAGE);
     }
@@ -297,37 +317,55 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
 
                 @Override
                 public void onError(String message) {
-                    failCapability("Could not read Codex models: " + message);
+                    finishCapabilityFromCacheOrFail(
+                        "Could not read Codex models: " + message);
                 }
             });
         } catch (JSONException e) {
-            failCapability("Could not read Codex models.");
+            finishCapabilityFromCacheOrFail("Could not read Codex models.");
         }
     }
 
     private boolean writeModelManifest(JSONArray catalog) {
         try {
+            JSONArray effectiveCatalog = catalog;
+            if (effectiveCatalog.length() == 0) {
+                File cache = new File(OminalConstants.OMINAL_HOME_DIR_PATH,
+                    ".ominal/codex/models_cache.json");
+                if (cache.isFile()) {
+                    JSONObject cached = new JSONObject(new String(
+                        Files.readAllBytes(cache.toPath()), StandardCharsets.UTF_8));
+                    JSONArray cachedModels = cached.optJSONArray("models");
+                    if (cachedModels != null) effectiveCatalog = cachedModels;
+                }
+            }
             JSONArray models = new JSONArray();
-            for (int index = 0; index < catalog.length(); index++) {
-                JSONObject source = catalog.optJSONObject(index);
+            for (int index = 0; index < effectiveCatalog.length(); index++) {
+                JSONObject source = effectiveCatalog.optJSONObject(index);
                 if (source == null || source.optBoolean("hidden", false)) continue;
-                String id = source.optString("model", source.optString("id", "")).trim();
+                String id = source.optString("model",
+                    source.optString("id", source.optString("slug", ""))).trim();
                 if (id.isEmpty()) continue;
                 JSONArray efforts = new JSONArray();
                 JSONArray supported = source.optJSONArray("supportedReasoningEfforts");
+                if (supported == null)
+                    supported = source.optJSONArray("supported_reasoning_levels");
                 if (supported != null) {
                     for (int effortIndex = 0; effortIndex < supported.length(); effortIndex++) {
                         JSONObject effort = supported.optJSONObject(effortIndex);
                         String value = effort == null ? ""
-                            : effort.optString("reasoningEffort", "").trim();
+                            : effort.optString("reasoningEffort",
+                                effort.optString("effort", "")).trim();
                         if (!value.isEmpty()) efforts.put(value);
                     }
                 }
                 models.put(new JSONObject()
                     .put("id", id)
-                    .put("label", source.optString("displayName", id))
+                    .put("label", source.optString("displayName",
+                        source.optString("display_name", id)))
                     .put("efforts", efforts));
             }
+            if (models.length() == 0) return false;
             JSONObject manifest = new JSONObject()
                 .put("schemaVersion", OminalHarnessManifest.SCHEMA_VERSION)
                 .put("harness", OminalHarnessTerminal.CODEX_ID)
@@ -357,6 +395,12 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
             Logger.logStackTraceWithMessage(LOG_TAG, "Could not save Codex model catalog", error);
             return false;
         }
+    }
+
+    private synchronized void finishCapabilityFromCacheOrFail(@NonNull String message) {
+        if (!mCapabilityRequestInFlight) return;
+        if (writeModelManifest(new JSONArray())) finishCapability();
+        else failCapability(message);
     }
 
     private void openThread() {
@@ -441,7 +485,7 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
     private void startTurn() {
         ActiveTurn active = mActiveTurn;
         if (active == null) return;
-        active.listener.onStatus("Working");
+        active.listener.onStatus(active.narrator.started("Planning next action"));
         try {
             JSONObject input = new JSONObject()
                 .put("type", "text")
@@ -475,6 +519,7 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
     }
 
     private void handleMessage(JSONObject message) {
+        if (mActiveTurn != null) mActiveTurn.lastSignalAt = SystemClock.elapsedRealtime();
         if (message.has("id") && (message.has("result") || message.has("error"))) {
             int id = message.optInt("id", -1);
             ResponseHandler handler = mPendingRequests.remove(id);
@@ -522,8 +567,10 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
         if ("agentMessage".equals(item.optString("type")) && "final_answer".equals(phase))
             active.response.setLength(0);
         String status = describeItem(item);
+        String engineeringStatus = OminalEngineeringTrace.activeLabel(item, mSessionId, status);
         emitItemEvent(active, item, "started", status);
-        if (!status.isEmpty()) active.listener.onStatus(status);
+        if (!engineeringStatus.isEmpty())
+            active.listener.onStatus(active.narrator.started(engineeringStatus));
     }
 
     private void handleAgentMessageDelta(JSONObject params) {
@@ -544,7 +591,11 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
         if (active == null || item == null) return;
         if (active.trace.itemCompleted(item.optString("id", ""), item.optString("type", "")))
             active.listener.onTraceChanged(active.trace.snapshot());
-        emitItemEvent(active, item, "completed", describeItem(item));
+        String status = describeItem(item);
+        String engineeringStatus = OminalEngineeringTrace.activeLabel(item, mSessionId, status);
+        emitItemEvent(active, item, "completed", status);
+        if (!engineeringStatus.isEmpty() && !"agentMessage".equals(item.optString("type")))
+            active.listener.onStatus(active.narrator.completed(engineeringStatus));
         if (!"agentMessage".equals(item.optString("type"))) return;
         String text = item.optString("text", "");
         if (text.isEmpty()) return;
@@ -737,5 +788,19 @@ public final class OminalCodexAppServer implements OminalAgentTransport {
                 MonopotEvent.Draft.operation(state, summary, detail));
         } catch (JSONException ignored) {
         }
+    }
+
+    private void scheduleHeartbeat(@NonNull ActiveTurn turn) {
+        mMainHandler.postDelayed(() -> emitHeartbeat(turn), HEARTBEAT_INTERVAL_MS);
+    }
+
+    private synchronized void emitHeartbeat(@NonNull ActiveTurn turn) {
+        if (mActiveTurn != turn) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - turn.lastSignalAt >= HEARTBEAT_INTERVAL_MS - 250L) {
+            long seconds = Math.max(1L, (now - turn.startedAt) / 1000L);
+            turn.listener.onStatus(turn.narrator.waiting("Codex", seconds));
+        }
+        scheduleHeartbeat(turn);
     }
 }

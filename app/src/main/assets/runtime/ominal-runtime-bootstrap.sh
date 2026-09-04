@@ -7,10 +7,11 @@ RUNTIME_ROOT="${OMINAL_RUNTIME_ROOT:-$HOME/.ominal/runtime}"
 RUNTIME_ARCH="${OMINAL_RUNTIME_ARCH:-arm64}"
 RUNTIME_VERSION="ominal-ubuntu-24.04.4-${RUNTIME_ARCH}-node-24.18.0-codex-0.144.6-desktop-xfce-v4"
 READY_FILE="$RUNTIME_ROOT/.ominal-runtime-ready"
+ROOTFS_READY_FILE="$RUNTIME_ROOT/linux/rootfs/.ominal-rootfs-ready"
 PREPARED_ROOTFS_VERSION="ominal-ubuntu-24.04.4-arm64-prepared-v3"
 
 verify_codex_runtime() {
-    "$PREFIX/bin/ominal-proot-run" /bin/bash -lc '
+    "$PREFIX/bin/ominal-proot-run" /bin/bash --noprofile --norc -c '
 set -eu
 test "$(node --version)" = "v24.18.0"
 test "$(command -v codex)" = "/root/.ominal/npm/bin/codex"
@@ -19,7 +20,7 @@ codex --version | grep -E "^codex-cli [0-9]+\.[0-9]+\.[0-9]+" >/dev/null
 }
 
 verify_runtime() {
-    "$PREFIX/bin/ominal-proot-run" /bin/bash -lc '
+    "$PREFIX/bin/ominal-proot-run" /bin/bash --noprofile --norc -c '
 set -eu
 test "$(dpkg --print-architecture)" = "${OMINAL_RUNTIME_ARCH:-arm64}"
 test -z "$(dpkg --audit)"
@@ -49,6 +50,10 @@ if [ "${1:-}" = "--verify" ]; then
 fi
 
 if [ "${1:-}" = "--prepare" ]; then
+    if [ -f "$READY_FILE" ] && [ -f "$ROOTFS_READY_FILE" ] \
+        && [ "$(cat "$READY_FILE" 2>/dev/null || true)" = "$RUNTIME_VERSION" ]; then
+        exit 0
+    fi
     if ! verify_runtime; then
         verify_codex_runtime
         "$PREFIX/bin/ominal-install-display-packages"

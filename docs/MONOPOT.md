@@ -12,6 +12,11 @@ Monopot is not a backend or a network service. The shipped transport is local
 JSONL over process stdio. Every conversation also receives an append-only event
 projection at `./.ominal/monopot/monopot.jsonl` inside its Linux workspace.
 
+GIR derives the compact Activity UI from these verified events. It may summarize
+the working directory, command action, file path, completion state, and elapsed
+time, but it does not request or expose a model's private reasoning. The original
+event detail remains available for inspection.
+
 ## Runtime contract
 
 Before each turn, an adapter can read these device-resident inputs:
@@ -97,7 +102,8 @@ manifests under `/root/.ominal/harness-capabilities/` remain supported.
   "transport": {
     "id": "example.monopot-stdio",
     "outputFormat": "monopot-jsonl",
-    "adapterCommand": "gir-example-adapter"
+    "adapterCommand": "gir-example-adapter",
+    "terminalCommand": "example"
   },
   "autonomy": {
     "enabledByDefault": false,
@@ -127,9 +133,13 @@ Optional PNG or WebP artwork can be declared without remote loading:
 Artwork is filename constrained, size bounded, dimension checked, and decoded
 as a bitmap. Missing or invalid artwork falls back to GIR's neutral runtime icon.
 
-`adapterCommand` is a single executable basename resolved inside the Linux
-runtime. Shell fragments and embedded arguments are rejected. For a turn, GIR
-invokes it with this stable shape:
+`adapterCommand` and the optional `terminalCommand` are single executable
+basenames resolved inside the Linux runtime. Shell fragments and embedded
+arguments are rejected. `terminalCommand` lets long-press open the harness's
+interactive interface in the same chat workspace. GIR applies only the manifest's
+validated resume, model, effort, and autonomy flags.
+
+For a turn, GIR invokes the adapter with this stable shape:
 
 ```text
 gir-example-adapter turn \

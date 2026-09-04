@@ -44,6 +44,7 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
         final StringBuilder stderr = new StringBuilder();
         final StringBuilder stdout = new StringBuilder();
         final OminalAgentTrace trace = new OminalAgentTrace();
+        final OminalActivityNarrator narrator = new OminalActivityNarrator();
         final HashMap<String, TokenUsage> usageByStep = new HashMap<>();
         String threadId = "";
         String response = "";
@@ -249,7 +250,10 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
             || event.has("conversation_id") && event.has("status");
         if (!isResult) {
             String status = statusForEvent(event);
-            if (!status.isEmpty()) turn.listener.onStatus(status);
+            if (!status.isEmpty()) {
+                turn.listener.onStatus("Responding".equals(status)
+                    ? turn.narrator.started(status) : turn.narrator.current(status));
+            }
             return;
         }
 
@@ -287,6 +291,16 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
                 && !"error".equals(state)) state = "complete";
             turn.terminalEventReceived = true;
         }
+        if (MonopotEvent.CHANNEL_OPERATION.equals(channel)) {
+            String summary = event.optString("summary", "");
+            String progress = "completed".equals(state) || "done".equals(state)
+                ? turn.narrator.completed(summary)
+                : "started".equals(state) ? turn.narrator.started(summary) : "";
+            turn.listener.onEvent(new MonopotEvent.Draft(channel, state,
+                summary, event.optJSONObject("detail")));
+            if (!progress.isEmpty()) turn.listener.onStatus(progress);
+            return true;
+        }
         turn.listener.onEvent(new MonopotEvent.Draft(channel, state,
             event.optString("summary", ""), event.optJSONObject("detail")));
         return true;
@@ -318,6 +332,7 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
         turn.listener.onTraceChanged(turn.trace.snapshot());
         if (toolName.isEmpty()) return;
         try {
+            String activity = OminalAgentTrace.labelForType(activityType);
             JSONObject detail = new JSONObject()
                 .put("type", type)
                 .put("stepType", stepType)
@@ -325,8 +340,11 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
                 .put("payload", new JSONObject(body.toString()));
             String eventState = "failed".equals(state) ? "failed"
                 : completed ? "completed" : "started";
+            String progress = completed
+                ? turn.narrator.completed(activity) : turn.narrator.started(activity);
             turn.listener.onEvent(MonopotEvent.Draft.operation(eventState,
-                OminalAgentTrace.labelForType(activityType), detail));
+                activity, detail));
+            if (!progress.isEmpty()) turn.listener.onStatus(progress);
         } catch (JSONException ignored) {
         }
     }
@@ -535,8 +553,7 @@ public final class OminalCliAgentTransport implements OminalAgentTransport {
         long now = SystemClock.elapsedRealtime();
         if (now - turn.lastSignalAt >= HEARTBEAT_INTERVAL_MS - 250L) {
             long seconds = Math.max(1L, (now - turn.startedAt) / 1000L);
-            turn.listener.onStatus("Waiting for " + harnessName(mHarnessId)
-                + "  ·  " + seconds + "s");
+            turn.listener.onStatus(turn.narrator.waiting(harnessName(mHarnessId), seconds));
         }
         scheduleHeartbeat(generation);
     }
