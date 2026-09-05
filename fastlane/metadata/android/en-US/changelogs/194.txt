@@ -1,0 +1,1 @@
+Work details now stay compact until expanded, keeping token totals, usage meters, and execution steps out of the conversation by default. The composer shows the active chat directory with direct terminal access and copy support, while disclosure motion and labels make activity inspection clearer on compact phone screens.

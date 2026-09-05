@@ -1,5 +1,33 @@
 # Next Release
 
+## v194 release candidate
+
+The v194 target keeps engineering detail available without letting it dominate
+the conversation:
+
+- Completed work rows collapse to a compact step summary with an explicit
+  disclosure chevron.
+- Token totals, the usage meter, token breakdown, and individual execution
+  steps stay hidden until the work row is expanded.
+- Running work continues to show its live status in the collapsed row.
+- The composer metadata row shows `~/workspace` with a folder mark; tapping it
+  opens the active chat terminal and long-pressing copies the backing path.
+
+Release gates completed on 2026-09-05: 104 GIR app and 145 terminal-emulator
+debug unit tests, GIR app release lint with zero errors, version and
+Play-permission validation, signed bundled AAB generation, Bundletool
+validation, manifest version inspection, runtime asset-pack inspection,
+signature verification, and English release notes.
+
+Candidate artifact: `release/gir-0.121.25-v194-bundled.aab`
+
+SHA-256: `c6e1cd44b7fed1267f4672315313e62911e65846f108a6056ebe8462240879c6`
+
+The connected OPPO CPH2681 has a Google Play-signed v192 installation. The
+local development certificate does not match, so device verification must use
+the Play-distributed v194 artifact; the existing app data must not be removed
+to bypass that signing boundary.
+
 ## v193 release candidate
 
 The v193 target tightens the engineering workflow without turning the chat into

@@ -314,7 +314,7 @@ public final class OringutanActivity extends AppCompatActivity
     private ImageButton mJumpToLatestButton;
     private EditText mPromptInput;
     private ImageButton mHarnessControlsButton;
-    private TextView mHarnessContextView;
+    private TextView mWorkspaceContextView;
     private LinearLayout mCommandSuggestionsView;
     private LinearLayout mCommandSuggestionsRow;
     private ImageButton mAttachButton;
@@ -3416,17 +3416,29 @@ public final class OringutanActivity extends AppCompatActivity
         harnessParams.setMargins(dp(2), 0, 0, 0);
         actionRail.addView(mHarnessControlsButton, harnessParams);
 
-        mHarnessContextView = new TextView(this);
-        mHarnessContextView.setTextColor(ui.muted);
-        mHarnessContextView.setTextSize(12.5f);
-        mHarnessContextView.setGravity(Gravity.CENTER_VERTICAL);
-        mHarnessContextView.setIncludeFontPadding(false);
-        mHarnessContextView.setSingleLine(true);
-        mHarnessContextView.setEllipsize(TextUtils.TruncateAt.END);
-        mHarnessContextView.setMaxWidth(dp(156));
-        mHarnessContextView.setPadding(dp(4), 0, dp(8), 0);
-        mHarnessContextView.setOnClickListener(v -> showHarnessControlsDialog());
-        actionRail.addView(mHarnessContextView, new LinearLayout.LayoutParams(
+        mWorkspaceContextView = new TextView(this);
+        mWorkspaceContextView.setTextColor(ui.muted);
+        mWorkspaceContextView.setTextSize(12.5f);
+        mWorkspaceContextView.setGravity(Gravity.CENTER_VERTICAL);
+        mWorkspaceContextView.setIncludeFontPadding(false);
+        mWorkspaceContextView.setSingleLine(true);
+        mWorkspaceContextView.setEllipsize(TextUtils.TruncateAt.END);
+        mWorkspaceContextView.setMaxWidth(dp(156));
+        mWorkspaceContextView.setPadding(dp(5), 0, dp(8), 0);
+        mWorkspaceContextView.setCompoundDrawablePadding(dp(5));
+        mWorkspaceContextView.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            R.drawable.ic_folder, 0, 0, 0);
+        mWorkspaceContextView.setCompoundDrawableTintList(
+            ColorStateList.valueOf(ui.muted));
+        mWorkspaceContextView.setOnClickListener(v -> openTerminalForActiveChat());
+        mWorkspaceContextView.setOnLongClickListener(v -> {
+            if (mActiveSession == null) return false;
+            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            copyToClipboard("Chat folder", mActiveSession.workspacePath);
+            Toast.makeText(this, "Chat folder copied", Toast.LENGTH_SHORT).show();
+            return true;
+        });
+        actionRail.addView(mWorkspaceContextView, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)));
         updateHarnessControls();
 
@@ -5549,7 +5561,7 @@ public final class OringutanActivity extends AppCompatActivity
         if (mHarnessControlsButton == null) return;
         if (mActiveSession == null) {
             mHarnessControlsButton.setVisibility(View.GONE);
-            if (mHarnessContextView != null) mHarnessContextView.setVisibility(View.GONE);
+            if (mWorkspaceContextView != null) mWorkspaceContextView.setVisibility(View.GONE);
             return;
         }
         OminalAgentHarness harness =
@@ -5558,18 +5570,15 @@ public final class OringutanActivity extends AppCompatActivity
             OminalHarnessManifest.load(mActiveSession.harnessId);
         String harnessName = OminalHarnessRegistry.resolvedDisplayName(harness);
         StringBuilder label = new StringBuilder(harnessName);
-        String modelLabel = "Auto";
         if (manifest == null) {
             if (!OminalHarnessTerminal.CODEX_ID.equals(mActiveSession.harnessId)) {
                 label.append("  ·  setting up");
-                modelLabel = "Setting up";
             }
         } else {
             String modelId = activeModelId(mActiveSession);
             String effortId = activeEffortId(mActiveSession);
             OminalHarnessManifest.Model model = findModel(manifest, modelId);
             label.append("  ·  ").append(model == null ? "Automatic" : model.label);
-            modelLabel = model == null ? "Auto" : model.label;
             if (!availableEfforts(manifest).isEmpty())
                 label.append("  ·  ").append(effortId.isEmpty() ? "Auto effort" : effortId);
         }
@@ -5580,10 +5589,11 @@ public final class OringutanActivity extends AppCompatActivity
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             mHarnessControlsButton.setTooltipText("Agent controls");
         mHarnessControlsButton.setVisibility(View.VISIBLE);
-        if (mHarnessContextView != null) {
-            mHarnessContextView.setText(harnessName + "  ·  " + modelLabel);
-            mHarnessContextView.setContentDescription(label.toString().replace("  ·  ", ", "));
-            mHarnessContextView.setVisibility(View.VISIBLE);
+        if (mWorkspaceContextView != null) {
+            mWorkspaceContextView.setText("~/workspace");
+            mWorkspaceContextView.setContentDescription(
+                "Current directory /root/workspace. Tap to open its terminal.");
+            mWorkspaceContextView.setVisibility(View.VISIBLE);
         }
     }
 
@@ -7618,6 +7628,13 @@ public final class OringutanActivity extends AppCompatActivity
         detail.setVisibility(status == null || status.isEmpty() ? View.GONE : View.VISIBLE);
         statusRow.addView(detail, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        ImageView disclosure = new ImageView(this);
+        setThemedIcon(disclosure, R.drawable.ic_chevron_right, "Expand work details");
+        disclosure.setImageTintList(ColorStateList.valueOf(ui.muted));
+        disclosure.setPadding(dp(3), dp(3), dp(3), dp(3));
+        disclosure.setVisibility(View.GONE);
+        statusRow.addView(disclosure, new LinearLayout.LayoutParams(dp(22), dp(22)));
         workBody.addView(statusRow, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -7653,7 +7670,7 @@ public final class OringutanActivity extends AppCompatActivity
         if (scrollNow) animateMessageIn(container, false);
         if (scrollNow) scrollToBottom();
         AgentTurnView view = new AgentTurnView(message, media, workSurface, trace, detail,
-            breakdown, pulse, meter, status);
+            breakdown, disclosure, pulse, meter, status);
         workSurface.setClickable(true);
         workSurface.setFocusable(false);
         workSurface.setOnClickListener(ignored -> {
@@ -7764,13 +7781,19 @@ public final class OringutanActivity extends AppCompatActivity
         String total = tokenUsageTotal(view.usage);
         String activity = hasTrace ? workTraceSummary(view.trace) : "";
         String visibleStatus = !view.status.isEmpty() ? view.status : activity;
-        if (visibleStatus.isEmpty()) view.detail.setText(total);
-        else if (total.isEmpty()) view.detail.setText(visibleStatus);
-        else view.detail.setText(visibleStatus + "  /  " + total);
+        if (!view.expanded || total.isEmpty()) view.detail.setText(visibleStatus);
+        else if (visibleStatus.isEmpty()) view.detail.setText(total);
+        else view.detail.setText(visibleStatus + "  ·  " + total);
         view.detail.setVisibility(view.detail.getText().length() == 0 ? View.GONE : View.VISIBLE);
         view.pulse.setRunning(view.running);
         view.pulse.setVisibility(view.running
             && view.detail.getVisibility() == View.VISIBLE ? View.VISIBLE : View.GONE);
+        boolean expandable = view.usage != null || hasTrace;
+        view.disclosure.animate().cancel();
+        view.disclosure.setVisibility(expandable ? View.VISIBLE : View.GONE);
+        view.disclosure.animate().rotation(view.expanded ? 90f : 0f).setDuration(140L).start();
+        view.disclosure.setContentDescription(view.expanded
+            ? "Collapse work details" : "Expand work details");
         view.meter.setUsage(view.usage);
         view.meter.setVisibility(view.expanded && view.usage != null ? View.VISIBLE : View.GONE);
         view.breakdown.setText(tokenUsageLabel(view.usage));
@@ -10275,6 +10298,7 @@ public final class OringutanActivity extends AppCompatActivity
         final LinearLayout traceView;
         final TextView detail;
         final TextView breakdown;
+        final ImageView disclosure;
         final WorkPulseView pulse;
         final TokenMeterView meter;
         String status;
@@ -10285,13 +10309,15 @@ public final class OringutanActivity extends AppCompatActivity
 
         AgentTurnView(TextView message, LinearLayout media, View workSurface,
                       LinearLayout traceView, TextView detail, TextView breakdown,
-                      WorkPulseView pulse, TokenMeterView meter, String status) {
+                      ImageView disclosure, WorkPulseView pulse, TokenMeterView meter,
+                      String status) {
             this.message = message;
             this.media = media;
             this.workSurface = workSurface;
             this.traceView = traceView;
             this.detail = detail;
             this.breakdown = breakdown;
+            this.disclosure = disclosure;
             this.pulse = pulse;
             this.meter = meter;
             this.status = status == null ? "" : status;
